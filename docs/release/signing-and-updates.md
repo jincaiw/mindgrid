@@ -66,7 +66,28 @@ pnpm tauri signer generate -w ~/.tauri/mindgrid.key
 | `TAURI_SIGNING_PRIVATE_KEY` | 私钥文件内容（`cat ~/.tauri/mindgrid.key`） |
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 私钥密码（如未设置密码则忽略） |
 
-### 4.2 触发发布工作流
+### 4.2 createUpdaterArtifacts 配置说明
+
+`tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 默认设为 `false`，以便本地开发构建无需签名密钥即可通过。
+
+Release 工作流（`.github/workflows/release.yml`）在构建时通过 `--config` 参数动态启用：
+
+```yaml
+args: --target ${{ matrix.target }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
+```
+
+**本地构建**（不生成更新签名）：
+```bash
+pnpm tauri build
+```
+
+**本地构建 + 更新签名**（需要设置 `TAURI_SIGNING_PRIVATE_KEY` 环境变量）：
+```bash
+export TAURI_SIGNING_PRIVATE_KEY=$(cat ~/.tauri/mindgrid.key)
+pnpm tauri build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'
+```
+
+### 4.3 触发发布工作流
 
 ```bash
 # 1. 更新版本号

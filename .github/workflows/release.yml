@@ -166,7 +166,8 @@ jobs:
           releaseBody: 'MindGrid ${{ github.ref_name }} — 请查看 Assets 下载对应平台安装包。'
           releaseDraft: true
           prerelease: false
-          args: --target ${{ matrix.target }}
+          # 启用更新签名制品 + 指定目标架构
+          args: --target ${{ matrix.target }} --config '{"bundle":{"createUpdaterArtifacts":true}}'
 
   # ─── 生成 latest.json 更新清单 ───
   publish-updates:
@@ -185,82 +186,11 @@ jobs:
       - name: Generate latest.json from release assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ github.ref_name }}
         run: |
-          node << 'SCRIPT'
-          const tag = process.env.TAG_NAME;
-          const repo = process.env.GITHUB_REPOSITORY;
-          const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
-
-          // 获取 Release 信息
-          const release = await fetch(
-            `https://api.github.com/repos/${repo}/releases/tags/${tag}`,
-            { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } }
-          ).then(r => r.json());
-
-          const version = tag.replace(/^v/, '');
-          const assets = release.assets || [];
-
-          function findAsset(pattern) {
-            return assets.find(a => pattern.test(a.name));
-          }
-
-          function getSignature(assetName) {
-            const sigAsset = assets.find(a => a.name === `${assetName}.sig`);
-            return sigAsset ? sigAsset.browser_download_url : null;
-          }
-
-          const platforms = {};
-
-          // macOS aarch64
-          const macArmAsset = findAsset(/aarch64.*\.app\.tar\.gz$/);
-          if (macArmAsset) {
-            platforms['darwin-aarch64'] = {
-              signature: await fetch(`${macArmAsset.browser_download_url}.sig`).then(r => r.text()),
-              url: macArmAsset.browser_download_url,
-            };
-          }
-
-          // macOS x86_64
-          const macIntelAsset = findAsset(/x64.*\.app\.tar\.gz$/);
-          if (macIntelAsset) {
-            platforms['darwin-x86_64'] = {
-              signature: await fetch(`${macIntelAsset.browser_download_url}.sig`).then(r => r.text()),
-              url: macIntelAsset.browser_download_url,
-            };
-          }
-
-          // Linux
-          const linuxAsset = findAsset(/\.AppImage\.tar\.gz$/);
-          if (linuxAsset) {
-            platforms['linux-x86_64'] = {
-              signature: await fetch(`${linuxAsset.browser_download_url}.sig`).then(r => r.text()),
-              url: linuxAsset.browser_download_url,
-            };
-          }
-
-          // Windows
-          const winAsset = findAsset(/-setup\.exe$/);
-          if (winAsset) {
-            const winZipAsset = findAsset(/-setup\.exe\.zip$/) || winAsset;
-            platforms['windows-x86_64'] = {
-              signature: await fetch(`${winZipAsset.browser_download_url}.sig`).then(r => r.text()),
-              url: winZipAsset.browser_download_url,
-            };
-          }
-
-          const latest = {
-            version,
-            notes: release.body || `MindGrid ${version}`,
-            pub_date: new Date(release.created_at || Date.now()).toISOString(),
-            platforms,
-          };
-
-          console.log(JSON.stringify(latest, null, 2));
-
-          const fs = await import('fs');
-          fs.writeFileSync('latest.json', JSON.stringify(latest, null, 2));
-          SCRIPT
+          node scripts/generate-latest-json.mjs \
+            --tag "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --output latest.json
 
       - name: Upload latest.json to release
         uses: softprops/action-gh-release@v2

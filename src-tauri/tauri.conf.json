@@ -52,7 +52,7 @@
         "role": "Editor"
       }
     ],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "macOS": {
       "bundleName": "MindGrid",
       "minimumSystemVersion": "10.15",
