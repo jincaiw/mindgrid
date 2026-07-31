@@ -1,0 +1,270 @@
+# MindGrid 跨平台构建与发布工作流（P6.3）
+#
+# 触发条件：推送 v* 标签时自动构建 macOS / Windows / Linux 安装包并创建 GitHub Release。
+#
+# 前置条件（在仓库 Settings → Secrets 中配置）：
+#   TAURI_SIGNING_PRIVATE_KEY          — Tauri 更新签名私钥（tauri signer generate 生成）
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — 私钥密码（如有）
+#
+# 可选 Secrets（获取证书后启用代码签名）：
+#   APPLE_CERTIFICATE                  — macOS 签名证书（base64）
+#   APPLE_CERTIFICATE_PASSWORD         — 证书密码
+#   APPLE_ID                           — Apple ID 邮箱
+#   APPLE_PASSWORD                     — App-specific password
+#   APPLE_TEAM_ID                      — Apple Developer Team ID
+#   TAURI_SIGNING_CERTIFICATE          — Windows Authenticode 证书（base64）
+#   TAURI_SIGNING_CERTIFICATE_PASSWORD — Windows 证书密码
+#
+# 产物：
+#   macOS   — .dmg + .app.tar.gz + .sig
+#   Windows — .exe (NSIS) + .zip + .sig
+#   Linux   — .deb + .AppImage + .tar.gz + .sig
+#   通用    — latest.json（更新清单）
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  # ─── 单元测试门禁 ───
+  test:
+    name: Test (三绿门禁)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install pnpm dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Run frontend tests
+        run: pnpm test
+
+      - name: Build frontend
+        run: pnpm build
+
+      - name: Run Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Build CLI (feature-gated)
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features cli --bin mindgrid-file
+
+  # ─── 跨平台构建 ───
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-aarch64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - platform: macos-x86_64
+            os: macos-13
+            target: x86_64-apple-darwin
+          - platform: linux
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - platform: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - name: Install pnpm dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # Linux 系统依赖
+      - name: Install Linux dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # macOS 代码签名（可选，需配置 APPLE_* Secrets）
+      - name: Setup macOS signing
+        if: matrix.platform == 'macos-aarch64' || matrix.platform == 'macos-x86_64'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        if: ${{ env.APPLE_CERTIFICATE != '' }}
+        run: |
+          echo "APPLE_CERTIFICATE is configured, signing will be enabled"
+          # Tauri 自动读取环境变量完成签名 + 公证
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS 签名（可选）
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows 签名（可选）
+          TAURI_SIGNING_CERTIFICATE: ${{ secrets.TAURI_SIGNING_CERTIFICATE }}
+          TAURI_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.TAURI_SIGNING_CERTIFICATE_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'MindGrid ${{ github.ref_name }}'
+          releaseBody: 'MindGrid ${{ github.ref_name }} — 请查看 Assets 下载对应平台安装包。'
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+  # ─── 生成 latest.json 更新清单 ───
+  publish-updates:
+    name: Generate latest.json
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Generate latest.json from release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          node << 'SCRIPT'
+          const tag = process.env.TAG_NAME;
+          const repo = process.env.GITHUB_REPOSITORY;
+          const baseUrl = `https://github.com/${repo}/releases/download/${tag}`;
+
+          // 获取 Release 信息
+          const release = await fetch(
+            `https://api.github.com/repos/${repo}/releases/tags/${tag}`,
+            { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } }
+          ).then(r => r.json());
+
+          const version = tag.replace(/^v/, '');
+          const assets = release.assets || [];
+
+          function findAsset(pattern) {
+            return assets.find(a => pattern.test(a.name));
+          }
+
+          function getSignature(assetName) {
+            const sigAsset = assets.find(a => a.name === `${assetName}.sig`);
+            return sigAsset ? sigAsset.browser_download_url : null;
+          }
+
+          const platforms = {};
+
+          // macOS aarch64
+          const macArmAsset = findAsset(/aarch64.*\.app\.tar\.gz$/);
+          if (macArmAsset) {
+            platforms['darwin-aarch64'] = {
+              signature: await fetch(`${macArmAsset.browser_download_url}.sig`).then(r => r.text()),
+              url: macArmAsset.browser_download_url,
+            };
+          }
+
+          // macOS x86_64
+          const macIntelAsset = findAsset(/x64.*\.app\.tar\.gz$/);
+          if (macIntelAsset) {
+            platforms['darwin-x86_64'] = {
+              signature: await fetch(`${macIntelAsset.browser_download_url}.sig`).then(r => r.text()),
+              url: macIntelAsset.browser_download_url,
+            };
+          }
+
+          // Linux
+          const linuxAsset = findAsset(/\.AppImage\.tar\.gz$/);
+          if (linuxAsset) {
+            platforms['linux-x86_64'] = {
+              signature: await fetch(`${linuxAsset.browser_download_url}.sig`).then(r => r.text()),
+              url: linuxAsset.browser_download_url,
+            };
+          }
+
+          // Windows
+          const winAsset = findAsset(/-setup\.exe$/);
+          if (winAsset) {
+            const winZipAsset = findAsset(/-setup\.exe\.zip$/) || winAsset;
+            platforms['windows-x86_64'] = {
+              signature: await fetch(`${winZipAsset.browser_download_url}.sig`).then(r => r.text()),
+              url: winZipAsset.browser_download_url,
+            };
+          }
+
+          const latest = {
+            version,
+            notes: release.body || `MindGrid ${version}`,
+            pub_date: new Date(release.created_at || Date.now()).toISOString(),
+            platforms,
+          };
+
+          console.log(JSON.stringify(latest, null, 2));
+
+          const fs = await import('fs');
+          fs.writeFileSync('latest.json', JSON.stringify(latest, null, 2));
+          SCRIPT
+
+      - name: Upload latest.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
