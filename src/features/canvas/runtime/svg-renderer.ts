@@ -15,9 +15,12 @@
 import {
   COLORS,
   FONT_FAMILY,
-  NODE_RADIUS,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
+  getEdgeLineWidth,
+  getNodeRadius,
+  getTitleFontSize,
+  getTitleFontWeight,
   measureTextWidth,
   wrapText,
 } from './style-constants'
@@ -42,7 +45,6 @@ export interface SvgRenderOptions {
 }
 
 const DEFAULT_PADDING = 32
-const TEXT_PADDING = 16
 
 /**
  * 将场景序列化为 SVG 字符串。
@@ -126,10 +128,10 @@ function buildDefs(): string {
   return [
     '  <defs>',
     '    <filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="140%">',
-    '      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#0f172a" flood-opacity="0.08"/>',
+    '      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#0f172a" flood-opacity="0.10"/>',
     '    </filter>',
     '    <filter id="toggleShadow" x="-50%" y="-50%" width="200%" height="200%">',
-    '      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.12"/>',
+    '      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>',
     '    </filter>',
     '  </defs>',
   ].join('\n')
@@ -140,58 +142,52 @@ function buildDefs(): string {
 function topicToSvg(node: TopicRenderNode): string {
   const { bounds, text, depth, collapsed, childCount, style } = node
   const isRoot = depth === 0
+  const radius = getNodeRadius(depth)
+  const padding = depth === 0 ? 20 : depth === 1 ? 14 : 12
 
   const elements: string[] = []
 
   // 节点组（带阴影滤镜）
   elements.push(`  <g filter="url(#nodeShadow)">`)
   elements.push(
-    `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${NODE_RADIUS}" ry="${NODE_RADIUS}" fill="${style.fill}"/>`,
+    `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${radius}" ry="${radius}" fill="${style.fill}"/>`,
   )
   // 边框（根节点无边框，与 canvas-renderer 一致）
   if (!isRoot) {
     elements.push(
-      `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${NODE_RADIUS}" ry="${NODE_RADIUS}" fill="none" stroke="${style.borderColor}" stroke-width="1"/>`,
+      `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${radius}" ry="${radius}" fill="none" stroke="${style.borderColor}" stroke-width="1"/>`,
     )
   }
   elements.push(`  </g>`)
 
-  // 标题文字
-  const titleFontSize = isRoot ? 17 : 15
-  const titleFont = `700 ${titleFontSize}px ${FONT_FAMILY}`
-  const maxTextWidth = bounds.width - TEXT_PADDING * 2
+  // 标题文字：字号 / 字重按深度分级（参考 XMind）
+  const titleFontSize = getTitleFontSize(depth)
+  const titleFontWeight = getTitleFontWeight(depth)
+  const titleFont = `${titleFontWeight} ${titleFontSize}px ${FONT_FAMILY}`
+  const maxTextWidth = bounds.width - padding * 2
   const lines = wrapText(text, maxTextWidth, titleFont)
   const lineHeight = titleFontSize * 1.35
-  const titleY = bounds.y + TEXT_PADDING
+  const titleY = bounds.y + padding
 
   const tspans = lines
     .map(
       (line, i) =>
-        `      <tspan x="${fmt(bounds.x + TEXT_PADDING)}" dy="${i === 0 ? 0 : fmt(lineHeight)}">${escapeXml(line)}</tspan>`,
+        `      <tspan x="${fmt(bounds.x + padding)}" dy="${i === 0 ? 0 : fmt(lineHeight)}">${escapeXml(line)}</tspan>`,
     )
     .join('\n')
 
   elements.push(
-    `  <text x="${fmt(bounds.x + TEXT_PADDING)}" y="${fmt(titleY)}" font-size="${titleFontSize}" font-weight="700" fill="${style.textColor}" dominant-baseline="hanging">`,
+    `  <text x="${fmt(bounds.x + padding)}" y="${fmt(titleY)}" font-size="${titleFontSize}" font-weight="${titleFontWeight}" fill="${style.textColor}" dominant-baseline="hanging">`,
     tspans,
     `  </text>`,
   )
 
-  // 元信息（颜色跟随主题层级，不纳入节点覆盖）
-  const metaFontSize = 11
-  const metaY = titleY + lines.length * lineHeight + 4
-  const metaText = `${depth === 0 ? 'Root' : `Depth ${depth}`} · ${childCount} 子主题${
-    childCount > 0 && collapsed ? ' · 已折叠' : ''
-  }`
-
-  elements.push(
-    `  <text x="${fmt(bounds.x + TEXT_PADDING)}" y="${fmt(metaY)}" font-size="${metaFontSize}" font-weight="400" fill="${style.metaTextColor}" dominant-baseline="hanging">${escapeXml(metaText)}</text>`,
-  )
+  // 元信息已移除（参考 XMind：折叠状态由节点角的 +/− 按钮表达）
 
   // 折叠/展开按钮
   if (childCount > 0) {
-    const toggleX = bounds.x + bounds.width - 18 - TOGGLE_BUTTON_SIZE / 2
-    const toggleY = bounds.y - 12 + TOGGLE_BUTTON_SIZE / 2
+    const toggleX = bounds.x + bounds.width - 14 - TOGGLE_BUTTON_SIZE / 2
+    const toggleY = bounds.y - 8 + TOGGLE_BUTTON_SIZE / 2
     const toggleSign = collapsed ? '+' : '−'
 
     elements.push(`  <g filter="url(#toggleShadow)">`)
@@ -200,7 +196,7 @@ function topicToSvg(node: TopicRenderNode): string {
     )
     elements.push(`  </g>`)
     elements.push(
-      `  <text x="${fmt(toggleX)}" y="${fmt(toggleY)}" font-size="16" font-weight="400" fill="${COLORS.text}" text-anchor="middle" dominant-baseline="central">${escapeXml(toggleSign)}</text>`,
+      `  <text x="${fmt(toggleX)}" y="${fmt(toggleY)}" font-size="13" font-weight="400" fill="${COLORS.text}" text-anchor="middle" dominant-baseline="central">${escapeXml(toggleSign)}</text>`,
     )
   }
 
@@ -208,13 +204,12 @@ function topicToSvg(node: TopicRenderNode): string {
 }
 
 function edgeToSvg(node: EdgeRenderNode): string {
-  const { start, end, control1, control2, isActive } = node
-  const stroke = isActive ? COLORS.edgeActive : COLORS.edge
-  const strokeWidth = isActive ? 4 : 3
+  const { start, end, control1, control2, isActive, childDepth, branchColor } = node
+  const strokeWidth = getEdgeLineWidth(childDepth, isActive)
 
   const d = `M ${fmt(start.x)} ${fmt(start.y)} C ${fmt(control1.x)} ${fmt(control1.y)}, ${fmt(control2.x)} ${fmt(control2.y)}, ${fmt(end.x)} ${fmt(end.y)}`
 
-  return `  <path d="${d}" fill="none" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round"/>`
+  return `  <path d="${d}" fill="none" stroke="${branchColor}" stroke-width="${fmt(strokeWidth)}" stroke-linecap="round"/>`
 }
 
 function boundaryToSvg(node: BoundaryRenderNode): string {

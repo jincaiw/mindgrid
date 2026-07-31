@@ -47,8 +47,8 @@ export const BUILT_IN_THEMES: ThemePalette[] = [
   {
     id: 'classic-blue',
     name: '经典蓝',
-    background: 'rgba(238, 244, 255, 0.82)',
-    gridLine: 'rgba(91, 140, 255, 0.06)',
+    background: '#f5f5f7',
+    gridLine: 'rgba(0, 0, 0, 0.06)',
     root: {
       fill: 'rgba(91, 140, 255, 0.96)',
       textColor: '#ffffff',
@@ -56,10 +56,10 @@ export const BUILT_IN_THEMES: ThemePalette[] = [
       borderColor: 'transparent',
     },
     branch: {
-      fill: 'rgba(255, 255, 255, 0.94)',
-      textColor: '#0f172a',
-      metaTextColor: 'rgba(15, 23, 42, 0.54)',
-      borderColor: 'rgba(15, 23, 42, 0.08)',
+      fill: '#ffffff',
+      textColor: '#1d1d1f',
+      metaTextColor: 'rgba(60, 60, 67, 0.6)',
+      borderColor: 'rgba(0, 0, 0, 0.08)',
     },
     edge: 'rgba(41, 88, 176, 0.34)',
     edgeActive: 'rgba(59, 130, 246, 0.74)',
@@ -67,16 +67,16 @@ export const BUILT_IN_THEMES: ThemePalette[] = [
   {
     id: 'dark',
     name: '暗夜',
-    background: '#0b1220',
-    gridLine: 'rgba(148, 163, 184, 0.06)',
+    background: '#1a1a2e',
+    gridLine: 'rgba(255, 255, 255, 0.04)',
     root: {
-      fill: '#1e293b',
+      fill: '#2d3748',
       textColor: '#e2e8f0',
       metaTextColor: 'rgba(226, 232, 240, 0.82)',
       borderColor: 'transparent',
     },
     branch: {
-      fill: '#0f172a',
+      fill: '#1e293b',
       textColor: '#e2e8f0',
       metaTextColor: 'rgba(226, 232, 240, 0.54)',
       borderColor: 'rgba(148, 163, 184, 0.12)',
@@ -87,7 +87,7 @@ export const BUILT_IN_THEMES: ThemePalette[] = [
   {
     id: 'warm',
     name: '暖阳',
-    background: '#fffbeb',
+    background: '#fef9f3',
     gridLine: 'rgba(234, 88, 12, 0.06)',
     root: {
       fill: '#ea580c',
@@ -128,7 +128,7 @@ export const BUILT_IN_THEMES: ThemePalette[] = [
     id: 'minimal',
     name: '极简',
     background: '#ffffff',
-    gridLine: 'rgba(17, 24, 39, 0.04)',
+    gridLine: 'rgba(17, 24, 39, 0.05)',
     root: {
       fill: '#111827',
       textColor: '#ffffff',

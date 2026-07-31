@@ -12,6 +12,7 @@ import type {
   TopicTaskStatus,
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
+import { GridIcon, GroupIcon, LinkIcon, TypeIcon } from './icons'
 
 interface DocumentTopicEntry {
   topicId: string
@@ -86,6 +87,22 @@ const FILL_PRESETS = [
   '#16a34a',
 ]
 
+/** Inspector tab 类型：上下文感知面板，参考 XMind 右侧 Inspector tab 结构。 */
+type InspectorTab = 'topic' | 'canvas' | 'relationships' | 'grouping'
+
+interface TabConfig {
+  id: InspectorTab
+  label: string
+  icon: typeof TypeIcon
+}
+
+const TABS: TabConfig[] = [
+  { id: 'topic', label: '主题', icon: TypeIcon },
+  { id: 'canvas', label: '画布', icon: GridIcon },
+  { id: 'relationships', label: '关系线', icon: LinkIcon },
+  { id: 'grouping', label: '分组', icon: GroupIcon },
+]
+
 interface InspectorProps {
   session: DocumentSession
   selectedTopicIds: string[]
@@ -132,6 +149,9 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
   // —— 文档主题：列出内置主题，标记当前主题 ——
   const themes = useMemo(() => listThemes(), [])
   const currentThemeId = session.document?.theme?.id ?? DEFAULT_THEME_ID
+
+  // —— Tab 状态：默认主题 tab，选中节点时直接编辑富内容 ——
+  const [activeTab, setActiveTab] = useState<InspectorTab>('topic')
 
   useEffect(() => {
     setMoveTargetSheetId(movableTargetSheets[0]?.id ?? '')
@@ -224,690 +244,761 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
 
   return (
     <aside className="panel panel--inspector" aria-label="右侧检查器">
-      <div className="panel__section">
-        <p className="panel__eyebrow">Inspector</p>
-        <h2 className="panel__title">属性面板</h2>
-        <p className="panel__muted">
-          当前阶段先展示真实选中节点信息，为后续 Style、Layout、Note 和 Link 编辑器预留结构。
-        </p>
+      <div className="panel__tabs" role="tablist" aria-label="属性面板分类">
+        {TABS.map((tab) => {
+          const Icon = tab.icon
+          const selected = tab.id === activeTab
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`inspector-tab-${tab.id}`}
+              aria-selected={selected}
+              aria-controls={`inspector-tabpanel-${tab.id}`}
+              className={`panel__tab${selected ? ' panel__tab--active' : ''}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <Icon size={14} />
+              <span>{tab.label}</span>
+            </button>
+          )
+        })}
       </div>
 
-      <div className="accordion-card">
-        <span>当前画布</span>
-        <span>{activeSheet?.title ?? '未命名画布'}</span>
-      </div>
-      <div className="accordion-card">
-        <span>{hasMultipleSelectedTopics ? '当前选择' : '当前主题'}</span>
-        <span>{hasMultipleSelectedTopics ? `已选中 ${normalizedSelectedTopicIds.length} 个主题` : activeTopic?.text ?? '未选中'}</span>
-      </div>
-      <div className="accordion-card">
-        <span>子主题数</span>
-        <span>{activeTopic?.children.length ?? 0}</span>
-      </div>
-      <div className="accordion-card">
-        <span>历史能力</span>
-        <span>
-          {session.canUndo ? '可撤销' : '无撤销'}
-          {' / '}
-          {session.canRedo ? '可重做' : '无重做'}
-        </span>
-      </div>
-
-      <div className="panel__section">
-        <p className="panel__eyebrow">Theme</p>
-        <h3 className="panel__title">文档主题</h3>
-        <p className="panel__muted">
-          一键切换整篇文档的配色方案。节点级颜色覆盖会优先生效。
-        </p>
-        <div className="panel__theme-grid" role="radiogroup" aria-label="文档主题">
-          {themes.map((theme) => {
-            const selected = theme.id === currentThemeId
-            return (
-              <button
-                key={theme.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                className={`panel__theme-swatch${selected ? ' panel__theme-swatch--active' : ''}`}
-                title={theme.name}
-                onClick={() => void session.setDocumentTheme(theme.id)}
-              >
-                <span
-                  className="panel__theme-swatch-color"
-                  style={{ background: theme.root.fill }}
-                />
-                <span
-                  className="panel__theme-swatch-color panel__theme-swatch-color--branch"
-                  style={{ background: theme.branch.fill }}
-                />
-                <span className="panel__theme-swatch-name">{theme.name}</span>
-              </button>
-            )
-          })}
-        </div>
-        {currentThemeId !== DEFAULT_THEME_ID ? (
-          <button
-            className="panel__action panel__action--ghost"
-            type="button"
-            onClick={() => void session.setDocumentTheme(null)}
+      <div className="panel__tab-body">
+        {activeTab === 'topic' ? (
+          <div
+            id="inspector-tabpanel-topic"
+            role="tabpanel"
+            aria-labelledby="inspector-tab-topic"
+            className="panel__tab-panel"
           >
-            恢复默认主题
-          </button>
-        ) : null}
-      </div>
-
-      {activeTopic && !hasMultipleSelectedTopics ? (
-        <div className="panel__section">
-          <p className="panel__eyebrow">Rich Content</p>
-          <h3 className="panel__title">富内容编辑</h3>
-          <p className="panel__muted">
-            编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
-          </p>
-
-          <label className="panel__field">
-            <span>备注</span>
-            <textarea
-              value={notesDraft}
-              onChange={(e) => setNotesDraft(e.target.value)}
-              onBlur={() => {
-                const next = notesDraft.trim() || null
-                if ((activeTopic.notes ?? null) !== next) {
-                  void session.setTopicNotes(activeTopic.id, next)
-                }
-              }}
-              placeholder="为该主题添加详细备注…"
-            />
-          </label>
-
-          <label className="panel__field">
-            <span>链接地址</span>
-            <input
-              type="url"
-              value={linkUrlDraft}
-              onChange={(e) => setLinkUrlDraft(e.target.value)}
-              onBlur={() => {
-                const url = linkUrlDraft.trim()
-                const title = linkTitleDraft.trim()
-                const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
-                const currentLink = activeTopic.link ?? null
-                const same =
-                  currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
-                if (!same) {
-                  void session.setTopicLink(activeTopic.id, nextLink)
-                }
-              }}
-              placeholder="https://example.com"
-            />
-          </label>
-          <label className="panel__field">
-            <span>链接标题</span>
-            <input
-              type="text"
-              value={linkTitleDraft}
-              onChange={(e) => setLinkTitleDraft(e.target.value)}
-              onBlur={() => {
-                const url = linkUrlDraft.trim()
-                const title = linkTitleDraft.trim()
-                const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
-                const currentLink = activeTopic.link ?? null
-                const same =
-                  currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
-                if (!same) {
-                  void session.setTopicLink(activeTopic.id, nextLink)
-                }
-              }}
-              placeholder="可选的链接显示文字"
-            />
-          </label>
-
-          <label className="panel__field">
-            <span>标签（逗号分隔）</span>
-            <input
-              type="text"
-              value={labelsDraft}
-              onChange={(e) => setLabelsDraft(e.target.value)}
-              onBlur={() => {
-                const next = labelsDraft
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean)
-                const current = activeTopic.labels ?? []
-                if (JSON.stringify(current) !== JSON.stringify(next)) {
-                  void session.setTopicLabels(activeTopic.id, next)
-                }
-              }}
-              placeholder="重要, 待办, 项目A"
-            />
-          </label>
-
-          <label className="panel__field">
-            <span>标记（逗号分隔）</span>
-            <input
-              type="text"
-              value={markersDraft}
-              onChange={(e) => setMarkersDraft(e.target.value)}
-              onBlur={() => {
-                const tokens = markersDraft
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean)
-                const next: TopicMarker[] = tokens.map((token, index) => ({
-                  id: `${activeTopic.id}-marker-${index + 1}`,
-                  ...(token ? { label: token } : {}),
-                }))
-                const current = activeTopic.markers ?? []
-                const sameLength = current.length === next.length
-                const same =
-                  sameLength &&
-                  next.every((m, i) => m.label === current[i]?.label)
-                if (!same) {
-                  void session.setTopicMarkers(activeTopic.id, next)
-                }
-              }}
-              placeholder="旗帜, 优先级1, 进度50%"
-            />
-          </label>
-
-          <label className="panel__field">
-            <span>样式引用</span>
-            <input
-              type="text"
-              value={styleRefDraft}
-              onChange={(e) => setStyleRefDraft(e.target.value)}
-              onBlur={() => {
-                const next = styleRefDraft.trim() || null
-                if ((activeTopic.styleRef ?? null) !== next) {
-                  void session.setTopicStyleRef(activeTopic.id, next)
-                }
-              }}
-              placeholder="styles.json 中的样式 ID"
-            />
-          </label>
-
-          <div className="panel__field">
-            <span>节点颜色覆盖</span>
-            <div className="panel__field-row">
-              <label className="panel__color-input">
-                <span>填充</span>
-                <input
-                  type="color"
-                  aria-label="节点填充色"
-                  value={toHexColor(fillDraft, '#ffffff')}
-                  onChange={(e) => setFillDraft(e.target.value)}
-                  onBlur={() => {
-                    const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
-                    if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
-                      void session.setTopicStyleOverrides(activeTopic.id, next)
-                    }
-                  }}
-                />
-              </label>
-              <label className="panel__color-input">
-                <span>文字</span>
-                <input
-                  type="color"
-                  aria-label="节点文字色"
-                  value={toHexColor(textColorDraft, '#0f172a')}
-                  onChange={(e) => setTextColorDraft(e.target.value)}
-                  onBlur={() => {
-                    const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
-                    if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
-                      void session.setTopicStyleOverrides(activeTopic.id, next)
-                    }
-                  }}
-                />
-              </label>
-              <label className="panel__color-input">
-                <span>边框</span>
-                <input
-                  type="color"
-                  aria-label="节点边框色"
-                  value={toHexColor(borderColorDraft, '#94a3b8')}
-                  onChange={(e) => setBorderColorDraft(e.target.value)}
-                  onBlur={() => {
-                    const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
-                    if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
-                      void session.setTopicStyleOverrides(activeTopic.id, next)
-                    }
-                  }}
-                />
-              </label>
+            <div className="panel__section">
+              <p className="panel__eyebrow">Topic</p>
+              <h3 className="panel__title">主题属性</h3>
+              <div className="accordion-card">
+                <span>{hasMultipleSelectedTopics ? '当前选择' : '当前主题'}</span>
+                <span>
+                  {hasMultipleSelectedTopics
+                    ? `已选中 ${normalizedSelectedTopicIds.length} 个主题`
+                    : activeTopic?.text ?? '未选中'}
+                </span>
+              </div>
+              <div className="accordion-card">
+                <span>子主题数</span>
+                <span>{activeTopic?.children.length ?? 0}</span>
+              </div>
             </div>
-            <div className="panel__chips" role="group" aria-label="填充色快速预设">
-              {FILL_PRESETS.map((color) => (
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <div className="panel__section">
+                <p className="panel__eyebrow">Rich Content</p>
+                <h3 className="panel__title">富内容编辑</h3>
+                <p className="panel__muted">
+                  编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
+                </p>
+
+                <label className="panel__field">
+                  <span>备注</span>
+                  <textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    onBlur={() => {
+                      const next = notesDraft.trim() || null
+                      if ((activeTopic.notes ?? null) !== next) {
+                        void session.setTopicNotes(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="为该主题添加详细备注…"
+                  />
+                </label>
+
+                <label className="panel__field">
+                  <span>链接地址</span>
+                  <input
+                    type="url"
+                    value={linkUrlDraft}
+                    onChange={(e) => setLinkUrlDraft(e.target.value)}
+                    onBlur={() => {
+                      const url = linkUrlDraft.trim()
+                      const title = linkTitleDraft.trim()
+                      const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
+                      const currentLink = activeTopic.link ?? null
+                      const same =
+                        currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
+                      if (!same) {
+                        void session.setTopicLink(activeTopic.id, nextLink)
+                      }
+                    }}
+                    placeholder="https://example.com"
+                  />
+                </label>
+                <label className="panel__field">
+                  <span>链接标题</span>
+                  <input
+                    type="text"
+                    value={linkTitleDraft}
+                    onChange={(e) => setLinkTitleDraft(e.target.value)}
+                    onBlur={() => {
+                      const url = linkUrlDraft.trim()
+                      const title = linkTitleDraft.trim()
+                      const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
+                      const currentLink = activeTopic.link ?? null
+                      const same =
+                        currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
+                      if (!same) {
+                        void session.setTopicLink(activeTopic.id, nextLink)
+                      }
+                    }}
+                    placeholder="可选的链接显示文字"
+                  />
+                </label>
+
+                <label className="panel__field">
+                  <span>标签（逗号分隔）</span>
+                  <input
+                    type="text"
+                    value={labelsDraft}
+                    onChange={(e) => setLabelsDraft(e.target.value)}
+                    onBlur={() => {
+                      const next = labelsDraft
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                      const current = activeTopic.labels ?? []
+                      if (JSON.stringify(current) !== JSON.stringify(next)) {
+                        void session.setTopicLabels(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="重要, 待办, 项目A"
+                  />
+                </label>
+
+                <label className="panel__field">
+                  <span>标记（逗号分隔）</span>
+                  <input
+                    type="text"
+                    value={markersDraft}
+                    onChange={(e) => setMarkersDraft(e.target.value)}
+                    onBlur={() => {
+                      const tokens = markersDraft
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                      const next: TopicMarker[] = tokens.map((token, index) => ({
+                        id: `${activeTopic.id}-marker-${index + 1}`,
+                        ...(token ? { label: token } : {}),
+                      }))
+                      const current = activeTopic.markers ?? []
+                      const sameLength = current.length === next.length
+                      const same =
+                        sameLength &&
+                        next.every((m, i) => m.label === current[i]?.label)
+                      if (!same) {
+                        void session.setTopicMarkers(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="旗帜, 优先级1, 进度50%"
+                  />
+                </label>
+
+                <label className="panel__field">
+                  <span>样式引用</span>
+                  <input
+                    type="text"
+                    value={styleRefDraft}
+                    onChange={(e) => setStyleRefDraft(e.target.value)}
+                    onBlur={() => {
+                      const next = styleRefDraft.trim() || null
+                      if ((activeTopic.styleRef ?? null) !== next) {
+                        void session.setTopicStyleRef(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="styles.json 中的样式 ID"
+                  />
+                </label>
+
+                <div className="panel__field">
+                  <span>节点颜色覆盖</span>
+                  <div className="panel__field-row">
+                    <label className="panel__color-input">
+                      <span>填充</span>
+                      <input
+                        type="color"
+                        aria-label="节点填充色"
+                        value={toHexColor(fillDraft, '#ffffff')}
+                        onChange={(e) => setFillDraft(e.target.value)}
+                        onBlur={() => {
+                          const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
+                          if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
+                            void session.setTopicStyleOverrides(activeTopic.id, next)
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="panel__color-input">
+                      <span>文字</span>
+                      <input
+                        type="color"
+                        aria-label="节点文字色"
+                        value={toHexColor(textColorDraft, '#0f172a')}
+                        onChange={(e) => setTextColorDraft(e.target.value)}
+                        onBlur={() => {
+                          const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
+                          if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
+                            void session.setTopicStyleOverrides(activeTopic.id, next)
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="panel__color-input">
+                      <span>边框</span>
+                      <input
+                        type="color"
+                        aria-label="节点边框色"
+                        value={toHexColor(borderColorDraft, '#94a3b8')}
+                        onChange={(e) => setBorderColorDraft(e.target.value)}
+                        onBlur={() => {
+                          const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
+                          if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
+                            void session.setTopicStyleOverrides(activeTopic.id, next)
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="panel__chips" role="group" aria-label="填充色快速预设">
+                    {FILL_PRESETS.map((color) => (
+                      <button
+                        key={color}
+                        type="button"
+                        className="panel__chip panel__chip--color"
+                        style={{ background: color }}
+                        aria-label={`应用填充色 ${color}`}
+                        onClick={() => {
+                          const next = buildStyleOverrides(color, textColorDraft, borderColorDraft)
+                          void session.setTopicStyleOverrides(activeTopic.id, next)
+                        }}
+                      />
+                    ))}
+                  </div>
+                  {activeTopic.styleOverrides ? (
+                    <button
+                      className="panel__action panel__action--ghost"
+                      type="button"
+                      onClick={() => void session.setTopicStyleOverrides(activeTopic.id, null)}
+                    >
+                      清除颜色覆盖
+                    </button>
+                  ) : null}
+                </div>
+
+                <div className="panel__field">
+                  <span>任务</span>
+                  <div className="panel__field-row">
+                    <select
+                      aria-label="任务状态"
+                      value={taskStatusDraft}
+                      onChange={(e) => {
+                        const nextStatus = e.target.value as TopicTaskStatus
+                        setTaskStatusDraft(nextStatus)
+                        const priority = taskPriorityDraft
+                          ? Number.parseInt(taskPriorityDraft, 10)
+                          : undefined
+                        const dueDateMs = taskDueDateDraft
+                          ? new Date(taskDueDateDraft).getTime()
+                          : undefined
+                        const nextTask: TopicTask | null =
+                          nextStatus === 'none'
+                            ? null
+                            : { status: nextStatus, ...(priority != null ? { priority } : {}), ...(dueDateMs != null ? { dueDateMs } : {}) }
+                        void session.setTopicTask(activeTopic.id, nextTask)
+                      }}
+                    >
+                      <option value="none">无任务</option>
+                      <option value="pending">待办</option>
+                      <option value="started">进行中</option>
+                      <option value="completed">已完成</option>
+                    </select>
+                    <input
+                      type="number"
+                      aria-label="任务优先级"
+                      min={1}
+                      max={5}
+                      value={taskPriorityDraft}
+                      onChange={(e) => setTaskPriorityDraft(e.target.value)}
+                      onBlur={() => {
+                        if (taskStatusDraft === 'none') return
+                        const priority = taskPriorityDraft
+                          ? Number.parseInt(taskPriorityDraft, 10)
+                          : undefined
+                        const dueDateMs = taskDueDateDraft
+                          ? new Date(taskDueDateDraft).getTime()
+                          : undefined
+                        const currentPriority = activeTopic.task?.priority
+                        if (currentPriority !== priority) {
+                          const nextTask: TopicTask = {
+                            status: taskStatusDraft,
+                            ...(priority != null ? { priority } : {}),
+                            ...(dueDateMs != null ? { dueDateMs } : {}),
+                          }
+                          void session.setTopicTask(activeTopic.id, nextTask)
+                        }
+                      }}
+                      placeholder="优先级 1-5"
+                    />
+                  </div>
+                  <input
+                    type="date"
+                    aria-label="任务截止日期"
+                    value={taskDueDateDraft}
+                    onChange={(e) => setTaskDueDateDraft(e.target.value)}
+                    onBlur={() => {
+                      if (taskStatusDraft === 'none') return
+                      const priority = taskPriorityDraft
+                        ? Number.parseInt(taskPriorityDraft, 10)
+                        : undefined
+                      const dueDateMs = taskDueDateDraft
+                        ? new Date(taskDueDateDraft).getTime()
+                        : undefined
+                      const currentDue = activeTopic.task?.dueDateMs
+                      if (currentDue !== dueDateMs) {
+                        const nextTask: TopicTask = {
+                          status: taskStatusDraft,
+                          ...(priority != null ? { priority } : {}),
+                          ...(dueDateMs != null ? { dueDateMs } : {}),
+                        }
+                        void session.setTopicTask(activeTopic.id, nextTask)
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            ) : (
+              <p className="panel__muted">
+                {hasMultipleSelectedTopics
+                  ? '当前为多选状态，富内容编辑不可用。请按 Esc 回到单选后再编辑。'
+                  : '在画布或左侧大纲中选中一个主题，即可编辑其备注、链接、标签、任务与样式。'}
+              </p>
+            )}
+
+            <div className="panel__section">
+              <p className="panel__eyebrow">Move</p>
+              <h3 className="panel__title">跨画布移动</h3>
+              <p className="panel__muted">
+                把当前主题分支移动或复制到另一张画布，并可指定目标父主题；完成后会自动切换过去。
+              </p>
+              <label className="panel__field">
+                <span>目标画布</span>
+                <select
+                  value={moveTargetSheetId}
+                  onChange={(event) => setMoveTargetSheetId(event.target.value)}
+                  disabled={movableTargetSheets.length === 0}
+                >
+                  {movableTargetSheets.length === 0 ? (
+                    <option value="">当前没有其他画布</option>
+                  ) : null}
+                  {movableTargetSheets.map((sheet) => (
+                    <option key={sheet.id} value={sheet.id}>
+                      {sheet.title}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="panel__field">
+                <span>目标父主题</span>
+                <select
+                  value={moveTargetParentId}
+                  onChange={(event) => setMoveTargetParentId(event.target.value)}
+                  disabled={!targetSheet}
+                >
+                  {!targetSheet ? <option value="">请先选择目标画布</option> : null}
+                  {movableTargetParents.map((entry) => (
+                    <option key={entry.topicId} value={entry.topicId}>
+                      {entry.path.join(' / ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                className="panel__action"
+                type="button"
+                disabled={
+                  hasMultipleSelectedTopics
+                    ? normalizedSelectedTopicIds.length === 0
+                    : !activeTopic ||
+                      !activeSheet ||
+                      activeTopic.id === activeSheet.rootTopic.id ||
+                      !moveTargetSheetId ||
+                      !moveTargetParentId
+                }
+                onClick={() => {
+                  const actionLabel =
+                    targetSheet && moveTargetParentEntry
+                      ? moveTargetParentEntry.topicId === targetSheet.rootTopic.id
+                        ? `${hasMultipleSelectedTopics ? `批量移动 ${normalizedSelectedTopicIds.length} 个主题` : '移动主题'}到画布“${targetSheet.title}”根主题`
+                        : `${hasMultipleSelectedTopics ? `批量移动 ${normalizedSelectedTopicIds.length} 个主题` : '移动主题'}到画布“${targetSheet.title}”的“${moveTargetParentEntry.path.join(' / ')}”下面`
+                      : hasMultipleSelectedTopics
+                        ? '批量移动主题到其他画布'
+                        : '移动主题到其他画布'
+
+                  if (hasMultipleSelectedTopics) {
+                    void session.moveTopicsToSheet(
+                      normalizedSelectedTopicIds,
+                      moveTargetSheetId,
+                      moveTargetParentId,
+                      actionLabel,
+                    )
+                    return
+                  }
+
+                  if (!activeTopic) {
+                    return
+                  }
+
+                  void session.moveTopicToSheet(
+                    activeTopic.id,
+                    moveTargetSheetId,
+                    moveTargetParentId,
+                    actionLabel,
+                  )
+                }}
+              >
+                {hasMultipleSelectedTopics ? '批量移动到目标画布' : '移动到目标画布'}
+              </button>
+              <button
+                className="panel__action"
+                type="button"
+                disabled={
+                  hasMultipleSelectedTopics
+                    ? normalizedSelectedTopicIds.length === 0
+                    : !activeTopic ||
+                      !activeSheet ||
+                      activeTopic.id === activeSheet.rootTopic.id ||
+                      !moveTargetSheetId ||
+                      !moveTargetParentId
+                }
+                onClick={() => {
+                  const actionLabel =
+                    targetSheet && moveTargetParentEntry
+                      ? moveTargetParentEntry.topicId === targetSheet.rootTopic.id
+                        ? `${hasMultipleSelectedTopics ? `批量复制 ${normalizedSelectedTopicIds.length} 个主题` : '复制主题'}到画布“${targetSheet.title}”根主题`
+                        : `${hasMultipleSelectedTopics ? `批量复制 ${normalizedSelectedTopicIds.length} 个主题` : '复制主题'}到画布“${targetSheet.title}”的“${moveTargetParentEntry.path.join(' / ')}”下面`
+                      : hasMultipleSelectedTopics
+                        ? '批量复制主题到其他画布'
+                        : '复制主题到其他画布'
+
+                  if (hasMultipleSelectedTopics) {
+                    void session.copyTopicsToSheet(
+                      normalizedSelectedTopicIds,
+                      moveTargetSheetId,
+                      moveTargetParentId,
+                      actionLabel,
+                    )
+                    return
+                  }
+
+                  if (!activeTopic) {
+                    return
+                  }
+
+                  void session.copyTopicToSheet(
+                    activeTopic.id,
+                    moveTargetSheetId,
+                    moveTargetParentId,
+                    actionLabel,
+                  )
+                }}
+              >
+                {hasMultipleSelectedTopics ? '批量复制到目标画布' : '复制到目标画布'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === 'canvas' ? (
+          <div
+            id="inspector-tabpanel-canvas"
+            role="tabpanel"
+            aria-labelledby="inspector-tab-canvas"
+            className="panel__tab-panel"
+          >
+            <div className="panel__section">
+              <p className="panel__eyebrow">Canvas</p>
+              <h3 className="panel__title">画布信息</h3>
+              <div className="accordion-card">
+                <span>当前画布</span>
+                <span>{activeSheet?.title ?? '未命名画布'}</span>
+              </div>
+              <div className="accordion-card">
+                <span>历史能力</span>
+                <span>
+                  {session.canUndo ? '可撤销' : '无撤销'}
+                  {' / '}
+                  {session.canRedo ? '可重做' : '无重做'}
+                </span>
+              </div>
+            </div>
+
+            <div className="panel__section">
+              <p className="panel__eyebrow">Theme</p>
+              <h3 className="panel__title">文档主题</h3>
+              <p className="panel__muted">
+                一键切换整篇文档的配色方案。节点级颜色覆盖会优先生效。
+              </p>
+              <div className="panel__theme-grid" role="radiogroup" aria-label="文档主题">
+                {themes.map((theme) => {
+                  const selected = theme.id === currentThemeId
+                  return (
+                    <button
+                      key={theme.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`panel__theme-swatch${selected ? ' panel__theme-swatch--active' : ''}`}
+                      title={theme.name}
+                      onClick={() => void session.setDocumentTheme(theme.id)}
+                    >
+                      <span
+                        className="panel__theme-swatch-color"
+                        style={{ background: theme.root.fill }}
+                      />
+                      <span
+                        className="panel__theme-swatch-color panel__theme-swatch-color--branch"
+                        style={{ background: theme.branch.fill }}
+                      />
+                      <span className="panel__theme-swatch-name">{theme.name}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {currentThemeId !== DEFAULT_THEME_ID ? (
                 <button
-                  key={color}
+                  className="panel__action panel__action--ghost"
                   type="button"
-                  className="panel__chip panel__chip--color"
-                  style={{ background: color }}
-                  aria-label={`应用填充色 ${color}`}
-                  onClick={() => {
-                    const next = buildStyleOverrides(color, textColorDraft, borderColorDraft)
-                    void session.setTopicStyleOverrides(activeTopic.id, next)
-                  }}
+                  onClick={() => void session.setDocumentTheme(null)}
+                >
+                  恢复默认主题
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === 'relationships' ? (
+          <div
+            id="inspector-tabpanel-relationships"
+            role="tabpanel"
+            aria-labelledby="inspector-tab-relationships"
+            className="panel__tab-panel"
+          >
+            <div className="panel__section">
+              <p className="panel__eyebrow">Relationships</p>
+              <h3 className="panel__title">关系线</h3>
+              <p className="panel__muted">
+                在任意两个主题之间建立非父子连接，用于表达跨分支或跨画布的关联。关系线保存在文档级别。
+              </p>
+
+              {documentRelationships.length > 0 ? (
+                <ul className="panel__entries">
+                  {documentRelationships.map((rel) => {
+                    const fromText = session.document
+                      ? resolveTopicText(session.document.sheets, rel.fromTopicId)
+                      : rel.fromTopicId
+                    const toText = session.document
+                      ? resolveTopicText(session.document.sheets, rel.toTopicId)
+                      : rel.toTopicId
+                    return (
+                      <li key={rel.id} className="panel__entry">
+                        <span className="panel__entry-text">
+                          {fromText} → {toText}
+                          {rel.label ? `（${rel.label}）` : ''}
+                        </span>
+                        <button
+                          className="panel__action panel__action--ghost"
+                          type="button"
+                          onClick={() => void session.deleteRelationship(rel.id)}
+                        >
+                          删除
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              ) : (
+                <p className="panel__muted">暂无关系线</p>
+              )}
+
+              <label className="panel__field">
+                <span>起点主题</span>
+                <select value={relFromId} onChange={(e) => setRelFromId(e.target.value)}>
+                  {documentTopicEntries.length === 0 ? <option value="">暂无主题</option> : null}
+                  {documentTopicEntries.map((entry) => (
+                    <option key={entry.topicId} value={entry.topicId}>
+                      {entry.path.join(' / ')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="panel__field">
+                <span>终点主题</span>
+                <select value={relToId} onChange={(e) => setRelToId(e.target.value)}>
+                  <option value="">请选择终点主题</option>
+                  {documentTopicEntries
+                    .filter((entry) => entry.topicId !== relFromId)
+                    .map((entry) => (
+                      <option key={entry.topicId} value={entry.topicId}>
+                        {entry.path.join(' / ')}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <label className="panel__field">
+                <span>标签（可选）</span>
+                <input
+                  type="text"
+                  value={relLabel}
+                  onChange={(e) => setRelLabel(e.target.value)}
+                  placeholder="例如：依赖、关联、引用"
                 />
-              ))}
-            </div>
-            {activeTopic.styleOverrides ? (
+              </label>
               <button
-                className="panel__action panel__action--ghost"
+                className="panel__action"
                 type="button"
-                onClick={() => void session.setTopicStyleOverrides(activeTopic.id, null)}
+                disabled={!canCreateRelationship}
+                onClick={() => {
+                  const label = relLabel.trim() || null
+                  void session.createRelationship(relFromId, relToId, label)
+                  setRelToId('')
+                  setRelLabel('')
+                }}
               >
-                清除颜色覆盖
+                创建关系线
               </button>
-            ) : null}
+            </div>
           </div>
+        ) : null}
 
-          <div className="panel__field">
-            <span>任务</span>
-            <div className="panel__field-row">
-              <select
-                aria-label="任务状态"
-                value={taskStatusDraft}
-                onChange={(e) => {
-                  const nextStatus = e.target.value as TopicTaskStatus
-                  setTaskStatusDraft(nextStatus)
-                  const priority = taskPriorityDraft
-                    ? Number.parseInt(taskPriorityDraft, 10)
-                    : undefined
-                  const dueDateMs = taskDueDateDraft
-                    ? new Date(taskDueDateDraft).getTime()
-                    : undefined
-                  const nextTask: TopicTask | null =
-                    nextStatus === 'none'
-                      ? null
-                      : { status: nextStatus, ...(priority != null ? { priority } : {}), ...(dueDateMs != null ? { dueDateMs } : {}) }
-                  void session.setTopicTask(activeTopic.id, nextTask)
+        {activeTab === 'grouping' ? (
+          <div
+            id="inspector-tabpanel-grouping"
+            role="tabpanel"
+            aria-labelledby="inspector-tab-grouping"
+            className="panel__tab-panel"
+          >
+            <div className="panel__section">
+              <p className="panel__eyebrow">Grouping</p>
+              <h3 className="panel__title">边界与概要</h3>
+              <p className="panel__muted">
+                为当前画布中的若干主题添加视觉分组（边界）或归纳说明（概要）。先在画布上选中至少 2 个主题，再创建。
+              </p>
+
+              {sheetBoundaries.length > 0 ? (
+                <>
+                  <p className="panel__eyebrow">边界</p>
+                  <ul className="panel__entries">
+                    {sheetBoundaries.map((boundary) => (
+                      <li key={boundary.id} className="panel__entry">
+                        <span className="panel__entry-text">
+                          {boundary.label || '未命名边界'}（{boundary.topicIds.length} 个主题）
+                        </span>
+                        <button
+                          className="panel__action panel__action--ghost"
+                          type="button"
+                          onClick={() =>
+                            activeSheet && void session.deleteBoundary(activeSheet.id, boundary.id)
+                          }
+                        >
+                          删除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+
+              {sheetSummaries.length > 0 ? (
+                <>
+                  <p className="panel__eyebrow">概要</p>
+                  <ul className="panel__entries">
+                    {sheetSummaries.map((summary) => (
+                      <li key={summary.id} className="panel__entry">
+                        <span className="panel__entry-text">
+                          {summary.label}（{summary.topicIds.length} 个主题）
+                        </span>
+                        <button
+                          className="panel__action panel__action--ghost"
+                          type="button"
+                          onClick={() =>
+                            activeSheet && void session.deleteSummary(activeSheet.id, summary.id)
+                          }
+                        >
+                          删除
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+
+              <label className="panel__field">
+                <span>边界标签（可选）</span>
+                <input
+                  type="text"
+                  value={boundaryLabel}
+                  onChange={(e) => setBoundaryLabel(e.target.value)}
+                  placeholder="例如：核心模块、风险项"
+                />
+              </label>
+              <button
+                className="panel__action"
+                type="button"
+                disabled={!canCreateBoundaryFromSelection || !activeSheet}
+                onClick={() => {
+                  if (!activeSheet) return
+                  const label = boundaryLabel.trim() || null
+                  void session.createBoundary(activeSheet.id, normalizedSelectedTopicIds, label)
+                  setBoundaryLabel('')
                 }}
               >
-                <option value="none">无任务</option>
-                <option value="pending">待办</option>
-                <option value="started">进行中</option>
-                <option value="completed">已完成</option>
-              </select>
-              <input
-                type="number"
-                aria-label="任务优先级"
-                min={1}
-                max={5}
-                value={taskPriorityDraft}
-                onChange={(e) => setTaskPriorityDraft(e.target.value)}
-                onBlur={() => {
-                  if (taskStatusDraft === 'none') return
-                  const priority = taskPriorityDraft
-                    ? Number.parseInt(taskPriorityDraft, 10)
-                    : undefined
-                  const dueDateMs = taskDueDateDraft
-                    ? new Date(taskDueDateDraft).getTime()
-                    : undefined
-                  const currentPriority = activeTopic.task?.priority
-                  if (currentPriority !== priority) {
-                    const nextTask: TopicTask = {
-                      status: taskStatusDraft,
-                      ...(priority != null ? { priority } : {}),
-                      ...(dueDateMs != null ? { dueDateMs } : {}),
-                    }
-                    void session.setTopicTask(activeTopic.id, nextTask)
-                  }
+                {normalizedSelectedTopicIds.length >= 2
+                  ? `为选中的 ${normalizedSelectedTopicIds.length} 个主题创建边界`
+                  : '请先选中至少 2 个主题'}
+              </button>
+
+              <label className="panel__field">
+                <span>概要标签</span>
+                <input
+                  type="text"
+                  value={summaryLabel}
+                  onChange={(e) => setSummaryLabel(e.target.value)}
+                  placeholder="对这组主题的归纳说明"
+                />
+              </label>
+              <button
+                className="panel__action"
+                type="button"
+                disabled={!canCreateSummaryFromSelection || !activeSheet}
+                onClick={() => {
+                  if (!activeSheet) return
+                  const label = summaryLabel.trim()
+                  if (!label) return
+                  void session.createSummary(activeSheet.id, normalizedSelectedTopicIds, label)
+                  setSummaryLabel('')
                 }}
-                placeholder="优先级 1-5"
-              />
+              >
+                {normalizedSelectedTopicIds.length >= 2
+                  ? `为选中的 ${normalizedSelectedTopicIds.length} 个主题创建概要`
+                  : '请先选中至少 2 个主题'}
+              </button>
             </div>
-            <input
-              type="date"
-              aria-label="任务截止日期"
-              value={taskDueDateDraft}
-              onChange={(e) => setTaskDueDateDraft(e.target.value)}
-              onBlur={() => {
-                if (taskStatusDraft === 'none') return
-                const priority = taskPriorityDraft
-                  ? Number.parseInt(taskPriorityDraft, 10)
-                  : undefined
-                const dueDateMs = taskDueDateDraft
-                  ? new Date(taskDueDateDraft).getTime()
-                  : undefined
-                const currentDue = activeTopic.task?.dueDateMs
-                if (currentDue !== dueDateMs) {
-                  const nextTask: TopicTask = {
-                    status: taskStatusDraft,
-                    ...(priority != null ? { priority } : {}),
-                    ...(dueDateMs != null ? { dueDateMs } : {}),
-                  }
-                  void session.setTopicTask(activeTopic.id, nextTask)
-                }
-              }}
-            />
           </div>
-        </div>
-      ) : null}
-
-      <div className="panel__section">
-        <p className="panel__eyebrow">Relationships</p>
-        <h3 className="panel__title">关系线</h3>
-        <p className="panel__muted">
-          在任意两个主题之间建立非父子连接，用于表达跨分支或跨画布的关联。关系线保存在文档级别。
-        </p>
-
-        {documentRelationships.length > 0 ? (
-          <ul className="panel__entries">
-            {documentRelationships.map((rel) => {
-              const fromText = session.document
-                ? resolveTopicText(session.document.sheets, rel.fromTopicId)
-                : rel.fromTopicId
-              const toText = session.document
-                ? resolveTopicText(session.document.sheets, rel.toTopicId)
-                : rel.toTopicId
-              return (
-                <li key={rel.id} className="panel__entry">
-                  <span className="panel__entry-text">
-                    {fromText} → {toText}
-                    {rel.label ? `（${rel.label}）` : ''}
-                  </span>
-                  <button
-                    className="panel__action panel__action--ghost"
-                    type="button"
-                    onClick={() => void session.deleteRelationship(rel.id)}
-                  >
-                    删除
-                  </button>
-                </li>
-              )
-            })}
-          </ul>
-        ) : (
-          <p className="panel__muted">暂无关系线</p>
-        )}
-
-        <label className="panel__field">
-          <span>起点主题</span>
-          <select value={relFromId} onChange={(e) => setRelFromId(e.target.value)}>
-            {documentTopicEntries.length === 0 ? <option value="">暂无主题</option> : null}
-            {documentTopicEntries.map((entry) => (
-              <option key={entry.topicId} value={entry.topicId}>
-                {entry.path.join(' / ')}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="panel__field">
-          <span>终点主题</span>
-          <select value={relToId} onChange={(e) => setRelToId(e.target.value)}>
-            <option value="">请选择终点主题</option>
-            {documentTopicEntries
-              .filter((entry) => entry.topicId !== relFromId)
-              .map((entry) => (
-                <option key={entry.topicId} value={entry.topicId}>
-                  {entry.path.join(' / ')}
-                </option>
-              ))}
-          </select>
-        </label>
-        <label className="panel__field">
-          <span>标签（可选）</span>
-          <input
-            type="text"
-            value={relLabel}
-            onChange={(e) => setRelLabel(e.target.value)}
-            placeholder="例如：依赖、关联、引用"
-          />
-        </label>
-        <button
-          className="panel__action"
-          type="button"
-          disabled={!canCreateRelationship}
-          onClick={() => {
-            const label = relLabel.trim() || null
-            void session.createRelationship(relFromId, relToId, label)
-            setRelToId('')
-            setRelLabel('')
-          }}
-        >
-          创建关系线
-        </button>
-      </div>
-
-      <div className="panel__section">
-        <p className="panel__eyebrow">Grouping</p>
-        <h3 className="panel__title">边界与概要</h3>
-        <p className="panel__muted">
-          为当前画布中的若干主题添加视觉分组（边界）或归纳说明（概要）。先在画布上选中至少 2 个主题，再创建。
-        </p>
-
-        {sheetBoundaries.length > 0 ? (
-          <>
-            <p className="panel__eyebrow">边界</p>
-            <ul className="panel__entries">
-              {sheetBoundaries.map((boundary) => (
-                <li key={boundary.id} className="panel__entry">
-                  <span className="panel__entry-text">
-                    {boundary.label || '未命名边界'}（{boundary.topicIds.length} 个主题）
-                  </span>
-                  <button
-                    className="panel__action panel__action--ghost"
-                    type="button"
-                    onClick={() =>
-                      activeSheet && void session.deleteBoundary(activeSheet.id, boundary.id)
-                    }
-                  >
-                    删除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
         ) : null}
-
-        {sheetSummaries.length > 0 ? (
-          <>
-            <p className="panel__eyebrow">概要</p>
-            <ul className="panel__entries">
-              {sheetSummaries.map((summary) => (
-                <li key={summary.id} className="panel__entry">
-                  <span className="panel__entry-text">
-                    {summary.label}（{summary.topicIds.length} 个主题）
-                  </span>
-                  <button
-                    className="panel__action panel__action--ghost"
-                    type="button"
-                    onClick={() =>
-                      activeSheet && void session.deleteSummary(activeSheet.id, summary.id)
-                    }
-                  >
-                    删除
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-
-        <label className="panel__field">
-          <span>边界标签（可选）</span>
-          <input
-            type="text"
-            value={boundaryLabel}
-            onChange={(e) => setBoundaryLabel(e.target.value)}
-            placeholder="例如：核心模块、风险项"
-          />
-        </label>
-        <button
-          className="panel__action"
-          type="button"
-          disabled={!canCreateBoundaryFromSelection || !activeSheet}
-          onClick={() => {
-            if (!activeSheet) return
-            const label = boundaryLabel.trim() || null
-            void session.createBoundary(activeSheet.id, normalizedSelectedTopicIds, label)
-            setBoundaryLabel('')
-          }}
-        >
-          {normalizedSelectedTopicIds.length >= 2
-            ? `为选中的 ${normalizedSelectedTopicIds.length} 个主题创建边界`
-            : '请先选中至少 2 个主题'}
-        </button>
-
-        <label className="panel__field">
-          <span>概要标签</span>
-          <input
-            type="text"
-            value={summaryLabel}
-            onChange={(e) => setSummaryLabel(e.target.value)}
-            placeholder="对这组主题的归纳说明"
-          />
-        </label>
-        <button
-          className="panel__action"
-          type="button"
-          disabled={!canCreateSummaryFromSelection || !activeSheet}
-          onClick={() => {
-            if (!activeSheet) return
-            const label = summaryLabel.trim()
-            if (!label) return
-            void session.createSummary(activeSheet.id, normalizedSelectedTopicIds, label)
-            setSummaryLabel('')
-          }}
-        >
-          {normalizedSelectedTopicIds.length >= 2
-            ? `为选中的 ${normalizedSelectedTopicIds.length} 个主题创建概要`
-            : '请先选中至少 2 个主题'}
-        </button>
-      </div>
-
-      <div className="panel__section">
-        <p className="panel__eyebrow">Move</p>
-        <h3 className="panel__title">跨画布移动</h3>
-        <p className="panel__muted">
-          把当前主题分支移动或复制到另一张画布，并可指定目标父主题；完成后会自动切换过去。
-        </p>
-        <label className="panel__field">
-          <span>目标画布</span>
-          <select
-            value={moveTargetSheetId}
-            onChange={(event) => setMoveTargetSheetId(event.target.value)}
-            disabled={movableTargetSheets.length === 0}
-          >
-            {movableTargetSheets.length === 0 ? (
-              <option value="">当前没有其他画布</option>
-            ) : null}
-            {movableTargetSheets.map((sheet) => (
-              <option key={sheet.id} value={sheet.id}>
-                {sheet.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="panel__field">
-          <span>目标父主题</span>
-          <select
-            value={moveTargetParentId}
-            onChange={(event) => setMoveTargetParentId(event.target.value)}
-            disabled={!targetSheet}
-          >
-            {!targetSheet ? <option value="">请先选择目标画布</option> : null}
-            {movableTargetParents.map((entry) => (
-              <option key={entry.topicId} value={entry.topicId}>
-                {entry.path.join(' / ')}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          className="panel__action"
-          type="button"
-          disabled={
-            hasMultipleSelectedTopics
-              ? normalizedSelectedTopicIds.length === 0
-              : !activeTopic ||
-                !activeSheet ||
-                activeTopic.id === activeSheet.rootTopic.id ||
-                !moveTargetSheetId ||
-                !moveTargetParentId
-          }
-          onClick={() => {
-            const actionLabel =
-              targetSheet && moveTargetParentEntry
-                ? moveTargetParentEntry.topicId === targetSheet.rootTopic.id
-                  ? `${hasMultipleSelectedTopics ? `批量移动 ${normalizedSelectedTopicIds.length} 个主题` : '移动主题'}到画布“${targetSheet.title}”根主题`
-                  : `${hasMultipleSelectedTopics ? `批量移动 ${normalizedSelectedTopicIds.length} 个主题` : '移动主题'}到画布“${targetSheet.title}”的“${moveTargetParentEntry.path.join(' / ')}”下面`
-                : hasMultipleSelectedTopics
-                  ? '批量移动主题到其他画布'
-                  : '移动主题到其他画布'
-
-            if (hasMultipleSelectedTopics) {
-              void session.moveTopicsToSheet(
-                normalizedSelectedTopicIds,
-                moveTargetSheetId,
-                moveTargetParentId,
-                actionLabel,
-              )
-              return
-            }
-
-            if (!activeTopic) {
-              return
-            }
-
-            void session.moveTopicToSheet(
-              activeTopic.id,
-              moveTargetSheetId,
-              moveTargetParentId,
-              actionLabel,
-            )
-          }}
-        >
-          {hasMultipleSelectedTopics ? '批量移动到目标画布' : '移动到目标画布'}
-        </button>
-        <button
-          className="panel__action"
-          type="button"
-          disabled={
-            hasMultipleSelectedTopics
-              ? normalizedSelectedTopicIds.length === 0
-              : !activeTopic ||
-                !activeSheet ||
-                activeTopic.id === activeSheet.rootTopic.id ||
-                !moveTargetSheetId ||
-                !moveTargetParentId
-          }
-          onClick={() => {
-            const actionLabel =
-              targetSheet && moveTargetParentEntry
-                ? moveTargetParentEntry.topicId === targetSheet.rootTopic.id
-                  ? `${hasMultipleSelectedTopics ? `批量复制 ${normalizedSelectedTopicIds.length} 个主题` : '复制主题'}到画布“${targetSheet.title}”根主题`
-                  : `${hasMultipleSelectedTopics ? `批量复制 ${normalizedSelectedTopicIds.length} 个主题` : '复制主题'}到画布“${targetSheet.title}”的“${moveTargetParentEntry.path.join(' / ')}”下面`
-                : hasMultipleSelectedTopics
-                  ? '批量复制主题到其他画布'
-                  : '复制主题到其他画布'
-
-            if (hasMultipleSelectedTopics) {
-              void session.copyTopicsToSheet(
-                normalizedSelectedTopicIds,
-                moveTargetSheetId,
-                moveTargetParentId,
-                actionLabel,
-              )
-              return
-            }
-
-            if (!activeTopic) {
-              return
-            }
-
-            void session.copyTopicToSheet(
-              activeTopic.id,
-              moveTargetSheetId,
-              moveTargetParentId,
-              actionLabel,
-            )
-          }}
-        >
-          {hasMultipleSelectedTopics ? '批量复制到目标画布' : '复制到目标画布'}
-        </button>
       </div>
 
       {session.repairReport ? (
-        <div className="panel__section">
+        <div className="panel__section panel__section--repair">
           <p className="panel__eyebrow">Repair</p>
           <h3 className="panel__title">最近修复</h3>
           <p className="panel__muted">

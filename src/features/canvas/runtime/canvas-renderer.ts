@@ -23,14 +23,17 @@ import {
   type SummaryRenderNode,
   type TopicRenderNode,
 } from './render-tree'
-import { resolveThemeBackground, resolveThemeEdge } from './style-resolver'
+import { resolveThemeBackground } from './style-resolver'
 import {
   COLORS,
   FONT_FAMILY,
-  NODE_RADIUS,
   SELECTION_RADIUS,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
+  getEdgeLineWidth,
+  getNodeRadius,
+  getTitleFontSize,
+  getTitleFontWeight,
   wrapText,
 } from './style-constants'
 
@@ -80,9 +83,8 @@ export function renderScene(
     drawDecorations = true,
   } = options
 
-  // 解析文档主题的背景与连线色（节点样式已在 SceneBuilder 阶段注入 TopicRenderNode.style）
+  // 解析文档主题的背景色（节点样式已在 SceneBuilder 阶段注入 TopicRenderNode.style）
   const themeBackground = resolveThemeBackground(options.themeId)
-  const themeEdge = resolveThemeEdge(options.themeId)
 
   // 清空整个画布（物理像素）
   const pixelWidth = Math.round(viewport.width * dpr)
@@ -113,7 +115,7 @@ export function renderScene(
 
   const edges = scene.nodes.filter((n): n is EdgeRenderNode => n.type === 'edge')
   for (const edge of edges) {
-    drawEdge(ctx, edge, themeEdge)
+    drawEdge(ctx, edge)
   }
 
   if (drawDecorations) {
@@ -168,38 +170,31 @@ function drawBackgroundLayer(
   ctx.fillStyle = bg.background
   ctx.fillRect(0, 0, w * dpr, h * dpr)
 
-  // 网格（屏幕空间，固定间距，不随 camera 缩放）
-  drawGrid(ctx, viewport, dpr, bg.gridLine)
+  // 点阵网格（XMind 式：屏幕空间，固定间距，不随 camera 缩放）
+  drawDotGrid(ctx, viewport, dpr, bg.gridLine)
 }
 
-function drawGrid(
+function drawDotGrid(
   ctx: CanvasRenderingContext2D,
   viewport: Viewport,
   dpr: number,
-  gridLineColor: string,
+  dotColor: string,
 ): void {
-  const gridSize = 48
-  ctx.strokeStyle = gridLineColor
-  ctx.lineWidth = 1
+  const gridSize = 24
+  const dotRadius = 1
+  ctx.fillStyle = dotColor
   ctx.beginPath()
-  for (let x = 0; x <= viewport.width; x += gridSize) {
-    ctx.moveTo(x * dpr, 0)
-    ctx.lineTo(x * dpr, viewport.height * dpr)
+  for (let x = gridSize; x < viewport.width; x += gridSize) {
+    for (let y = gridSize; y < viewport.height; y += gridSize) {
+      ctx.arc(x * dpr, y * dpr, dotRadius * dpr, 0, Math.PI * 2)
+    }
   }
-  for (let y = 0; y <= viewport.height; y += gridSize) {
-    ctx.moveTo(0, y * dpr)
-    ctx.lineTo(viewport.width * dpr, y * dpr)
-  }
-  ctx.stroke()
+  ctx.fill()
 }
 
 // ---- 边 ----
 
-function drawEdge(
-  ctx: CanvasRenderingContext2D,
-  edge: EdgeRenderNode,
-  edgeColors: { edge: string; edgeActive: string },
-): void {
+function drawEdge(ctx: CanvasRenderingContext2D, edge: EdgeRenderNode): void {
   ctx.beginPath()
   ctx.moveTo(edge.start.x, edge.start.y)
   ctx.bezierCurveTo(
@@ -207,8 +202,9 @@ function drawEdge(
     edge.control2.x, edge.control2.y,
     edge.end.x, edge.end.y,
   )
-  ctx.strokeStyle = edge.isActive ? edgeColors.edgeActive : edgeColors.edge
-  ctx.lineWidth = edge.isActive ? 4 : 3
+  // XMind 式多色分支编码：每条分支使用自己的色相，线宽按深度逐级递减。
+  ctx.strokeStyle = edge.branchColor
+  ctx.lineWidth = getEdgeLineWidth(edge.childDepth, edge.isActive)
   ctx.lineCap = 'round'
   ctx.stroke()
 }
@@ -227,7 +223,7 @@ function drawTopic(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
   drawNodeShadow(ctx, node)
 
   // 背景
-  drawNodeBackground(ctx, bounds, node.style)
+  drawNodeBackground(ctx, bounds, node.style, node.depth)
 
   // 状态环（选中/激活/搜索/放置目标/历史焦点）
   drawStateRing(ctx, node)
@@ -247,13 +243,15 @@ function drawTopic(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
 }
 
 function drawNodeShadow(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
-  const { bounds, state } = node
+  const { bounds, state, depth } = node
+  const radius = getNodeRadius(depth)
   ctx.save()
-  ctx.shadowColor = 'rgba(15, 23, 42, 0.08)'
-  ctx.shadowBlur = state.isActive ? 52 : state.isSelected ? 48 : 40
-  ctx.shadowOffsetY = state.isActive ? 20 : 16
+  // XMind 式紧凑双层阴影：底层弥散 + 顶层贴近，避免过散的模糊。
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.10)'
+  ctx.shadowBlur = state.isActive ? 20 : state.isSelected ? 16 : 12
+  ctx.shadowOffsetY = state.isActive ? 6 : 4
   ctx.fillStyle = 'rgba(255, 255, 255, 0.01)' // 几乎透明，只为触发阴影
-  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, NODE_RADIUS)
+  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius)
   ctx.fill()
   ctx.restore()
 }
@@ -262,9 +260,10 @@ function drawNodeBackground(
   ctx: CanvasRenderingContext2D,
   bounds: { x: number; y: number; width: number; height: number },
   style: ResolvedTopicStyle,
+  depth: number,
 ): void {
   ctx.fillStyle = style.fill
-  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, NODE_RADIUS)
+  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, getNodeRadius(depth))
   ctx.fill()
 }
 
@@ -273,21 +272,21 @@ function drawStateRing(ctx: CanvasRenderingContext2D, node: TopicRenderNode): vo
   const padding = 4
 
   if (state.isActive) {
-    drawRing(ctx, bounds, padding, COLORS.activeRing)
+    drawRing(ctx, bounds, padding, COLORS.activeRing, node.depth)
   } else if (state.isSelected) {
-    drawRing(ctx, bounds, padding, COLORS.selectedRing)
+    drawRing(ctx, bounds, padding, COLORS.selectedRing, node.depth)
   }
 
   if (state.isActiveSearchResult) {
-    drawRing(ctx, bounds, padding, COLORS.searchActiveRing)
+    drawRing(ctx, bounds, padding, COLORS.searchActiveRing, node.depth)
   }
 
   if (state.isDropTarget) {
-    drawRing(ctx, bounds, padding, COLORS.dropTargetRing)
+    drawRing(ctx, bounds, padding, COLORS.dropTargetRing, node.depth)
   }
 
   if (state.isHistoryFocus) {
-    drawRing(ctx, bounds, padding, COLORS.historyFocusRing)
+    drawRing(ctx, bounds, padding, COLORS.historyFocusRing, node.depth)
   }
 }
 
@@ -296,6 +295,7 @@ function drawRing(
   bounds: { x: number; y: number; width: number; height: number },
   padding: number,
   color: string,
+  depth: number,
 ): void {
   ctx.fillStyle = color
   roundRect(
@@ -304,7 +304,7 @@ function drawRing(
     bounds.y - padding,
     bounds.width + padding * 2,
     bounds.height + padding * 2,
-    NODE_RADIUS + padding,
+    getNodeRadius(depth) + padding,
   )
   ctx.fill()
 }
@@ -312,6 +312,7 @@ function drawRing(
 function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
   const { bounds, state, depth, style } = node
   const isRoot = depth === 0
+  const radius = getNodeRadius(depth)
 
   // 默认边框色来自解析后的主题/覆盖；状态语义色（放置目标/激活/搜索匹配）优先覆盖。
   let borderColor: string = style.borderColor
@@ -326,18 +327,18 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
   // 根节点边框恒为透明（由主题 root.borderColor=transparent 体现，此处显式保留语义）
   ctx.strokeStyle = isRoot ? 'transparent' : borderColor
   ctx.lineWidth = 1
-  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, NODE_RADIUS)
+  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius)
   ctx.stroke()
 }
 
 function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
-  const { bounds, text, depth, childCount, collapsed, style } = node
-  const isRoot = depth === 0
-  const padding = 16
+  const { bounds, text, depth, style } = node
+  const padding = depth === 0 ? 20 : depth === 1 ? 14 : 12
 
-  // 标题
-  const titleFontSize = isRoot ? 17 : 15
-  ctx.font = `700 ${titleFontSize}px ${FONT_FAMILY}`
+  // 标题：字号 / 字重按深度分级（参考 XMind）
+  const titleFontSize = getTitleFontSize(depth)
+  const titleFontWeight = getTitleFontWeight(depth)
+  ctx.font = `${titleFontWeight} ${titleFontSize}px ${FONT_FAMILY}`
   ctx.fillStyle = style.textColor
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
@@ -349,15 +350,7 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): voi
     ctx.fillText(lines[i], bounds.x + padding, titleY + i * lineHeight)
   }
 
-  // 元信息（颜色跟随主题层级，不纳入节点覆盖，保证辅助信息视觉一致）
-  const metaY = titleY + lines.length * lineHeight + 4
-  const metaFontSize = 11
-  ctx.font = `400 ${metaFontSize}px ${FONT_FAMILY}`
-  ctx.fillStyle = style.metaTextColor
-  const metaText = `${depth === 0 ? 'Root' : `Depth ${depth}`} · ${childCount} 子主题${
-    childCount > 0 && collapsed ? ' · 已折叠' : ''
-  }`
-  ctx.fillText(metaText, bounds.x + padding, metaY)
+  // 元信息已移除（参考 XMind：折叠状态由节点角的 +/− 按钮表达，不再显示文字元信息）
 }
 
 function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
@@ -424,7 +417,7 @@ function drawDragPreview(ctx: CanvasRenderingContext2D, node: DragPreviewRenderN
   const { bounds, text, depth, side, style } = node
 
   ctx.globalAlpha = 0.86
-  drawNodeBackground(ctx, bounds, style)
+  drawNodeBackground(ctx, bounds, style, depth)
   drawNodeText(ctx, {
     type: 'topic',
     id: '__drag__',

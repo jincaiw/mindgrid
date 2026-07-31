@@ -11,9 +11,7 @@ body,
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(91, 140, 255, 0.2), transparent 28%),
-    linear-gradient(180deg, #09111f 0%, #0f172a 100%);
+  background: var(--color-background-app);
   color: var(--color-text-primary);
 }
 
@@ -35,16 +33,56 @@ button {
 
 .workspace-shell {
   display: grid;
-  grid-template-rows: 52px 1fr;
-  padding: var(--space-3);
-  gap: var(--space-3);
+  grid-template-rows: 48px 1fr;
+  padding: var(--space-2);
+  gap: var(--space-2);
+  height: 100vh;
 }
 
 .workspace-shell__body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
-  gap: var(--space-3);
+  grid-template-columns: 240px minmax(0, 1fr) 300px;
+  gap: var(--space-2);
   min-height: 0;
+}
+
+/* ZEN 专注模式：隐藏 toolbar / sidebar / inspector，画布占满 */
+.workspace-shell--zen .toolbar,
+.workspace-shell--zen .workspace-shell__body > .panel--sidebar,
+.workspace-shell--zen .workspace-shell__body > .panel--inspector {
+  display: none;
+}
+
+.workspace-shell--zen {
+  grid-template-rows: 1fr;
+  padding: 0;
+}
+
+.workspace-shell--zen .workspace-shell__body {
+  grid-template-columns: 1fr;
+}
+
+/* ZEN 模式浮动退出按钮 */
+.zen-exit-btn {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  padding: 6px 14px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  color: #3c3c43;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px);
+  transition: background 120ms ease;
+}
+
+.zen-exit-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .toolbar,
@@ -62,104 +100,201 @@ button {
   justify-content: space-between;
   padding: 0 var(--space-3);
   border-radius: var(--radius-medium);
-  background: rgba(9, 14, 25, 0.72);
+  background: rgba(255, 255, 255, 0.82);
+  color: #1d1d1f;
+  min-height: 48px;
 }
 
-.toolbar__group {
+.toolbar__left {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-}
-
-.toolbar__group--actions {
   gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
 }
 
-.toolbar__eyebrow,
-.panel__eyebrow {
-  margin: 0 0 2px;
-  color: var(--color-text-secondary);
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+.toolbar__center {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
 }
 
-.toolbar__title,
-.panel__title {
+.toolbar__right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.toolbar__filename {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
+  color: #1d1d1f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.toolbar__save-hint {
+  font-size: 11px;
+  color: rgba(60, 60, 67, 0.6);
+  white-space: nowrap;
 }
 
 .toolbar__selection {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  padding: 8px 12px;
+  gap: 8px;
+  margin-left: var(--space-2);
+  padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(91, 140, 255, 0.16);
-  color: rgba(255, 255, 255, 0.88);
+  background: rgba(91, 140, 255, 0.12);
+  color: #3b82f6;
   font-size: 12px;
 }
 
 .toolbar__selection-badge {
   font-weight: 700;
-  color: #cfe0ff;
+}
+
+.toolbar__selection-label {
+  font-weight: 600;
+}
+
+.toolbar__selection-hint {
+  color: rgba(60, 60, 67, 0.6);
+  font-size: 11px;
 }
 
 .toolbar__selection-action {
   border: none;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(59, 130, 246, 0.12);
   color: inherit;
   border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
 }
 
-.toolbar__button {
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--color-text-primary);
-  border-radius: 999px;
-  padding: 8px 14px;
-  transition: transform 140ms ease, background 140ms ease;
+.toolbar__selection-action:hover {
+  background: rgba(59, 130, 246, 0.2);
 }
 
-.toolbar__button:disabled {
-  opacity: 0.44;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.toolbar__button:hover {
-  background: rgba(255, 255, 255, 0.09);
-  transform: translateY(-1px);
-}
-
-.toolbar__button--primary {
-  background: linear-gradient(135deg, #7da7ff 0%, #5b8cff 100%);
-  color: #08101d;
-  border-color: transparent;
-  font-weight: 700;
-}
-
-.toolbar__button--ghost {
+/* 图标按钮：32×32 方形，参考 XMind / macOS 工具栏 */
+.toolbar__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 32px;
+  min-width: 32px;
+  padding: 0 8px;
+  border: none;
   background: transparent;
-  color: var(--color-text-muted, rgba(230, 236, 255, 0.55));
-  border-color: transparent;
+  color: #3c3c43;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
   font-size: 12px;
-  padding: 4px 10px;
+  font-weight: 500;
 }
 
-.toolbar__button--ghost:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(230, 236, 255, 0.85);
+.toolbar__icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.toolbar__icon-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.toolbar__icon-btn:active:not(:disabled) {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.toolbar__icon-btn--primary {
+  background: linear-gradient(135deg, #7da7ff 0%, #5b8cff 100%);
+  color: #fff;
+}
+
+.toolbar__icon-btn--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #6b96f0 0%, #4a7cf0 100%);
+}
+
+.toolbar__icon-btn--ghost {
+  color: rgba(60, 60, 67, 0.6);
+}
+
+.toolbar__icon-btn--ghost:hover:not(:disabled) {
+  color: #1d1d1f;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.toolbar__divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.1);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+.toolbar__btn-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toolbar__zen-label,
+.toolbar__zen-exit {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* 下拉菜单 */
+.toolbar__menu {
+  position: relative;
+}
+
+.toolbar__menu-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 100;
+  min-width: 180px;
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(20px);
+}
+
+.toolbar__menu-item {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #1d1d1f;
+  text-align: left;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.toolbar__menu-item:hover {
+  background: rgba(91, 140, 255, 0.1);
 }
 
 .panel {
   background: var(--color-surface-panel);
-  border-radius: var(--radius-large);
+  border-radius: var(--radius-medium);
   padding: var(--space-3);
 }
 
@@ -199,7 +334,7 @@ button {
 .panel__field select {
   width: 100%;
   border: 1px solid var(--color-border-default);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--color-text-primary);
   border-radius: var(--radius-small);
   padding: 8px 10px;
@@ -231,7 +366,7 @@ button {
 .panel__action {
   width: 100%;
   border: 1px solid var(--color-border-default);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.06);
   color: var(--color-text-primary);
   border-radius: var(--radius-small);
   padding: 9px 14px;
@@ -275,7 +410,7 @@ button {
   gap: 10px;
   padding: 8px 10px;
   border: 1px solid var(--color-border-default);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.03);
   border-radius: var(--radius-small);
 }
 
@@ -296,7 +431,7 @@ button {
   font-size: 12px;
   font-weight: 600;
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.06);
   color: var(--color-text-secondary);
   flex-shrink: 0;
 }
@@ -431,7 +566,7 @@ button {
   gap: 6px;
   padding: 6px;
   border: 1px solid var(--color-border-default);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   border-radius: var(--radius-small);
   min-height: 36px;
 }
@@ -494,7 +629,7 @@ button {
   padding: 8px 4px 6px;
   border: 2px solid transparent;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
   cursor: pointer;
   transition: border-color 120ms ease;
 }
@@ -557,6 +692,88 @@ button {
   border-color: rgba(255, 255, 255, 0.36);
 }
 
+/* ---- Inspector tab 结构（参考 XMind 右侧 Inspector）---- */
+.panel--inspector {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--color-border-default);
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
+}
+
+.panel__tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-top: 4px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  position: relative;
+  transition: color 120ms ease, background 120ms ease;
+  border-radius: 6px 6px 0 0;
+  white-space: nowrap;
+}
+
+.panel__tab:hover {
+  color: var(--color-text-primary);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.panel__tab--active {
+  color: var(--color-accent);
+  font-weight: 600;
+}
+
+.panel__tab--active::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  background: var(--color-accent);
+  border-radius: 2px 2px 0 0;
+}
+
+.panel__tab-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+  min-height: 0;
+}
+
+.panel__tab-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.panel__tab-panel .panel__section:first-child {
+  margin-top: 0;
+}
+
+.panel__section--repair {
+  border-top: 1px solid var(--color-border-default);
+  padding: var(--space-3);
+  background: rgba(255, 159, 10, 0.04);
+  flex-shrink: 0;
+}
+
 .sheet-drop-targets {
   display: grid;
   gap: 8px;
@@ -603,8 +820,8 @@ button {
 .outline-card,
 .accordion-card,
 .stat-card {
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(0, 0, 0, 0.02);
   border-radius: var(--radius-medium);
 }
 
@@ -662,14 +879,14 @@ button {
 
 .canvas-stage__hero h2 {
   margin: 0;
-  color: #0f172a;
-  font-size: 32px;
+  color: var(--color-text-primary);
+  font-size: 16px;
 }
 
 .canvas-stage__clipboard {
-  margin: 10px 0 0;
-  color: rgba(15, 23, 42, 0.58);
-  font-size: 13px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
 }
 
 .canvas-stage__clipboard-detail {
@@ -678,19 +895,21 @@ button {
 
 .canvas-stage--editor {
   display: grid;
-  gap: 24px;
+  gap: 8px;
+  height: 100%;
 }
 
 .canvas-stage__hero {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-3);
-  align-items: flex-start;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 4px 0;
 }
 
 .canvas-stage__actions {
   display: flex;
-  gap: var(--space-2);
+  gap: 4px;
   flex-wrap: wrap;
 }
 
@@ -724,9 +943,10 @@ button {
 }
 
 .editor-card--scene {
-  background:
-    radial-gradient(circle at top left, rgba(91, 140, 255, 0.14), transparent 24%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(247, 250, 255, 0.86));
+  position: relative;
+  background: var(--color-background-canvas);
+  border-radius: var(--radius-medium);
+  overflow: hidden;
 }
 
 .editor-card__header {
@@ -743,24 +963,71 @@ button {
 }
 
 .editor-card__hint {
-  color: rgba(15, 23, 42, 0.52);
+  color: var(--color-text-secondary);
   font-size: 12px;
 }
 
+/* 浮动缩放控件（XMind 式：右下角悬浮） */
 .scene-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+}
+
+.scene-toolbar--floating {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+/* ---- 右下角小地图（参考 XMind Navigator）---- */
+.minimap {
+  position: absolute;
+  bottom: 56px;
+  right: 12px;
+  z-index: 10;
+  padding: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(12px);
+  user-select: none;
+}
+
+.minimap__canvas {
+  display: block;
+  border-radius: 6px;
+  cursor: pointer;
 }
 
 .scene-toolbar__button {
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f172a;
-  border-radius: 999px;
-  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: #3c3c43;
+  border-radius: 6px;
+  padding: 6px 10px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
+  min-width: 28px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.scene-toolbar__button:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.scene-toolbar__button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 .scene-meta {
@@ -768,8 +1035,24 @@ button {
   justify-content: space-between;
   gap: var(--space-3);
   margin-bottom: 12px;
-  color: rgba(15, 23, 42, 0.56);
+  color: var(--color-text-secondary);
   font-size: 12px;
+}
+
+/* 画布浮动选择徽章 */
+.scene-selection-badge {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 4px 12px;
+  background: rgba(91, 140, 255, 0.12);
+  color: #3b82f6;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  pointer-events: none;
 }
 
 .scene-meta__actions {
@@ -1135,25 +1418,79 @@ button {
 
 .mindmap-node {
   position: absolute;
-  display: grid;
-  gap: 8px;
-  padding: 16px 18px;
-  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
   border: 1px solid rgba(15, 23, 42, 0.08);
   background: rgba(255, 255, 255, 0.92);
   color: #0f172a;
   text-align: left;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(15, 23, 42, 0.06);
   transition:
+    left 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    top 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    height 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
     transform 160ms ease,
     box-shadow 160ms ease,
     border-color 160ms ease,
     background 160ms ease;
 }
 
+/* 节点出现动画：新建/首次加载时淡入 + 轻微缩放（XMind 风格） */
+@keyframes mindmap-node--appear {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.mindmap-node--appear {
+  animation: mindmap-node--appear 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 .mindmap-node:hover {
-  transform: translateY(-2px) scale(1.01);
-  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.14);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 6px 16px rgba(15, 23, 42, 0.10);
+}
+
+/* 深度分级：根节点 */
+.mindmap-node--depth-0 {
+  padding: 10px 20px;
+  border-radius: 12px;
+  border-color: transparent;
+}
+
+/* 深度分级：一级分支 */
+.mindmap-node--depth-1 {
+  padding: 8px 14px;
+  border-radius: 8px;
+}
+
+/* 深度分级：二级 */
+.mindmap-node--depth-2 {
+  padding: 6px 12px;
+  border-radius: 6px;
+}
+
+/* 深度分级：叶子（3+） */
+.mindmap-node--depth-3 {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mindmap-node--depth-3:hover {
+  background: rgba(91, 140, 255, 0.06);
+  box-shadow: none;
 }
 
 .mindmap-node--center {
@@ -1211,6 +1548,8 @@ button {
 .mindmap-node--dragging {
   opacity: 0.86;
   z-index: 3;
+  /* 拖拽中禁用位置过渡，保证跟手；松开后由布局过渡平滑归位 */
+  transition: none;
 }
 
 .mindmap-node--dragging:hover {
@@ -1226,30 +1565,48 @@ button {
 .mindmap-node__toggle {
   position: absolute;
   z-index: 6;
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   border: 1px solid rgba(15, 23, 42, 0.1);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
   color: #0f172a;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-  font-size: 16px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+  font-size: 13px;
   line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
 }
 
 .mindmap-node__title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: 14px;
+  font-weight: 600;
   line-height: 1.35;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.mindmap-node__meta {
-  font-size: 11px;
-  color: rgba(15, 23, 42, 0.54);
+/* 深度分级字号 */
+.mindmap-node--depth-0 .mindmap-node__title {
+  font-size: 18px;
+  font-weight: 600;
 }
 
-.mindmap-node--center .mindmap-node__meta {
-  color: rgba(255, 255, 255, 0.82);
+.mindmap-node--depth-1 .mindmap-node__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mindmap-node--depth-2 .mindmap-node__title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.mindmap-node--depth-3 .mindmap-node__title {
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .mindmap-node__editor {
@@ -1700,4 +2057,96 @@ button {
   color: rgba(26, 26, 46, 0.5);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---- 右键上下文菜单（参考 XMind）---- */
+.context-menu {
+  position: fixed;
+  z-index: 10000;
+  min-width: 200px;
+  max-width: 280px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
+  backdrop-filter: blur(20px);
+  user-select: none;
+  animation: context-menu--appear 120ms ease-out;
+}
+
+@keyframes context-menu--appear {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.context-menu__separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.context-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: #1d1d1f;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 80ms ease;
+}
+
+.context-menu__item:hover:not(:disabled) {
+  background: rgba(91, 140, 255, 0.12);
+}
+
+.context-menu__item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.context-menu__item--danger {
+  color: #dc2626;
+}
+
+.context-menu__item--danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.1);
+}
+
+.context-menu__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: rgba(60, 60, 67, 0.6);
+}
+
+.context-menu__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.context-menu__shortcut {
+  font-size: 11px;
+  color: rgba(60, 60, 67, 0.5);
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  margin-left: 12px;
 }

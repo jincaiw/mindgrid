@@ -19,6 +19,7 @@ export function WorkspaceScreen({ session, onCheckForUpdates }: WorkspaceScreenP
     session.activeTopicId ? [session.activeTopicId] : activeSheet ? [activeSheet.rootTopic.id] : [],
   )
   const [isPresenting, setIsPresenting] = useState(false)
+  const [isZenMode, setIsZenMode] = useState(false)
   const clearMultiSelection = () => {
     setSelectedTopicIds([
       session.activeTopicId ?? activeSheet?.rootTopic.id ?? selectedTopicIds[0] ?? '',
@@ -36,15 +37,42 @@ export function WorkspaceScreen({ session, onCheckForUpdates }: WorkspaceScreenP
     )
   }, [activeSheet?.id, activeSheet?.rootTopic.id, session.activeTopicId, session.document?.revision])
 
+  // ZEN 模式快捷键：Cmd/Ctrl + . 切换，Esc 退出
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+        e.preventDefault()
+        setIsZenMode((v) => !v)
+      } else if (e.key === 'Escape' && isZenMode) {
+        setIsZenMode(false)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isZenMode])
+
   return (
-    <div className="workspace-shell">
+    <div className={`workspace-shell${isZenMode ? ' workspace-shell--zen' : ''}`}>
       <Toolbar
         session={session}
         selectedTopicIds={selectedTopicIds}
         onClearSelection={clearMultiSelection}
         onStartPresentation={() => setIsPresenting(true)}
         onCheckForUpdates={onCheckForUpdates}
+        onToggleZenMode={() => setIsZenMode((v) => !v)}
+        isZenMode={isZenMode}
       />
+      {isZenMode ? (
+        <button
+          className="zen-exit-btn"
+          type="button"
+          onClick={() => setIsZenMode(false)}
+          title="退出专注模式（Esc）"
+          aria-label="退出专注模式"
+        >
+          退出专注
+        </button>
+      ) : null}
       <div className="workspace-shell__body">
         <Sidebar
           session={session}

@@ -85,3 +85,76 @@ export function centerCameraOnWorldPoint(
     y: viewport.height / 2 - point.y * nextZoom,
   }
 }
+
+// ---- 相机缓动动画 ----
+// 参考 XMind：fitToView / 聚焦主题 / 缩放按钮都带 300ms ease-out 动画，
+// 消除 setCamera 直接跳变带来的"廉价感"。
+
+/** 动画总开关：测试环境关闭以避免 RAF + performance.now() 导致的时序问题。 */
+let cameraAnimationEnabled = true
+
+/** 关闭/开启相机动画（测试用）。关闭后 animateCamera 直接跳到目标。 */
+export function setCameraAnimationEnabled(enabled: boolean): void {
+  cameraAnimationEnabled = enabled
+}
+
+/** ease-out cubic 缓动函数：起步快、末段慢，适合"滑入目标"的相机动画。 */
+export function easeOutCubic(t: number): number {
+  return 1 - Math.pow(1 - t, 3)
+}
+
+/** 线性插值两个相机状态。 */
+export function lerpCamera(from: CameraState, to: CameraState, t: number): CameraState {
+  return {
+    x: from.x + (to.x - from.x) * t,
+    y: from.y + (to.y - from.y) * t,
+    zoom: from.zoom + (to.zoom - from.zoom) * t,
+  }
+}
+
+/**
+ * 用 requestAnimationFrame 在 durationMs 内把相机从 from 平滑动画到 to。
+ * 每帧调用 onUpdate(插值后的相机状态)。
+ * 返回一个 cancel() 函数，调用后立即终止动画（用于用户中途打断）。
+ *
+ * 用法：
+ * ```ts
+ * const cancel = animateCamera(current, target, 300, setCamera)
+ * // 用户开始拖拽时：
+ * cancel()
+ * ```
+ */
+export function animateCamera(
+  from: CameraState,
+  to: CameraState,
+  durationMs: number,
+  onUpdate: (camera: CameraState) => void,
+): () => void {
+  // 测试环境或显式关闭时直接跳到目标，避免 RAF 时序问题
+  if (!cameraAnimationEnabled) {
+    onUpdate(to)
+    return () => {}
+  }
+
+  let cancelled = false
+  const start = performance.now()
+
+  function frame(now: number) {
+    if (cancelled) return
+    const t = Math.min(1, (now - start) / durationMs)
+    const eased = easeOutCubic(t)
+    onUpdate(lerpCamera(from, to, eased))
+    if (t < 1) {
+      requestAnimationFrame(frame)
+    }
+  }
+
+  requestAnimationFrame(frame)
+
+  return () => {
+    cancelled = true
+  }
+}
+
+/** 默认动画时长：参考 XMind 的 280-320ms 区间。 */
+export const CAMERA_ANIMATION_MS = 300

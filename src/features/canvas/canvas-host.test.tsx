@@ -571,3 +571,115 @@ it('falls back to the in-session clipboard when the system clipboard read fails'
   })
   expect(screen.getByText(/已回退到当前会话剪贴板/)).toBeInTheDocument()
 })
+
+it('opens a node context menu on right-click and deletes via the menu', () => {
+  const deleteTopics = vi.fn(async () => {})
+  const selectTopic = vi.fn(async () => {})
+  const session = createSessionStub({ deleteTopics, selectTopic })
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  const insightNode = within(scene).getByRole('button', { name: /关键洞察/ })
+
+  fireEvent.contextMenu(insightNode)
+
+  const menu = screen.getByRole('menu')
+  // 节点右键菜单包含 XMind 标配项
+  expect(within(menu).getByRole('menuitem', { name: /编辑文本/ })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: /新建子主题/ })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: /删除/ })).toBeInTheDocument()
+
+  // 点击删除触发 deleteTopics
+  fireEvent.click(within(menu).getByRole('menuitem', { name: /删除/ }))
+
+  expect(deleteTopics).toHaveBeenCalledWith(['topic_insight'], expect.any(String))
+  // 点击后菜单关闭
+  expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+})
+
+it('disables create-sibling and delete for the root node context menu', () => {
+  const session = createSessionStub({})
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  const rootNode = within(scene).getByRole('button', { name: /中心主题/ })
+
+  fireEvent.contextMenu(rootNode)
+
+  const menu = screen.getByRole('menu')
+  expect(within(menu).getByRole('menuitem', { name: /新建同级/ })).toBeDisabled()
+  expect(within(menu).getByRole('menuitem', { name: /删除/ })).toBeDisabled()
+})
+
+it('opens a canvas context menu on background right-click with view actions', () => {
+  const session = createSessionStub({})
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  const viewport = scene.querySelector('.mindmap-scene') as HTMLElement
+
+  fireEvent.contextMenu(viewport)
+
+  const menu = screen.getByRole('menu')
+  expect(within(menu).getByRole('menuitem', { name: /适配视图/ })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: /100%/ })).toBeInTheDocument()
+  expect(within(menu).getByRole('menuitem', { name: /放大/ })).toBeInTheDocument()
+})
+
+it('enters inline editing with the F2 key', () => {
+  const renameTopic = vi.fn(async () => {})
+  const session = createSessionStub({ renameTopic })
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  fireEvent.keyDown(window, { key: 'F2' })
+
+  expect(screen.getByRole('textbox', { name: '内联编辑主题' })).toBeInTheDocument()
+})
+
+it('selects all visible topics with Cmd/Ctrl + A', () => {
+  const session = createSessionStub({})
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  fireEvent.keyDown(window, { key: 'a', ctrlKey: true })
+
+  // 默认文档：中心主题 + 关键洞察(+洞察子主题) + 行动项 + 待验证假设 = 5 个可见主题
+  expect(screen.getByText('已选中 5 个主题')).toBeInTheDocument()
+})
+
+it('navigates focus to a right-side child with the ArrowRight key', () => {
+  const selectTopic = vi.fn(async (_topicId: string) => {})
+  const session = createSessionStub({ selectTopic })
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  fireEvent.keyDown(window, { key: 'ArrowRight' })
+
+  // 从中心主题向右，应选中右侧某个子主题（关键洞察 / 行动项 / 待验证假设）
+  expect(selectTopic).toHaveBeenCalled()
+  const calledId = selectTopic.mock.calls[0][0]
+  expect([
+    'topic_insight',
+    'topic_action',
+    'topic_hypothesis',
+  ]).toContain(calledId)
+})
+
+it('zooms in with Cmd/Ctrl + =', () => {
+  const getZoomLabel = () =>
+    within(screen.getByLabelText('思维导图舞台')).getByText(/%/, {
+      selector: '.editor-card__hint',
+    })
+
+  renderWithApp(<CanvasHost session={createSessionStub()} />)
+
+  fireEvent.keyDown(window, { key: '=', ctrlKey: true })
+
+  expect(getZoomLabel()).toHaveTextContent('115%')
+})
+
+

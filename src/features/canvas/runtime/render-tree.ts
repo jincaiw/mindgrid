@@ -95,6 +95,10 @@ export interface EdgeRenderNode {
   control1: WorldPoint
   control2: WorldPoint
   isActive: boolean
+  /** 子节点深度（用于线宽递减）。 */
+  childDepth: number
+  /** 分支色（XMind 式多色分支编码，由 scene-builder 计算）。 */
+  branchColor: string
 }
 
 export interface SelectionBoxRenderNode {

@@ -3,6 +3,7 @@ import {
   useEffect,
   type MouseEvent as ReactMouseEvent,
   useMemo,
+  useReducer,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -13,11 +14,14 @@ import {
   findAncestorTopicIds,
   findParentTopicByChildId,
   findTopicById,
+  collectVisibleTopicIds,
 } from '../../lib/document/tree'
 import { getActiveSheet } from '../../lib/document/sheets'
 import type { Boundary, ChartType, Relationship, SummaryNode, TopicSnapshot } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import {
+  animateCamera,
+  CAMERA_ANIMATION_MS,
   centerCameraOnWorldPoint,
   createDefaultCamera,
   fitSceneToViewport,
@@ -39,6 +43,8 @@ import {
 import {
   type MindMapNodeLayout,
 } from './mindmap-layout'
+import { findNearestNodeInDirection, type NavigationDirection } from './topic-navigation'
+import { Minimap } from './minimap'
 import { computeLayout } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveTopicStyle } from './runtime/style-resolver'
@@ -56,6 +62,7 @@ import {
   type TopicSearchEntry,
 } from './topic-search'
 import { TopicTreeNode } from '../workspace/topic-tree'
+import { ContextMenu, menuItem, menuSeparator, type ContextMenuItem } from '../workspace/context-menu'
 
 interface CanvasHostProps {
   session: DocumentSession
@@ -140,6 +147,22 @@ function getEdgeAutoPanDelta(
   }
 }
 
+/** 将键盘 Arrow* 事件 key 映射为导航方向，非方向键返回 null。 */
+function arrowDirection(key: string): NavigationDirection | null {
+  switch (key) {
+    case 'ArrowUp':
+      return 'up'
+    case 'ArrowDown':
+      return 'down'
+    case 'ArrowLeft':
+      return 'left'
+    case 'ArrowRight':
+      return 'right'
+    default:
+      return null
+  }
+}
+
 function MindMapScene({
   initialCamera,
   onCameraChange,
@@ -172,8 +195,14 @@ function MindMapScene({
   onCloseSearch,
   onToggleTopicCollapsed,
   onSelect,
-  onDeleteTopics,
   onMoveTopic,
+  onCreateChildTopic,
+  onCreateSiblingTopic,
+  onDeleteTopics,
+  onCopyTopics,
+  onPasteTopics,
+  canCopy,
+  canPaste,
 }: {
   initialCamera: CameraState | null
   onCameraChange: (camera: CameraState) => void
@@ -206,8 +235,15 @@ function MindMapScene({
   onCloseSearch: () => void
   onToggleTopicCollapsed: (topicId: string) => Promise<void>
   onSelect: (topicId: string) => void
-  onDeleteTopics: (topicIds: string[], actionLabel?: string) => Promise<void>
   onMoveTopic: (topicId: string, targetParentId: string) => Promise<void>
+  // 右键上下文菜单动作（由 TreeWorkspace 注入）
+  onCreateChildTopic: (topicId: string) => Promise<void>
+  onCreateSiblingTopic: (topicId: string) => Promise<void>
+  onDeleteTopics: (topicIds: string[]) => Promise<void>
+  onCopyTopics: () => Promise<void>
+  onPasteTopics: () => Promise<void>
+  canCopy: boolean
+  canPaste: boolean
 }) {
   const layout = useMemo(() => computeLayout(rootTopic, chartType), [rootTopic, chartType])
   const nodeMap = useMemo(
@@ -218,6 +254,9 @@ function MindMapScene({
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const hasInitializedCameraRef = useRef(false)
   const [camera, setCamera] = useState<CameraState>(() => initialCamera ?? createDefaultCamera())
+  // cameraRef 始终指向最新相机状态，供回调读取避免依赖 camera 导致的无限重渲染
+  const cameraRef = useRef(camera)
+  cameraRef.current = camera
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 })
   const [selectionBox, setSelectionBox] = useState<{
     startX: number
@@ -232,6 +271,21 @@ function MindMapScene({
     dropTargetId: string | null
   } | null>(null)
   const suppressClickRef = useRef(false)
+  // 相机动画取消器：用户手动操作（拖拽/滚轮）时立即取消正在进行的缓动动画
+  const cancelCameraAnimationRef = useRef<(() => void) | null>(null)
+  // 节点出现动画追踪：
+  // - knownTopicIdsRef：本画布内已"见过"的全部主题 ID（含视口外），避免滚动虚拟化时重复触发动画
+  // - appearingTopicIdsRef：正在播放出现动画的主题 ID，animationend 后移除（防止重渲染截断动画）
+  // key={activeSheet.id} 会让 MindMapScene 在切换画布时整体重挂，两个 ref 自动重置。
+  const knownTopicIdsRef = useRef<Set<string>>(new Set())
+  const appearingTopicIdsRef = useRef<Set<string>>(new Set())
+  const [, bumpAppearingVersion] = useReducer((x: number) => x + 1, 0)
+  // 右键上下文菜单状态
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    items: ContextMenuItem[]
+  } | null>(null)
   const interactionRef = useRef<
     | ({
         pointerId: number
@@ -245,10 +299,6 @@ function MindMapScene({
       ))
     | null
   >(null)
-  const deletableTopicIds = useMemo(
-    () => getDeletableTopicIds(selectedTopicIds, rootTopic.id),
-    [rootTopic.id, selectedTopicIds],
-  )
   const dropTargetNode = dragPreview?.dropTargetId
     ? nodeMap.get(dragPreview.dropTargetId) ?? null
     : null
@@ -316,20 +366,67 @@ function MindMapScene({
     return layout.nodes.filter((n) => visibleIds.has(n.id))
   }, [layout.nodes, scene, viewportSize, editingTopicId, dragPreview])
 
-  const fitToView = useCallback(() => {
-    const viewport = viewportRef.current
-
-    if (!viewport) {
-      return
+  // 标记本画布内所有布局节点为"已知"（含视口外），首次出现的新节点加入动画集合。
+  // 仅可见的新节点会真正播放出现动画；视口外的新节点只登记，避免滚入时重复动画。
+  {
+    const visibleIdSet = new Set(visibleLayoutNodes.map((n) => n.id))
+    for (const node of layout.nodes) {
+      if (!knownTopicIdsRef.current.has(node.id)) {
+        knownTopicIdsRef.current.add(node.id)
+        if (visibleIdSet.has(node.id)) {
+          appearingTopicIdsRef.current.add(node.id)
+        }
+      }
     }
+  }
 
-    setCamera(
-      fitSceneToViewport(
+  const handleNodeAppearEnd = useCallback((topicId: string) => {
+    if (appearingTopicIdsRef.current.delete(topicId)) {
+      bumpAppearingVersion()
+    }
+  }, [])
+
+  /** 取消正在进行的相机动画（用户手动操作时调用）。 */
+  const cancelCameraAnimation = useCallback(() => {
+    if (cancelCameraAnimationRef.current) {
+      cancelCameraAnimationRef.current()
+      cancelCameraAnimationRef.current = null
+    }
+  }, [])
+
+  /** 把相机平滑动画到目标状态（300ms ease-out），中途可被 cancelCameraAnimation 打断。 */
+  const animateCameraTo = useCallback(
+    (target: CameraState) => {
+      cancelCameraAnimation()
+      const from = cameraRef.current
+      cancelCameraAnimationRef.current = animateCamera(from, target, CAMERA_ANIMATION_MS, (next) => {
+        setCamera(next)
+      })
+    },
+    [cancelCameraAnimation],
+  )
+
+  const fitToView = useCallback(
+    (animate = true) => {
+      const viewport = viewportRef.current
+
+      if (!viewport) {
+        return
+      }
+
+      const target = fitSceneToViewport(
         { width: viewport.clientWidth, height: viewport.clientHeight },
         { width: layout.width, height: layout.height },
-      ),
-    )
-  }, [layout.height, layout.width])
+      )
+
+      if (animate) {
+        animateCameraTo(target)
+      } else {
+        setCamera(target)
+      }
+    },
+    [animateCameraTo, layout.height, layout.width],
+  )
 
   useEffect(() => {
     if (hasInitializedCameraRef.current) {
@@ -343,7 +440,8 @@ function MindMapScene({
     }
 
     hasInitializedCameraRef.current = true
-    fitToView()
+    // 初始加载直接定位，不播放动画
+    fitToView(false)
   }, [fitToView, initialCamera])
 
   useEffect(() => {
@@ -362,7 +460,8 @@ function MindMapScene({
         width: viewport.clientWidth,
         height: viewport.clientHeight,
       })
-      fitToView()
+      // 窗口尺寸变化时直接适配，不播放动画
+      fitToView(false)
     }
 
     updateViewport()
@@ -405,20 +504,22 @@ function MindMapScene({
     })
   }, [scene, camera, viewportSize, themeId])
 
-  const setZoomFromViewportCenter = useCallback((nextZoom: number) => {
-    const viewport = viewportRef.current
+  const setZoomFromViewportCenter = useCallback(
+    (nextZoom: number) => {
+      const viewport = viewportRef.current
 
-    if (!viewport) {
-      return
-    }
+      if (!viewport) {
+        return
+      }
 
-    setCamera((currentCamera) =>
-      zoomAtViewportPoint(currentCamera, nextZoom, {
+      const target = zoomAtViewportPoint(cameraRef.current, nextZoom, {
         x: viewport.clientWidth / 2,
         y: viewport.clientHeight / 2,
-      }),
-    )
-  }, [])
+      })
+      animateCameraTo(target)
+    },
+    [animateCameraTo],
+  )
 
   const focusTopicInViewport = useCallback(
     (topicId: string) => {
@@ -429,15 +530,14 @@ function MindMapScene({
         return
       }
 
-      setCamera((currentCamera) =>
-        centerCameraOnWorldPoint(
-          { width: viewport.clientWidth, height: viewport.clientHeight },
-          { x: node.x + layout.offsetX, y: node.y + layout.offsetY },
-          currentCamera.zoom,
-        ),
+      const target = centerCameraOnWorldPoint(
+        { width: viewport.clientWidth, height: viewport.clientHeight },
+        { x: node.x + layout.offsetX, y: node.y + layout.offsetY },
+        cameraRef.current.zoom,
       )
+      animateCameraTo(target)
     },
-    [layout.offsetX, layout.offsetY, nodeMap],
+    [animateCameraTo, layout.offsetX, layout.offsetY, nodeMap],
   )
 
   useEffect(() => {
@@ -467,6 +567,9 @@ function MindMapScene({
         return
       }
 
+      // 用户开始手动操作，立即取消正在进行的相机缓动动画
+      cancelCameraAnimation()
+
       interactionRef.current = {
         kind: event.shiftKey ? 'box' : 'pan',
         pointerId: event.pointerId,
@@ -487,7 +590,7 @@ function MindMapScene({
 
       event.currentTarget.setPointerCapture(event.pointerId)
     },
-    [],
+    [cancelCameraAnimation],
   )
 
   const handleNodePointerDown = useCallback(
@@ -702,6 +805,57 @@ function MindMapScene({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target
+      const isTypingTarget =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+
+      // 编辑/输入中时不拦截快捷键，让 textarea/input 自行处理光标与文字
+      if (isTypingTarget) {
+        return
+      }
+
+      const isModifierPressed = event.metaKey || event.ctrlKey
+
+      // 缩放快捷键（XMind 标配：Cmd/Ctrl + -/=/0/1）
+      if (isModifierPressed) {
+        if (event.key === '=' || event.key === '+') {
+          event.preventDefault()
+          setZoomFromViewportCenter(cameraRef.current.zoom * 1.15)
+          return
+        }
+        if (event.key === '-') {
+          event.preventDefault()
+          setZoomFromViewportCenter(cameraRef.current.zoom / 1.15)
+          return
+        }
+        if (event.key === '0') {
+          event.preventDefault()
+          fitToView()
+          return
+        }
+        if (event.key === '1') {
+          event.preventDefault()
+          setZoomFromViewportCenter(1)
+          return
+        }
+      }
+
+      // 方向键导航：在相邻节点间移动焦点（编辑中禁用）
+      if (!editingTopicId) {
+        const direction = arrowDirection(event.key)
+        if (direction && activeTopicId) {
+          const next = findNearestNodeInDirection(layout.nodes, activeTopicId, direction)
+          if (next) {
+            event.preventDefault()
+            onSelectedTopicIdsChange([next.id])
+            void onSelect(next.id)
+          }
+          return
+        }
+      }
+
       if (event.key !== 'Escape') {
         return
       }
@@ -736,9 +890,14 @@ function MindMapScene({
   }, [
     activeTopicId,
     dragPreview,
+    editingTopicId,
+    fitToView,
+    layout.nodes,
+    onSelect,
     onSelectedTopicIdsChange,
     selectedTopicIds.length,
     selectionBox,
+    setZoomFromViewportCenter,
   ])
 
   const handleViewportWheel = useCallback(
@@ -750,6 +909,9 @@ function MindMapScene({
       if (!viewport) {
         return
       }
+
+      // 滚轮缩放/平移是连续手动操作，取消正在进行的缓动动画避免冲突
+      cancelCameraAnimation()
 
       const rect = viewport.getBoundingClientRect()
 
@@ -772,7 +934,7 @@ function MindMapScene({
         }),
       )
     },
-    [],
+    [cancelCameraAnimation],
   )
 
   const handleNodeDoubleClick = useCallback(
@@ -782,49 +944,131 @@ function MindMapScene({
     [onStartEditingTopic],
   )
 
+  // 节点右键：编辑/增删/复制/粘贴/折叠/删除（参考 XMind 节点右键菜单）
+  const handleNodeContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>, topicId: string) => {
+      event.preventDefault()
+      event.stopPropagation()
+
+      const topic = findTopicById(rootTopic, topicId)
+      if (!topic) {
+        return
+      }
+
+      const isRoot = topic.id === rootTopic.id
+      const hasChildren = topic.children.length > 0
+      const isInSelection = selectedTopicIds.includes(topicId)
+
+      // 右键未选中的节点时，改为单选该节点，使后续操作作用于它
+      if (!isInSelection) {
+        onSelectedTopicIdsChange([topicId])
+        void onSelect(topicId)
+      }
+
+      const effectiveSelectedIds = isInSelection ? selectedTopicIds : [topicId]
+      const deletableIds = getDeletableTopicIds(effectiveSelectedIds, rootTopic.id)
+
+      const items: ContextMenuItem[] = [
+        menuItem('编辑文本', () => onStartEditingTopic(topicId), { shortcut: 'F2' }),
+        menuItem('新建子主题', () => void onCreateChildTopic(topicId), { shortcut: 'Tab' }),
+        menuItem('新建同级', () => void onCreateSiblingTopic(topicId), {
+          shortcut: 'Enter',
+          disabled: isRoot,
+        }),
+        menuSeparator,
+        menuItem('复制', () => void onCopyTopics(), { shortcut: '⌘C', disabled: !canCopy }),
+        menuItem('粘贴为子主题', () => void onPasteTopics(), {
+          shortcut: '⌘V',
+          disabled: !canPaste,
+        }),
+        menuSeparator,
+        menuItem(topic.collapsed ? '展开' : '折叠', () => void onToggleTopicCollapsed(topicId), {
+          disabled: !hasChildren,
+        }),
+        menuSeparator,
+        menuItem('删除', () => void onDeleteTopics(deletableIds), {
+          shortcut: '⌫',
+          disabled: deletableIds.length === 0,
+          danger: true,
+        }),
+      ]
+
+      setContextMenu({ x: event.clientX, y: event.clientY, items })
+    },
+    [
+      rootTopic,
+      selectedTopicIds,
+      onSelectedTopicIdsChange,
+      onSelect,
+      onStartEditingTopic,
+      onCreateChildTopic,
+      onCreateSiblingTopic,
+      onCopyTopics,
+      onPasteTopics,
+      onToggleTopicCollapsed,
+      onDeleteTopics,
+      canCopy,
+      canPaste,
+    ],
+  )
+
+  // 画布空白右键：粘贴 + 视图缩放（参考 XMind 画布右键菜单）
+  const handleViewportContextMenu = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      event.preventDefault()
+
+      const items: ContextMenuItem[] = [
+        menuItem('粘贴', () => void onPasteTopics(), {
+          shortcut: '⌘V',
+          disabled: !canPaste,
+        }),
+        menuSeparator,
+        menuItem('放大', () => setZoomFromViewportCenter(cameraRef.current.zoom * 1.15), {
+          shortcut: '⌘+',
+        }),
+        menuItem('缩小', () => setZoomFromViewportCenter(cameraRef.current.zoom / 1.15), {
+          shortcut: '⌘-',
+        }),
+        menuItem('100%', () => setZoomFromViewportCenter(1)),
+        menuItem('适配视图', () => fitToView(), { shortcut: '⌘0' }),
+      ]
+
+      setContextMenu({ x: event.clientX, y: event.clientY, items })
+    },
+    [canPaste, onPasteTopics, setZoomFromViewportCenter, fitToView],
+  )
+
   return (
     <section className="editor-card editor-card--scene" aria-label="思维导图舞台">
-      <div className="editor-card__header">
-        <div>
-          <p className="panel__eyebrow">Mind Map</p>
-          <h3>真实导图场景</h3>
+      {selectedTopicIds.length > 1 ? (
+        <div className="scene-selection-badge" role="status" aria-live="polite">
+          已选中 {selectedTopicIds.length} 个主题
         </div>
-        <div className="scene-toolbar">
-          <span className="editor-card__hint">{Math.round(camera.zoom * 100)}%</span>
-          <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(camera.zoom / 1.15)}>
-            -
-          </button>
-          <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(camera.zoom * 1.15)}>
-            +
-          </button>
-          <button className="scene-toolbar__button" type="button" onClick={fitToView}>
-            适配视图
-          </button>
-          <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(1)}>
-            100%
-          </button>
-        </div>
+      ) : null}
+      <div className="scene-toolbar scene-toolbar--floating">
+        <span className="editor-card__hint">{Math.round(camera.zoom * 100)}%</span>
+        <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(camera.zoom / 1.15)} title="缩小">
+          -
+        </button>
+        <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(camera.zoom * 1.15)} title="放大">
+          +
+        </button>
+        <button className="scene-toolbar__button" type="button" onClick={() => fitToView()} title="适配视图">
+          适配
+        </button>
+        <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(1)} title="100%">
+          100%
+        </button>
       </div>
 
-      <div className="scene-meta">
-        <span>已选中 {selectedTopicIds.length} 个主题</span>
-        <div className="scene-meta__actions">
-          <span>空白处拖拽平移，按住 Shift 拖拽进行框选</span>
-          <button
-            className="scene-toolbar__button"
-            type="button"
-            disabled={deletableTopicIds.length === 0}
-            onClick={() =>
-              void onDeleteTopics(
-                deletableTopicIds,
-                `删除 ${deletableTopicIds.length} 个主题`,
-              )
-            }
-          >
-            删除选中项
-          </button>
-        </div>
-      </div>
+      {viewportSize.width > 0 && viewportSize.height > 0 ? (
+        <Minimap
+          layout={layout}
+          camera={camera}
+          viewportSize={viewportSize}
+          onNavigate={animateCameraTo}
+        />
+      ) : null}
 
       {searchOpen ? (
         <div className="mindmap-search" role="search">
@@ -902,6 +1146,7 @@ function MindMapScene({
         onPointerUp={handleViewportPointerEnd}
         onPointerCancel={handleViewportPointerEnd}
         onWheel={handleViewportWheel}
+        onContextMenu={handleViewportContextMenu}
       >
         <canvas
           ref={canvasRef}
@@ -964,14 +1209,26 @@ function MindMapScene({
               onClick={handleNodeClick}
               onDoubleClick={handleNodeDoubleClick}
               onPointerDown={handleNodePointerDown}
+              onContextMenu={handleNodeContextMenu}
               onToggleCollapsed={onToggleTopicCollapsed}
               onEditingTextChange={onEditingTextChange}
               onCommitEditingTopic={onCommitEditingTopic}
               onCancelEditingTopic={onCancelEditingTopic}
+              isAppearing={appearingTopicIdsRef.current.has(node.id)}
+              onAppearEnd={handleNodeAppearEnd}
             />
           ))}
         </div>
       </div>
+
+      {contextMenu ? (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
+      ) : null}
     </section>
   )
 }
@@ -993,10 +1250,13 @@ function MindMapNode({
   onClick,
   onDoubleClick,
   onPointerDown,
+  onContextMenu,
   onToggleCollapsed,
   onEditingTextChange,
   onCommitEditingTopic,
   onCancelEditingTopic,
+  isAppearing,
+  onAppearEnd,
 }: {
   node: MindMapNodeLayout
   offsetX: number
@@ -1017,10 +1277,16 @@ function MindMapNode({
     event: ReactPointerEvent<HTMLButtonElement>,
     topicId: string,
   ) => void
+  onContextMenu: (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    topicId: string,
+  ) => void
   onToggleCollapsed: (topicId: string) => Promise<void>
   onEditingTextChange: (text: string) => void
   onCommitEditingTopic: () => Promise<void>
   onCancelEditingTopic: () => void
+  isAppearing: boolean
+  onAppearEnd: (topicId: string) => void
 }) {
   const left = node.x - node.width / 2 + offsetX
   const top = node.y - node.height / 2 + offsetY
@@ -1038,10 +1304,9 @@ function MindMapNode({
     borderColor: resolvedStyle.borderColor,
     transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
   }
-  const metaStyle = { color: resolvedStyle.metaTextColor }
   const toggleStyle = {
-    left: `${left + node.width - 18}px`,
-    top: `${top - 12}px`,
+    left: `${left + node.width - 14}px`,
+    top: `${top - 8}px`,
   }
 
   if (isEditing) {
@@ -1107,18 +1372,17 @@ function MindMapNode({
   return (
     <>
       <button
-        className={`mindmap-node mindmap-node--${node.side}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''}${isDropTarget ? ' mindmap-node--drop-target' : ''}${dragOffset ? ' mindmap-node--dragging' : ''}`}
+        className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''}${isDropTarget ? ' mindmap-node--drop-target' : ''}${dragOffset ? ' mindmap-node--dragging' : ''}${isAppearing ? ' mindmap-node--appear' : ''}`}
         style={baseStyle}
         type="button"
+        data-topic-id={node.id}
         onClick={(event) => onClick(event, node.id)}
         onDoubleClick={() => onDoubleClick(node.id)}
         onPointerDown={(event) => onPointerDown(event, node.id)}
+        onContextMenu={(event) => onContextMenu(event, node.id)}
+        onAnimationEnd={() => onAppearEnd(node.id)}
       >
         <span className="mindmap-node__title">{node.topic.text}</span>
-        <span className="mindmap-node__meta" style={metaStyle}>
-          {node.depth === 0 ? 'Root' : `Depth ${node.depth}`} · {node.topic.children.length} 子主题
-          {node.topic.children.length > 0 && node.topic.collapsed ? ' · 已折叠' : ''}
-        </span>
       </button>
       {node.topic.children.length > 0 ? (
         <button
@@ -1229,6 +1493,9 @@ function TreeWorkspace({
   )
   const canUseSystemClipboardPaste =
     typeof navigator !== 'undefined' && typeof navigator.clipboard?.readText === 'function'
+  // 右键菜单：复制/粘贴可用性（本地剪贴板或系统剪贴板任一可用即可粘贴）
+  const canCopy = copyableTopics.length > 0
+  const canPaste = clipboardTopics.length > 0 || canUseSystemClipboardPaste
   const searchEntries = useMemo(
     () => buildDocumentTopicSearchIndex(session.document!),
     [session.document],
@@ -1519,6 +1786,13 @@ function TreeWorkspace({
         return
       }
 
+      // Cmd/Ctrl + A：全选当前画布可见主题（编辑中由 textarea 自行处理文本全选）
+      if (isModifierPressed && event.key.toLowerCase() === 'a' && !editingTopicId) {
+        event.preventDefault()
+        setSelectedTopicIds(collectVisibleTopicIds(rootTopic))
+        return
+      }
+
       if (editingTopicId) {
         return
       }
@@ -1543,6 +1817,13 @@ function TreeWorkspace({
 
           return
         }
+      }
+
+      // F2：进入内联编辑（XMind/MindNode 标准重命名快捷键）
+      if (event.key === 'F2' && !searchOpen) {
+        event.preventDefault()
+        startInlineEditing(selectedTopicId)
+        return
       }
 
       if (event.key === 'Tab') {
@@ -1636,6 +1917,8 @@ function TreeWorkspace({
     searchOpen,
     selectTopic,
     selectedTopicIds.length,
+    setSelectedTopicIds,
+    startInlineEditing,
     toggleTopicCollapsed,
     undo,
   ])
@@ -1643,17 +1926,13 @@ function TreeWorkspace({
   return (
     <div className="canvas-stage canvas-stage--editor">
       <div className="canvas-stage__hero">
-        <div>
-          <p className="panel__eyebrow">Canvas Runtime</p>
-          <h2>{summary!.rootTopicText}</h2>
-          <p className="canvas-stage__clipboard">
-            剪贴板：
-            {clipboardLabel ? `已复制 ${clipboardLabel}` : '当前为空'}
-            {clipboardHint ? (
-              <span className="canvas-stage__clipboard-detail">（{clipboardHint}）</span>
-            ) : null}
-          </p>
-        </div>
+        <p className="canvas-stage__clipboard">
+          剪贴板：
+          {clipboardLabel ? `已复制 ${clipboardLabel}` : '当前为空'}
+          {clipboardHint ? (
+            <span className="canvas-stage__clipboard-detail">（{clipboardHint}）</span>
+          ) : null}
+        </p>
         <div className="canvas-stage__actions">
           <button
             className="toolbar__button"
@@ -1704,15 +1983,6 @@ function TreeWorkspace({
         </div>
       </div>
 
-      <p className="canvas-stage__description">
-        现在中央区域已经是稳定双侧 Mind Map 场景，不再只是树状列表。基础键盘工作流也已接入：
-        <kbd>Tab</kbd> 新建子主题，<kbd>Enter</kbd> 新建同级，<kbd>Space</kbd> 折叠/展开，<kbd>Delete</kbd> 删除，
-        <kbd>Cmd/Ctrl + C</kbd> 复制，<kbd>Cmd/Ctrl + V</kbd> 粘贴，<kbd>Cmd/Ctrl + Z</kbd> 撤销，
-        <kbd>Cmd/Ctrl + F</kbd> 搜索，<kbd>Shift + Tab</kbd> 选择父主题，<kbd>Escape</kbd> 取消当前选择。
-        舞台支持拖拽平移、按住 <kbd>Shift</kbd> 框选、双击节点进入内联编辑，浮动搜索逐项跳转，
-        以及拖拽节点到其他主题下完成重排。
-      </p>
-
       <div className="editor-grid editor-grid--scene">
         <MindMapScene
           key={activeSheet.id}
@@ -1752,8 +2022,14 @@ function TreeWorkspace({
           onCloseSearch={closeSearch}
           onToggleTopicCollapsed={toggleTopicCollapsed}
           onSelect={(topicId) => void selectTopic(topicId)}
-          onDeleteTopics={(topicIds, actionLabel) => deleteTopics(topicIds, actionLabel)}
           onMoveTopic={(topicId, targetParentId) => moveTopic(topicId, targetParentId)}
+          onCreateChildTopic={(parentId) => createChildTopic(parentId)}
+          onCreateSiblingTopic={(topicId) => createSiblingTopic(topicId)}
+          onDeleteTopics={(topicIds) => deleteTopics(topicIds, `删除 ${topicIds.length} 个主题`)}
+          onCopyTopics={handleCopyTopics}
+          onPasteTopics={handlePasteTopics}
+          canCopy={canCopy}
+          canPaste={canPaste}
         />
 
         <div className="editor-rail">

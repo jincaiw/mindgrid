@@ -12,6 +12,7 @@
 import type { MindMapEdgeLayout, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import type { Boundary, Relationship, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
 import { resolveTopicStyle } from './style-resolver'
+import { getBranchColor } from './style-constants'
 import {
   expandRect,
   rectsIntersect,
@@ -102,6 +103,10 @@ export function buildScene(options: BuildSceneOptions): Scene {
     layoutNodeMap.set(node.id, node)
   }
 
+  // 分支色映射：根的每个直接子节点分配一个分支索引，其所有后代继承该索引。
+  // 用于 XMind 式多色分支编码（每条主分支不同色的连线）。
+  const branchIndexMap = buildBranchIndexMap(layout.nodes)
+
   const nodes: RenderNode[] = []
 
   // 边界（z-order 最低，在边之前）
@@ -121,7 +126,18 @@ export function buildScene(options: BuildSceneOptions): Scene {
       continue
     }
     const childIsActive = edge.childId === visualStates.activeTopicId
-    nodes.push(edgeToRenderNode(edge, edgeBounds, childIsActive))
+    const childNode = layoutNodeMap.get(edge.childId)
+    const childDepth = childNode?.depth ?? 1
+    const branchIndex = branchIndexMap.get(edge.childId) ?? 0
+    nodes.push(
+      edgeToRenderNode(
+        edge,
+        edgeBounds,
+        childIsActive,
+        childDepth,
+        getBranchColor(branchIndex),
+      ),
+    )
   }
 
   // 概要（在边之后、主题之前）
@@ -259,6 +275,8 @@ function edgeToRenderNode(
   edge: MindMapEdgeLayout,
   bounds: WorldRect,
   isActive: boolean,
+  childDepth: number,
+  branchColor: string,
 ): EdgeRenderNode {
   return {
     type: 'edge',
@@ -272,6 +290,50 @@ function edgeToRenderNode(
     control1: edge.control1,
     control2: edge.control2,
     isActive,
+    childDepth,
+    branchColor,
+  }
+}
+
+/**
+ * 构建分支索引映射：根的每个直接子节点分配递增索引（0,1,2,...），
+ * 其所有后代继承该索引。用于多色分支编码。
+ *
+ * 遍历方式：先找到根节点（depth=0），然后按子节点顺序分配索引并 DFS 传播。
+ */
+function buildBranchIndexMap(nodes: MindMapNodeLayout[]): Map<string, number> {
+  const map = new Map<string, number>()
+  const nodeById = new Map<string, MindMapNodeLayout>()
+  for (const node of nodes) {
+    nodeById.set(node.id, node)
+  }
+
+  // 找到根节点
+  const root = nodes.find((n) => n.depth === 0)
+  if (!root) return map
+
+  // 根的直接子节点按布局顺序分配分支索引，DFS 传播给后代
+  let branchIndex = 0
+  for (const child of root.topic.children) {
+    const index = branchIndex++
+    propagateBranchIndex(child.id, index, nodeById, map)
+  }
+
+  return map
+}
+
+/** DFS 传播分支索引到整棵子树。 */
+function propagateBranchIndex(
+  topicId: string,
+  index: number,
+  nodeById: Map<string, MindMapNodeLayout>,
+  map: Map<string, number>,
+): void {
+  map.set(topicId, index)
+  const node = nodeById.get(topicId)
+  if (!node) return
+  for (const child of node.topic.children) {
+    propagateBranchIndex(child.id, index, nodeById, map)
   }
 }
 

@@ -12,18 +12,18 @@ describe('resolveTopicStyle', () => {
 
   it('returns branch colors for depth > 0 without overrides', () => {
     const style = resolveTopicStyle('classic-blue', 1, 'left', undefined)
-    expect(style.fill).toBe('rgba(255, 255, 255, 0.94)')
-    expect(style.textColor).toBe('#0f172a')
-    expect(style.metaTextColor).toBe('rgba(15, 23, 42, 0.54)')
-    expect(style.borderColor).toBe('rgba(15, 23, 42, 0.08)')
+    expect(style.fill).toBe('#ffffff')
+    expect(style.textColor).toBe('#1d1d1f')
+    expect(style.metaTextColor).toBe('rgba(60, 60, 67, 0.6)')
+    expect(style.borderColor).toBe('rgba(0, 0, 0, 0.08)')
   })
 
   it('applies fill override over theme default', () => {
     const style = resolveTopicStyle('classic-blue', 1, 'right', { fill: '#ff0000' })
     expect(style.fill).toBe('#ff0000')
     // Non-overridden properties keep theme defaults
-    expect(style.textColor).toBe('#0f172a')
-    expect(style.borderColor).toBe('rgba(15, 23, 42, 0.08)')
+    expect(style.textColor).toBe('#1d1d1f')
+    expect(style.borderColor).toBe('rgba(0, 0, 0, 0.08)')
   })
 
   it('applies textColor and borderColor overrides', () => {
@@ -34,7 +34,7 @@ describe('resolveTopicStyle', () => {
     expect(style.textColor).toBe('#00ff00')
     expect(style.borderColor).toBe('#ff00ff')
     // fill not overridden → keeps theme root fill
-    expect(style.fill).toBe('#1e293b')
+    expect(style.fill).toBe('#2d3748')
   })
 
   it('does not allow metaTextColor to be overridden', () => {
@@ -85,18 +85,18 @@ describe('resolveTopicStyle', () => {
 describe('resolveThemeBackground', () => {
   it('returns background and gridLine for classic-blue', () => {
     const bg = resolveThemeBackground('classic-blue')
-    expect(bg.background).toBe('rgba(238, 244, 255, 0.82)')
-    expect(bg.gridLine).toBe('rgba(91, 140, 255, 0.06)')
+    expect(bg.background).toBe('#f5f5f7')
+    expect(bg.gridLine).toBe('rgba(0, 0, 0, 0.06)')
   })
 
   it('returns background for dark theme', () => {
     const bg = resolveThemeBackground('dark')
-    expect(bg.background).toBe('#0b1220')
+    expect(bg.background).toBe('#1a1a2e')
   })
 
   it('falls back to default for undefined', () => {
     const bg = resolveThemeBackground(undefined)
-    expect(bg.background).toBe('rgba(238, 244, 255, 0.82)')
+    expect(bg.background).toBe('#f5f5f7')
   })
 })
 

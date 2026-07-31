@@ -76,12 +76,12 @@ describe('renderSceneToSvg', () => {
     // 根节点用 classic-blue 主题 root.fill（纯色，非渐变 URL）
     expect(svg).toContain('fill="rgba(91, 140, 255, 0.96)"')
     // 分支节点用 classic-blue 主题 branch.fill
-    expect(svg).toContain('fill="rgba(255, 255, 255, 0.94)"')
+    expect(svg).toContain('fill="#ffffff"')
     // 不应出现渐变 URL 引用（滤镜 url(#nodeShadow) 不在此限定范围）
     expect(svg).not.toContain('url(#rootBg)')
     expect(svg).not.toContain('url(#nodeBgLeft)')
     expect(svg).not.toContain('url(#nodeBgRight)')
-    expect(svg).toContain('rx="20"')
+    expect(svg).toContain('rx="12"')
   })
 
   it('renders topic text with escaped special characters', () => {
@@ -121,7 +121,7 @@ describe('renderSceneToSvg', () => {
     // 根节点和子节点 a/b 都有折叠按钮（root 有 2 子，a/b 有 0 子不显示）
     // 只有 childCount > 0 的节点才显示按钮
     expect(svg).toContain('<circle')
-    expect(svg).toContain('r="15"')
+    expect(svg).toContain('r="11"')
   })
 
   it('does not render overlay nodes', () => {
@@ -149,14 +149,14 @@ describe('renderSceneToSvg', () => {
     const svg = renderSceneToSvg(scene, { drawBackground: true })
 
     // classic-blue 主题背景色
-    expect(svg).toContain('fill="rgba(238, 244, 255, 0.82)"')
+    expect(svg).toContain('fill="#f5f5f7"')
   })
 
   it('uses dark theme background when themeId is dark', () => {
     const scene = buildTestScene()
     const svg = renderSceneToSvg(scene, { drawBackground: true, themeId: 'dark' })
 
-    expect(svg).toContain('fill="#0b1220"')
+    expect(svg).toContain('fill="#1a1a2e"')
   })
 
   it('does not include background rect by default', () => {
@@ -164,7 +164,7 @@ describe('renderSceneToSvg', () => {
     const svg = renderSceneToSvg(scene)
 
     // 默认不绘制背景矩形（不应出现主题背景色作为 <rect> fill）
-    expect(svg).not.toContain('fill="rgba(238, 244, 255, 0.82)"')
+    expect(svg).not.toContain('fill="#f5f5f7"')
   })
 
   it('applies custom padding to viewBox bounds', () => {

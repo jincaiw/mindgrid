@@ -32,7 +32,7 @@ describe('built-in themes', () => {
   it('getTheme returns the matching theme by ID', () => {
     const dark = getTheme('dark')
     expect(dark.id).toBe('dark')
-    expect(dark.root.fill).toBe('#1e293b')
+    expect(dark.root.fill).toBe('#2d3748')
   })
 
   it('getTheme falls back to default for undefined ID', () => {

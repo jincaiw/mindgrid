@@ -151,9 +151,9 @@ describe('renderScene', () => {
     renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
 
     const fillTextCalls = calls.filter((c) => c.method === 'fillText')
-    // Each topic has at least: title + meta text + toggle (+/−)
-    // root, a, b = 3 topics → at least 3 title texts + 3 meta texts + 3 toggle symbols
-    expect(fillTextCalls.length).toBeGreaterThanOrEqual(6)
+    // Each topic has at least: title text (+ toggle symbol for nodes with children)
+    // root, a, b = 3 topics → at least 3 title texts (meta text removed, XMind-style)
+    expect(fillTextCalls.length).toBeGreaterThanOrEqual(3)
   })
 
   it('draws selection box overlay when present', () => {

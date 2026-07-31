@@ -115,11 +115,11 @@ it('renders toolbar and canvas host', () => {
   renderWithApp(<WorkspaceScreen session={sessionStub} />)
 
   expect(screen.getByLabelText('主工具栏')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '打开' })).toHaveAttribute(
+  expect(screen.getByRole('button', { name: '打开文档' })).toHaveAttribute(
     'title',
     '打开文档（Cmd/Ctrl + O）',
   )
-  expect(screen.getByRole('button', { name: '保存' })).toHaveAttribute(
+  expect(screen.getByRole('button', { name: '保存文档' })).toHaveAttribute(
     'title',
     '保存文档（Cmd/Ctrl + S）',
   )
@@ -127,23 +127,9 @@ it('renders toolbar and canvas host', () => {
     'title',
     '另存为（Shift + Cmd/Ctrl + S）',
   )
-  expect(screen.getByRole('button', { name: '导出 Markdown' })).toHaveAttribute(
-    'title',
-    '导出 Markdown 大纲',
-  )
-  expect(screen.getByRole('button', { name: '导入 Markdown' })).toHaveAttribute(
-    'title',
-    '从 Markdown 文件导入大纲',
-  )
-  expect(screen.getByRole('button', { name: '导出 OPML' })).toHaveAttribute(
-    'title',
-    '导出 OPML 大纲',
-  )
-  expect(screen.getByRole('button', { name: '导入 OPML' })).toHaveAttribute(
-    'title',
-    '从 OPML 文件导入大纲',
-  )
-  expect(screen.getByRole('button', { name: '导出恢复副本' })).toBeInTheDocument()
+  // 导入/导出按钮在下拉菜单中
+  expect(screen.getByRole('button', { name: '导出' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '导入' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '新建文档' })).toHaveAttribute(
     'title',
     '新建文档（Cmd/Ctrl + N）',
@@ -1827,6 +1813,9 @@ it('switches the document theme from the inspector theme selector', () => {
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
 
+  // 主题选择器在“画布” tab 下，先切换过去
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+
   // 当前 dark 高亮，点击经典蓝主题
   const classicSwatch = inspector.getByRole('radio', { name: /经典蓝/ })
   fireEvent.click(classicSwatch)
@@ -1836,6 +1825,68 @@ it('switches the document theme from the inspector theme selector', () => {
   const resetButton = inspector.getByRole('button', { name: '恢复默认主题' })
   fireEvent.click(resetButton)
   expect(setDocumentTheme).toHaveBeenCalledWith(null)
+})
+
+it('switches inspector tabs to reveal context-aware panels', () => {
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  {
+                    id: 'topic_branch',
+                    text: '待编辑主题',
+                    collapsed: false,
+                    children: [],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        summary: {
+          ...sessionStub.summary!,
+          topicCount: 2,
+        },
+        activeTopicId: 'topic_branch',
+      }}
+    />,
+  )
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+
+  // 默认在“主题” tab：富内容编辑可见，关系线创建表单不可见
+  expect(inspector.getByPlaceholderText('为该主题添加详细备注…')).toBeInTheDocument()
+  expect(inspector.queryByRole('button', { name: '创建关系线' })).not.toBeInTheDocument()
+
+  // 切换到“关系线” tab：创建表单出现，富内容编辑消失
+  fireEvent.click(inspector.getByRole('tab', { name: '关系线' }))
+  expect(inspector.getByRole('button', { name: '创建关系线' })).toBeInTheDocument()
+  expect(inspector.queryByPlaceholderText('为该主题添加详细备注…')).not.toBeInTheDocument()
+
+  // 切换到“画布” tab：文档主题选择器出现
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+  expect(inspector.getByRole('radiogroup', { name: '文档主题' })).toBeInTheDocument()
+
+  // 切换到“分组” tab：边界/概要创建表单出现
+  fireEvent.click(inspector.getByRole('tab', { name: '分组' }))
+  expect(inspector.getByPlaceholderText('例如：核心模块、风险项')).toBeInTheDocument()
+  expect(inspector.getByPlaceholderText('对这组主题的归纳说明')).toBeInTheDocument()
+
+  // 回到“主题” tab：active 状态正确
+  const topicTab = inspector.getByRole('tab', { name: '主题' })
+  fireEvent.click(topicTab)
+  expect(topicTab).toHaveAttribute('aria-selected', 'true')
 })
 
 it('applies node color overrides from the inspector color editor', () => {
@@ -1968,7 +2019,7 @@ it('enters presentation mode, advances slides, and exits via controls', () => {
   renderWithApp(<WorkspaceScreen session={{ ...sessionStub, document: presentationDocument }} />)
 
   // 进入演示模式
-  fireEvent.click(screen.getByRole('button', { name: '演示' }))
+  fireEvent.click(screen.getByRole('button', { name: '演示模式' }))
   const dialog = screen.getByRole('dialog', { name: '演示模式' })
   // 4 个主题 → 4 张幻灯片，首张计数 1 / 4
   expect(within(dialog).getByText('1 / 4')).toBeInTheDocument()
@@ -1989,7 +2040,7 @@ it('enters presentation mode, advances slides, and exits via controls', () => {
 it('supports keyboard navigation in presentation mode', () => {
   renderWithApp(<WorkspaceScreen session={{ ...sessionStub, document: presentationDocument }} />)
 
-  fireEvent.click(screen.getByRole('button', { name: '演示' }))
+  fireEvent.click(screen.getByRole('button', { name: '演示模式' }))
   const dialog = screen.getByRole('dialog', { name: '演示模式' })
   expect(within(dialog).getByText('1 / 4')).toBeInTheDocument()
 

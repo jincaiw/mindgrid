@@ -241,3 +241,22 @@ export function flattenTopicTree(topic: TopicSnapshot, depth = 0, path: string[]
 
   return entries
 }
+
+/**
+ * 收集当前可见的主题 ID（含根节点）；遇到折叠节点时停止下钻，
+ * 与画布实际渲染的节点集合保持一致。用于 Cmd/Ctrl + A 全选等场景。
+ */
+export function collectVisibleTopicIds(root: TopicSnapshot): string[] {
+  const ids: string[] = []
+
+  function walk(topic: TopicSnapshot) {
+    ids.push(topic.id)
+
+    if (!topic.collapsed) {
+      topic.children.forEach(walk)
+    }
+  }
+
+  walk(root)
+  return ids
+}
