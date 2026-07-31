@@ -1,75 +1,227 @@
 # MindGrid
 
-MindGrid 是一款面向桌面端的专业思维导图应用，目标体验是“Xmind 的能力完整度 + MindNode 的优秀体验”。
+**专业桌面思维导图应用** — Xmind 的能力完整度 + MindNode 的优秀体验。
 
-当前仓库已从纯规范文档升级为第一阶段可运行工程，包含：
+MindGrid 是一款基于 Tauri 2 + React 19 + Rust 的桌面思维导图应用，支持 6 种图表类型、富内容编辑、演示模式、多格式导入导出，以及 10k 节点级别的高性能画布运行时。
 
-- Tauri 2 + React + TypeScript + Rust 双端工程
-- 最小文档模型与 Rust IPC 命令
-- 浏览器开发态内存回退层，支持不依赖 Tauri 直接预览前端
-- 桌面应用壳、三栏工作区布局、状态栏与错误提示
-- 启动即创建默认文档的最小工作流
-- 树结构主题浏览、选中、重命名、新建子主题 / 同级主题、删除
-- 最小撤销 / 重做历史栈
-- 稳定双侧 Mind Map 可视化场景与基础键盘工作流
-- 双击节点内联编辑，支持 `Esc` 取消与 `Cmd/Ctrl + Enter` 提交
-- 主题折叠 / 展开，支持 `Space` 快捷键、节点按钮与大纲切换入口
-- 浮动搜索，支持 `Cmd/Ctrl + F` 打开、逐项跳转、结果高亮和必要分支自动展开
-- 应用内复制 / 粘贴，支持 `Cmd/Ctrl + C`、`Cmd/Ctrl + V` 与分支克隆粘贴
-- 系统剪贴板集成：复制时写入可读大纲 + 结构化载荷，在系统剪贴板可访问的环境下支持跨刷新继续粘贴，并在系统剪贴板不可读时回退到当前会话剪贴板
-- `.mgd` 基础持久化与恢复区自动保存：当前会把最小合法文档容器写入恢复区，并在启动时自动恢复最近一次快照
-- 正式文件工作流基础：桌面版已支持 `打开`、`保存`、`另存为`、导出 Markdown 大纲，并显示当前文件状态、正式保存状态与恢复状态；支持 `Cmd/Ctrl + N` 新建、`Cmd/Ctrl + O` 打开、`Cmd/Ctrl + S` 保存、`Shift + Cmd/Ctrl + S` 另存为；当文档仍有未保存更改时，新建/打开前会先确认，关闭页面前也会给出离开提醒
-- `.mgd` 打开校验与迁移基础：会校验容器结构、mimetype、manifest、重复 Topic ID，并支持我们内部 0.x 早期文档迁移到 `1.0.0`
-- 恢复退路基础：桌面版支持把当前恢复快照导出为 `.mgd` 恢复副本，文件操作失败时不会中断当前工作区
-- 最小修复向导：打开 `.mgd` 失败时会提供“修复为副本”入口，自动修复常见的空/重复 ID、缺失标题、无效 activeSheetId 后生成并打开修复副本
-- 修复结果说明：修复副本打开后会在检查器中显示来源文件、修复副本和自动修复摘要，并支持确认后收起
-- 多 Sheet 基础：当前文档已支持创建、切换、重命名、排序和删除画布；各画布会记住自己的视口状态，画布区、检查器、状态栏和恢复快照都会围绕活动画布工作
-- 跨画布搜索：`Cmd/Ctrl + F` 现在会搜索整份文档，结果会显示所属画布，并在跳转时自动切换到对应画布
-- 跨画布组织：检查器支持把当前主题分支移动或复制到其他画布，并可进一步指定目标父主题；完成后会自动切换到目标画布
-- 边栏大纲：左侧边栏会展示当前画布的实时主题大纲，可直接切换选中主题、控制折叠/展开，并执行当前主题重命名、新建子主题、同级上移/下移、新建同级、删除当前主题、拖拽或选择改挂到当前画布其他父主题，以及拖拽到目标画布或表单式跨画布移动/复制等基础结构编辑；支持通过 `Cmd/Ctrl/Shift + 点击` 在边栏与画布之间共享多选结果，并直接批量移动、批量复制、批量删除所选主题；工具栏会在多选时给出显式提示，并提供一键清空多选入口，同时用时间信息展示最近一次正式保存与恢复区更新时间；批量删除后的最近动作也会带上实际主题数量；拖拽过程中会实时提示当前落点结果，遇到无效落点也会直接说明原因，悬停在已折叠主题上片刻后会自动展开，也支持投放到目标画布里的具体父主题；无论是拖拽还是按钮式移动/复制，完成后状态栏都会给出带目标名称的最近动作反馈、可撤销/可重做的具体历史标签，并额外保留最近几次结构操作的轻量记录，这段记录会按操作类型做紧凑摘要、为跨画布动作带出目标画布，并折叠连续重复操作；这份记录只属于当前文档会话，新建文档、打开其他文档、修复打开副本或保存成功后都会在新的整理阶段自动清空，状态栏也会按场景显示“恢复起点”“已保存”或“恢复区已更新”这类阶段提示；无论是同画布改挂还是跨画布整理，在重做后都能恢复目标父主题提示，撤销或重做后当前主题也会重新滚回可视区并短暂高亮
-- 画布相机层：缩放、平移、适配视图、100% 复位
-- 框选基础、多选状态、批量删除和拖拽重排提交
-- 拖拽落点提示、边缘自动平移基础与浏览器开发态页面验收链路
-- 前端单测基础设施
+## 核心特性
 
-## 开发命令
+### 📊 6 种图表类型
+- **思维导图**（Mind Map）— 经典双侧放射布局
+- **逻辑图**（Logic Chart）— 单向水平展开
+- **树形图**（Tree Chart）— 垂直层级结构
+- **组织架构图**（Org Chart）— 上下级关系
+- **鱼骨图**（Fishbone）— 因果分析
+- **时间线**（Timeline）— 时序排列
 
-```bash
-pnpm install
-pnpm dev
-pnpm tauri dev
-pnpm build
-pnpm test
-cargo check --manifest-path src-tauri/Cargo.toml
+支持图表类型即时切换，自动重新布局。
+
+### 🎨 样式系统
+- 5 套内置主题色板（默认/暗夜/海洋/森林/暖阳）
+- 节点级样式覆盖（填充色/文字色/边框色）
+- 6 色快速预设 + 自定义颜色编辑器
+- 层级默认色与节点覆盖的优先级合并
+
+### 📝 富内容编辑
+- 图标标记（优先级、进度、旗帜等）
+- 文本标签
+- 富文本备注
+- 超链接
+- 任务属性（状态/截止日期/优先级）
+- 图片附件（SHA-256 去重）
+
+### 🔗 关系线 / 边界 / 概要
+- **关系线**：任意两个主题间的非父子连接
+- **边界**：框选一组主题做视觉分组
+- **概要节点**：对一组兄弟主题的归纳总结
+
+### 📋 模板系统
+- 内置模板（项目计划/会议纪要/读书笔记/头脑风暴等）
+- 从模板创建时自动重新生成所有 ID
+- 模板选择器 UI
+
+### 🎬 演示模式
+- DFS 前序遍历，逐节点/逐分支渐进揭示
+- 相机自动跟随聚焦（zoom clamp 0.6–1.8）
+- 平滑相机动画（480ms easeInOutCubic，zoom 对数空间插值）
+- 键盘导航：→/Space/Enter 下一张、←/Backspace 上一张、Home/End 首末张、F 全屏、Esc 退出
+- 全屏覆盖层 + 玻璃态控制条
+
+### 📂 导入导出
+- **导入**：Markdown、OPML
+- **导出**：Markdown、OPML、PNG（高清）、SVG（矢量）
+- 导入事务化（失败回滚），导出支持自定义路径
+
+### 💾 .mgd 文件格式
+- ZIP + JSON 容器，格式版本 1.1.0
+- `mimetype` / `manifest.json` / `document.json` / `metadata.json` / `styles.json`
+- `assets/`（SHA-256 去重 + 引用计数 + GC）
+- 完整性校验 Level 0–4（容器/语法/结构/语义/Hash）
+- Zip Bomb 防护（256MB / 100:1 / 64MB / 10k 条目）
+- 原子保存（temp → validate → fsync → replace → fsync parent）
+- 旁路锁文件 `.mgd.lock`
+- 未知字段保留（前向兼容）
+- `mindgrid-file` CLI 工具：inspect / validate / extract / repair / migrate / pack
+
+### ⚡ 高性能画布运行时
+- 空间索引（Grid Hash）Hit Test
+- 视口剔除 + 虚拟化（Overscan）
+- 10k 节点：布局 <3s、场景 <1.5s、可见节点 <500
+- 混合 DOM + Canvas 渲染
+- 完整交互状态机（8 状态：Idle/Hovering/Selecting/BoxSelecting/Panning/DraggingTopic/EditingText/AnimatingCamera/Presenting）
+- 拖拽 guide/snap、边缘自动平移、连续手势
+
+### 🔄 自动更新
+- tauri-plugin-updater 集成
+- 启动后自动检查（release 构建）
+- 手动"检查更新"按钮
+- 下载进度可视化
+- 签名验证（Ed25519）
+- 优雅降级（未配置时静默跳过）
+
+## 架构
+
+```
+四层架构：UI → Application → Domain → Infrastructure
+
+┌─────────────────────────────────────────────────┐
+│  UI Layer (React 19 + TypeScript)               │
+│  ├── Workspace / Toolbar / Sidebar / Inspector  │
+│  ├── Canvas Runtime (Render Tree + Scene)       │
+│  ├── Presentation Mode                          │
+│  └── Updater Notification                       │
+├─────────────────────────────────────────────────┤
+│  Application Layer (Tauri IPC)                  │
+│  ├── Command Handlers                           │
+│  ├── Import/Export Pipeline                     │
+│  └── Persistence (Atomic Save + Recovery)       │
+├─────────────────────────────────────────────────┤
+│  Domain Layer (Rust)                            │
+│  ├── Document Model (Rich Topic + Relationships)│
+│  ├── Command/ChangeSet System                   │
+│  ├── Document Editor (Transactional)            │
+│  └── Schema Migration (1.0.0 → 1.1.0)           │
+├─────────────────────────────────────────────────┤
+│  Infrastructure (Rust + Tauri)                  │
+│  ├── .mgd ZIP Container                         │
+│  ├── Asset Management (SHA-256 Dedup + GC)     │
+│  ├── File Locking                               │
+│  └── CLI Tool (mindgrid-file)                   │
+└─────────────────────────────────────────────────┘
 ```
 
-## 当前结构
+## 开发
 
-- `src/app`：应用入口与壳层
-- `src/features`：工作区、文档会话、画布宿主、反馈组件
-- `src/lib`：文档类型与 IPC 访问层
-- `src-tauri/src/domain`：Rust 领域模型
-- `src-tauri/src/app`：Rust 命令处理与应用服务入口
-- `docs/superpowers/plans`：实施计划
+### 环境要求
+- Node.js 22+
+- pnpm 11+
+- Rust 1.77+ (stable)
+- macOS: Xcode Command Line Tools
+- Linux: `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`
+- Windows: WebView2 Runtime
 
-## 当前实现边界
+### 常用命令
 
-当前版本重点仍是工程基础与核心工作流，以下能力仍未完整交付：
+```bash
+# 安装依赖
+pnpm install
 
-- Canvas Runtime 已具备最小 Camera、Hit Test、多选和重排能力，但还未演进为独立渲染树与完整交互状态机
-- 当前 Undo / Redo 仍是快照级最小实现，尚未演进为完整 Command / Transaction 系统
-- `.mgd` 已具备恢复副本导出与损坏修复向导，但还未实现缩略图、多资源打包和更完整的格式演进策略
-- 多 Sheet 已有基础管理能力，但还未实现拖拽式跨画布组织和更完整的 Inspector 能力
-- 未实现样式编辑、导入与更多导出格式
+# 开发模式（浏览器，无需 Tauri）
+pnpm dev
 
-## 下一阶段
+# 桌面开发模式（Tauri 窗口）
+pnpm tauri dev
 
-建议按以下顺序继续推进：
+# 构建生产版本
+pnpm build              # 前端
+pnpm tauri build        # 完整桌面应用（含 DMG/NSIS/AppImage）
 
-1. 更完整的 Canvas Runtime：拖拽 guide / snap、连续手势验证、交互状态进一步模块化
-2. `.mgd` 缩略图、多资源打包、更完整恢复与修复体验
-3. 样式系统、导入导出、多 Sheet 深化能力与 Inspector 真正能力
+# 测试
+pnpm test               # 前端单测（Vitest）
+cargo test --manifest-path src-tauri/Cargo.toml  # Rust 单测
 
-## 设计与规范文档
+# Lint
+pnpm lint               # oxlint
 
-仓库根目录保留了 MindGrid 的完整产品、UI、UX、架构和文件格式规范，可作为后续开发基线。
+# CLI 工具
+cargo build --manifest-path src-tauri/Cargo.toml --features cli --bin mindgrid-file
+./src-tauri/target/debug/mindgrid-file inspect <file.mgd>
+```
+
+### 测试覆盖
+
+- **前端**：299 个单测（Vitest + Testing Library）
+- **Rust**：73 个单测（cargo test）
+- **三绿门禁**：`pnpm test` + `pnpm build` + `cargo test` 全部通过
+
+## 发布
+
+### 本地构建
+
+```bash
+pnpm tauri build
+# 产物：src-tauri/target/release/bundle/
+#   macOS:   MindGrid.app + MindGrid_0.1.0_aarch64.dmg
+#   Windows: MindGrid_0.1.0_x64-setup.exe (NSIS)
+#   Linux:   mindgrid_0.1.0_amd64.deb + .AppImage
+```
+
+### CI/CD
+
+- **CI**（`.github/workflows/ci.yml`）：push/PR 自动运行三绿门禁
+- **Release**（`.github/workflows/release.yml`）：推送 `v*` 标签触发跨平台构建 + GitHub Release
+
+### 签名与自动更新
+
+详见 [docs/release/signing-and-updates.md](docs/release/signing-and-updates.md)。
+
+V1 发布**未签名**安装包，用户首次打开需手动信任：
+- macOS：System Settings → Privacy & Security → "仍要打开"
+- Windows：SmartScreen → "更多信息" → "仍要运行"
+- Linux：`chmod +x *.AppImage`
+
+## 项目结构
+
+```
+MindGrid/
+├── src/                          # 前端源码
+│   ├── app/                      # 应用入口与壳层
+│   ├── features/                 # 功能模块
+│   │   ├── canvas/               # 画布运行时（Render Tree + Renderer + 交互状态机）
+│   │   ├── document/             # 文档会话管理
+│   │   ├── presentation/         # 演示模式
+│   │   ├── updater/              # 自动更新
+│   │   ├── workspace/            # 工作区（Toolbar/Sidebar/Inspector/CanvasHost）
+│   │   ├── status/               # 状态栏
+│   │   └── feedback/             # Toast 通知
+│   ├── lib/                      # 公共库（文档类型 + IPC 传输层）
+│   └── styles/                   # 全局样式与设计 Token
+├── src-tauri/                    # Rust 后端
+│   └── src/
+│       ├── domain/               # 领域模型（Document + Editor + Command）
+│       ├── app/                  # 应用服务（Commands + Persistence + Assets + Import/Export）
+│       └── bin/                  # CLI 工具（mindgrid-file）
+├── docs/                         # 文档
+│   ├── superpowers/plans/        # 实施计划与路线图
+│   └── release/                  # 发布指南
+├── scripts/                      # 构建/发布脚本
+└── .github/workflows/            # CI/CD 工作流
+```
+
+## 技术栈
+
+| 层 | 技术 |
+|---|---|
+| 桌面框架 | Tauri 2.11 |
+| 前端 | React 19 + TypeScript 6 + Vite 8 |
+| 后端 | Rust (stable) |
+| 测试 | Vitest 4 + Testing Library 16 + cargo test |
+| Lint | oxlint |
+| 持久化 | ZIP (Deflate) + JSON |
+| 渲染 | Canvas 2D + DOM 混合 |
+| 状态管理 | React Hooks + Reducer |
+| IPC | Tauri invoke (camelCase JSON) |
+
+## 许可证
+
+Copyright © 2026 MindGrid. All rights reserved.
