@@ -13,7 +13,10 @@ import {
   FilePlusIcon,
   FolderOpenIcon,
   InsertIcon,
+  KeyboardIcon,
   LayoutIcon,
+  MonitorIcon,
+  MoonIcon,
   PanelRightIcon,
   PlayIcon,
   RedoIcon,
@@ -25,10 +28,12 @@ import {
   SiblingTopicIcon,
   StructureIcon,
   SubTopicIcon,
+  SunIcon,
   ThemeIcon,
   TrashIcon,
   UndoIcon,
 } from './icons'
+import type { EffectiveTheme, ThemeMode } from '../theme/use-theme'
 
 interface ToolbarProps {
   session: DocumentSession
@@ -50,6 +55,14 @@ interface ToolbarProps {
   onFocusInspectorTopicTab?: () => void
   /** 瞬态通知（如插入条件不满足时的引导提示） */
   onNotify?: (message: string) => void
+  /** 批次 20：UI 主题模式（system → light → dark 循环） */
+  themeMode?: ThemeMode
+  /** 批次 20：当前实际生效的主题（用于图标显示） */
+  themeEffective?: EffectiveTheme
+  /** 批次 20：切换主题模式 */
+  onCycleTheme?: () => void
+  /** 批次 20：打开快捷键帮助浮层 */
+  onOpenShortcutsHelp?: () => void
 }
 
 /** 图表类型选项，value 与 ChartType 序列化形式一致（文案与侧栏保持一致）。 */
@@ -223,6 +236,7 @@ function ExportMenu({ session }: { session: DocumentSession }) {
     { label: 'Markdown 大纲', action: () => void session.exportMarkdownOutline() },
     { label: 'OPML 大纲', action: () => void session.exportOpmlOutline() },
     { label: 'PNG 高清图片', action: () => void session.exportPngImage() },
+    { label: 'PDF 文档', action: () => void session.exportPdfDocument() },
     { label: 'SVG 矢量图', action: () => void session.exportSvgImage() },
     { label: '恢复副本', action: () => void session.exportRecoveryCopy() },
   ]
@@ -338,6 +352,10 @@ export function Toolbar({
   onToggleOutliner,
   onFocusInspectorTopicTab,
   onNotify,
+  themeMode = 'system',
+  themeEffective = 'light',
+  onCycleTheme,
+  onOpenShortcutsHelp,
 }: ToolbarProps) {
   const desktopFileActionsEnabled = hasTauriRuntime()
   const hasMultipleSelectedTopics = selectedTopicIds.length > 1
@@ -657,6 +675,29 @@ export function Toolbar({
             <RefreshIcon />
           </IconButton>
         ) : null}
+        {onOpenShortcutsHelp ? (
+          <button
+            className="toolbar__icon-btn toolbar__icon-btn--ghost"
+            type="button"
+            onClick={onOpenShortcutsHelp}
+            title="键盘快捷键"
+            aria-label="键盘快捷键"
+          >
+            <KeyboardIcon />
+          </button>
+        ) : null}
+        {onCycleTheme ? (
+          <button
+            className="toolbar__icon-btn toolbar__icon-btn--ghost"
+            type="button"
+            onClick={onCycleTheme}
+            title={formatThemeTooltip(themeMode, themeEffective)}
+            aria-label={formatThemeAriaLabel(themeMode, themeEffective)}
+            aria-pressed={themeMode !== 'system'}
+          >
+            {renderThemeIcon(themeMode, themeEffective)}
+          </button>
+        ) : null}
       </div>
 
       {isTemplatePickerOpen ? (
@@ -667,4 +708,31 @@ export function Toolbar({
       ) : null}
     </header>
   )
+}
+
+/**
+ * 主题切换按钮的 tooltip：当前模式 + 点击后的下一模式。
+ * 循环：system → light → dark → system
+ */
+function formatThemeTooltip(mode: ThemeMode, effective: EffectiveTheme): string {
+  const currentLabel = mode === 'system' ? `跟随系统（${effective === 'dark' ? '暗色' : '浅色'}）` : mode === 'light' ? '浅色' : '暗色'
+  const nextLabel = mode === 'system' ? '浅色' : mode === 'light' ? '暗色' : '跟随系统'
+  return `主题：${currentLabel}（点击切换到 ${nextLabel}）`
+}
+
+/** 主题切换按钮的无障碍标签（与 tooltip 文案一致）。 */
+function formatThemeAriaLabel(mode: ThemeMode, effective: EffectiveTheme): string {
+  return formatThemeTooltip(mode, effective)
+}
+
+/**
+ * 渲染主题切换按钮图标：按当前模式选择对应图标。
+ * - system：MonitorIcon（表示跟随系统）
+ * - light：SunIcon
+ * - dark：MoonIcon
+ */
+function renderThemeIcon(mode: ThemeMode, _effective: EffectiveTheme) {
+  if (mode === 'system') return <MonitorIcon />
+  if (mode === 'light') return <SunIcon />
+  return <MoonIcon />
 }

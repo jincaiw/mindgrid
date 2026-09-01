@@ -655,6 +655,11 @@ pub fn export_png_file(path: &Path, data: Vec<u8>) -> Result<(), String> {
     write_binary_export(path, &data)
 }
 
+/// 将 PDF 二进制数据写入指定路径（批次 20）。
+pub fn export_pdf_file(path: &Path, data: Vec<u8>) -> Result<(), String> {
+    write_binary_export(path, &data)
+}
+
 /// 将 SVG 文本写入指定路径。
 pub fn export_svg_file(path: &Path, content: &str) -> Result<(), String> {
     write_text_export(path, content)
@@ -886,6 +891,20 @@ mod tests {
         let read_back = std::fs::read_to_string(&temp_path).expect("svg should read back");
         assert!(read_back.contains("<svg"));
         assert!(read_back.contains("viewBox=\"0 0 100 100\""));
+
+        let _ = std::fs::remove_file(temp_path);
+    }
+
+    #[test]
+    fn pdf_export_writes_binary_file_round_trip() {
+        let temp_path = std::env::temp_dir().join("mindgrid-pdf-test.pdf");
+        // PDF 文件签名头："%PDF-1.7" + 示例字节
+        let data = vec![0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37, 0x0A, 0x25, 0xE2, 0xE3];
+
+        export_pdf_file(&temp_path, data.clone()).expect("pdf should export");
+
+        let read_back = std::fs::read(&temp_path).expect("pdf should read back");
+        assert_eq!(read_back, data);
 
         let _ = std::fs::remove_file(temp_path);
     }

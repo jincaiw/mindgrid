@@ -22,6 +22,7 @@ import {
   deleteTopics,
   exportMarkdownFile,
   exportOpmlFile,
+  exportPdfFile,
   exportPngFile,
   exportRecoveryCopy,
   exportSvgFile,
@@ -72,6 +73,7 @@ import { computeLayout } from '../canvas/layouts'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from '../canvas/runtime/scene-builder'
 import { renderSceneToSvg } from '../canvas/runtime/svg-renderer'
 import { renderSceneToPngBytes } from '../canvas/runtime/png-exporter'
+import { renderSceneToPdfBytes } from '../canvas/runtime/pdf-exporter'
 import {
   fromSnapshot,
   initialDocumentSessionState,
@@ -93,6 +95,7 @@ export interface DocumentSession extends DocumentSessionState {
   importOpmlOutline: () => Promise<void>
   exportPngImage: () => Promise<void>
   exportSvgImage: () => Promise<void>
+  exportPdfDocument: () => Promise<void>
   exportRecoveryCopy: () => Promise<void>
   selectSheet: (sheetId: string) => Promise<void>
   createSheet: () => Promise<void>
@@ -831,6 +834,51 @@ export function useDocumentSession(): DocumentSession {
     }
   }, [handleError, state.document, state.filePath, state.summary?.rootTopicText])
 
+  // 批次 20：PDF 矢量文档导出（SVG → jsPDF + svg2pdf.js）
+  const exportCurrentPdfDocument = useCallback(async () => {
+    if (!hasTauriRuntime()) {
+      throw new Error('浏览器开发态暂不支持 PDF 导出，请使用桌面版运行')
+    }
+
+    if (!state.document) {
+      return
+    }
+
+    const selected = await save({
+      defaultPath: state.filePath
+        ? state.filePath.replace(/\.mgd$/i, '.pdf')
+        : `${state.summary?.rootTopicText ?? 'MindGrid'}.pdf`,
+      filters: [{ name: 'PDF 文档', extensions: ['pdf'] }],
+    })
+
+    if (!selected) {
+      return
+    }
+
+    const selectedPath = selected.toLowerCase().endsWith('.pdf') ? selected : `${selected}.pdf`
+
+    setState((current) => ({
+      ...current,
+      error: null,
+      recentAction: '正在导出 PDF 文档',
+    }))
+
+    try {
+      const scene = buildExportScene(state.document)
+      const bytes = await renderSceneToPdfBytes(scene)
+      await exportPdfFile(selectedPath, bytes)
+
+      setState((current) => ({
+        ...current,
+        status: 'ready',
+        error: null,
+        recentAction: '已导出 PDF 文档',
+      }))
+    } catch (error) {
+      handleError(error)
+    }
+  }, [handleError, state.document, state.filePath, state.summary?.rootTopicText])
+
   const selectActiveSheet = useCallback(
     async (sheetId: string) => {
       await runCommand('切换画布', () => selectSheet(sheetId))
@@ -1201,6 +1249,7 @@ export function useDocumentSession(): DocumentSession {
       importOpmlOutline,
       exportPngImage: exportCurrentPngImage,
       exportSvgImage: exportCurrentSvgImage,
+      exportPdfDocument: exportCurrentPdfDocument,
       exportRecoveryCopy: exportCurrentRecoveryCopy,
       selectSheet: selectActiveSheet,
       createSheet: createDocumentSheet,

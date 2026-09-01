@@ -19,8 +19,12 @@
   --color-surface-raised: #ffffff;
   /* 细微背景：用于 hover / inactive 的底纹（4% 黑） */
   --color-surface-subtle: rgba(0, 0, 0, 0.04);
-  /* 较强 hover 底纹：用于 active / pressed 状态（6% 黑） */
+  /* 较强 Hover 底纹：用于 active / pressed 状态（6% 黑） */
   --color-surface-hover: rgba(0, 0, 0, 0.06);
+  /* 毛玻璃表面：用于工具栏/标签栏/大纲头部等半透明面板（浅色：白底 82%） */
+  --color-surface-glass: rgba(255, 255, 255, 0.82);
+  /* 毛玻璃表面（强）：用于浮窗/弹层等更不透明的玻璃面板（浅色：白底 96%） */
+  --color-surface-glass-strong: rgba(255, 255, 255, 0.96);
   --color-text-primary: #1d1d1f;
   --color-text-secondary: rgba(60, 60, 67, 0.6);
   /* 次级 muted 文本：介于 primary 与 secondary 之间，用于标题/标签 */
@@ -28,6 +32,7 @@
   /* toast / 通知默认文本色（深海军蓝，保证暗色底纹上对比度） */
   --color-text: #1a1a2e;
   --color-border-default: rgba(0, 0, 0, 0.08);
+  --color-border-strong: rgba(0, 0, 0, 0.14);
   --color-accent: #5b8cff;
   /* accent 浅底（12% 蓝）：用于选中态底纹 / chip 选中背景 */
   --color-accent-tint: rgba(91, 140, 255, 0.12);
@@ -38,9 +43,13 @@
   --color-success: #34c759;
   --color-warning: #ff9f0a;
   --color-error: #ff3b30;
+  --color-danger: #ff3b30;
   --color-disabled: rgba(60, 60, 67, 0.3);
+  /* 阴影（浅色：黑色低透明度） */
   --shadow-level-1: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.06);
   --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.08), 0 12px 32px rgba(0, 0, 0, 0.1);
+  /* 画布网格色（浅色：浅灰） */
+  --color-canvas-grid: rgba(0, 0, 0, 0.04);
   --radius-small: 8px;
   --radius-medium: 12px;
   --radius-large: 16px;
@@ -49,4 +58,93 @@
   --space-3: 16px;
   --space-4: 24px;
   --space-5: 32px;
+}
+
+/**
+ * 暗色 UI 主题（批次 20）。
+ *
+ * 通过 [data-theme="dark"] 显式启用，或在无显式偏好的情况下跟随系统 prefers-color-scheme。
+ * 策略：
+ *   1. :root[data-theme="dark"] 显式覆盖（用户工具栏切换后的持久态）
+ *   2. @media (prefers-color-scheme: dark) 下若未显式指定 light 则跟随系统
+ * 两者变量集保持一致，通过 CSS 自定义属性层叠优先级实现：
+ *   [data-theme="dark"] 优先级高于 :root 默认（light）
+ *   @media prefers-color-scheme 仅在 :root 无 data-theme 属性时生效（由 :not([data-theme]) 精确匹配）
+ */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* 应用与画布背景：XMind 式深灰（#1e1f22 ~ #232326） */
+  --color-background-app: #1a1b1e;
+  --color-background-canvas: #232326;
+  /* 面板毛玻璃：深色半透明（白底 8% / 12%） */
+  --color-surface-panel: rgba(255, 255, 255, 0.08);
+  --color-surface-panel-strong: rgba(255, 255, 255, 0.12);
+  --color-surface: #2a2b2e;
+  --color-surface-elevated: #2c2d31;
+  --color-surface-raised: #323336;
+  --color-surface-subtle: rgba(255, 255, 255, 0.04);
+  --color-surface-hover: rgba(255, 255, 255, 0.08);
+  --color-surface-glass: rgba(40, 41, 44, 0.82);
+  --color-surface-glass-strong: rgba(40, 41, 44, 0.96);
+  --color-text-primary: #e6e6e6;
+  --color-text-secondary: rgba(230, 230, 230, 0.6);
+  --color-text-muted: #b8b8bc;
+  --color-text: #f0f0f4;
+  --color-border-default: rgba(255, 255, 255, 0.1);
+  --color-border-strong: rgba(255, 255, 255, 0.18);
+  /* accent 在暗色背景上略调亮（提高对比度） */
+  --color-accent: #7aa6ff;
+  --color-accent-tint: rgba(122, 166, 255, 0.16);
+  --color-accent-tint-strong: rgba(122, 166, 255, 0.24);
+  --color-selection: rgba(122, 166, 255, 0.32);
+  --color-focus-ring: rgba(122, 166, 255, 0.5);
+  --color-success: #30d158;
+  --color-warning: #ffb340;
+  --color-error: #ff453a;
+  --color-danger: #ff453a;
+  --color-disabled: rgba(230, 230, 230, 0.32);
+  /* 阴影（暗色：黑色更高透明度，加强层次） */
+  --shadow-level-1: 0 1px 3px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.32);
+  --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.32), 0 12px 32px rgba(0, 0, 0, 0.4);
+  --color-canvas-grid: rgba(255, 255, 255, 0.04);
+}
+
+/**
+ * 跟随系统：仅在用户未显式设置 data-theme 时，按 prefers-color-scheme 切换。
+ * 显式覆盖（light / dark）优先级高于本规则。
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color-scheme: dark;
+    --color-background-app: #1a1b1e;
+    --color-background-canvas: #232326;
+    --color-surface-panel: rgba(255, 255, 255, 0.08);
+    --color-surface-panel-strong: rgba(255, 255, 255, 0.12);
+    --color-surface: #2a2b2e;
+    --color-surface-elevated: #2c2d31;
+    --color-surface-raised: #323336;
+    --color-surface-subtle: rgba(255, 255, 255, 0.04);
+    --color-surface-hover: rgba(255, 255, 255, 0.08);
+    --color-surface-glass: rgba(40, 41, 44, 0.82);
+    --color-surface-glass-strong: rgba(40, 41, 44, 0.96);
+    --color-text-primary: #e6e6e6;
+    --color-text-secondary: rgba(230, 230, 230, 0.6);
+    --color-text-muted: #b8b8bc;
+    --color-text: #f0f0f4;
+    --color-border-default: rgba(255, 255, 255, 0.1);
+    --color-border-strong: rgba(255, 255, 255, 0.18);
+    --color-accent: #7aa6ff;
+    --color-accent-tint: rgba(122, 166, 255, 0.16);
+    --color-accent-tint-strong: rgba(122, 166, 255, 0.24);
+    --color-selection: rgba(122, 166, 255, 0.32);
+    --color-focus-ring: rgba(122, 166, 255, 0.5);
+    --color-success: #30d158;
+    --color-warning: #ffb340;
+    --color-error: #ff453a;
+    --color-danger: #ff453a;
+    --color-disabled: rgba(230, 230, 230, 0.32);
+    --shadow-level-1: 0 1px 3px rgba(0, 0, 0, 0.24), 0 4px 12px rgba(0, 0, 0, 0.32);
+    --shadow-level-2: 0 4px 16px rgba(0, 0, 0, 0.32), 0 12px 32px rgba(0, 0, 0, 0.4);
+    --color-canvas-grid: rgba(255, 255, 255, 0.04);
+  }
 }

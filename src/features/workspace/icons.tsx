@@ -299,3 +299,42 @@ export function ThemeIcon(props: IconProps) {
     </Svg>
   )
 }
+
+/** 快捷键（键盘） */
+export function KeyboardIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M10 13h.01M14 13h.01M18 13h.01M7 16h10" />
+    </Svg>
+  )
+}
+
+/** 太阳：浅色主题与“跟随系统”态 */
+export function SunIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+    </Svg>
+  )
+}
+
+/** 月亮：暗色主题 */
+export function MoonIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+    </Svg>
+  )
+}
+
+/** 显示器：跟随系统主题 */
+export function MonitorIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2" y="4" width="20" height="13" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </Svg>
+  )
+}

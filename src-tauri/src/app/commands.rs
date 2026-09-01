@@ -207,6 +207,11 @@ pub fn export_png_file(path: String, data: Vec<u8>) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn export_pdf_file(path: String, data: Vec<u8>) -> Result<(), String> {
+    crate::app::import_export::export_pdf_file(std::path::Path::new(&path), data)
+}
+
+#[tauri::command]
 pub fn export_svg_file(path: String, content: String) -> Result<(), String> {
     crate::app::import_export::export_svg_file(std::path::Path::new(&path), &content)
 }

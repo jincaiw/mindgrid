@@ -4,6 +4,8 @@ import { syncSelectionWithActiveTopic } from '../canvas/interaction-state'
 import { CanvasHost } from '../canvas/canvas-host'
 import type { DocumentSession } from '../document/use-document-session'
 import { PresentationView } from '../presentation/presentation-view'
+import { ShortcutsHelp } from '../shortcuts/shortcuts-help'
+import type { EffectiveTheme, ThemeMode } from '../theme/use-theme'
 import { Inspector, type InspectorTab } from './inspector'
 import { OutlinerView } from './outliner-view'
 import { SheetTabBar } from './sheet-tab-bar'
@@ -17,6 +19,10 @@ interface WorkspaceScreenProps {
   onNotify?: (message: string) => void
   // 多选计数上报（AppShell 状态栏显示真实选中数）
   onSelectedTopicCountChange?: (count: number) => void
+  // 批次 20：UI 主题切换（system → light → dark → system 循环）
+  themeMode?: ThemeMode
+  themeEffective?: EffectiveTheme
+  onCycleTheme?: () => void
 }
 
 export function WorkspaceScreen({
@@ -24,6 +30,9 @@ export function WorkspaceScreen({
   onCheckForUpdates,
   onNotify,
   onSelectedTopicCountChange,
+  themeMode = 'system',
+  themeEffective = 'light',
+  onCycleTheme,
 }: WorkspaceScreenProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>(() =>
@@ -37,6 +46,8 @@ export function WorkspaceScreen({
   const [inspectorVisible, setInspectorVisible] = useState(true)
   // 批次 19：大纲全屏视图（隐藏画布，全宽编辑主题树，Esc 返回）
   const [isOutlinerMode, setIsOutlinerMode] = useState(false)
+  // 批次 20：快捷键帮助浮层显隐
+  const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
   // 工具栏“插入→备注/标签/链接/标记”：请求 Inspector 切到主题 tab
   const [inspectorTabRequest, setInspectorTabRequest] = useState<{
     tab: InspectorTab
@@ -119,6 +130,10 @@ export function WorkspaceScreen({
         onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
         onFocusInspectorTopicTab={focusInspectorTopicTab}
         onNotify={onNotify}
+        themeMode={themeMode}
+        themeEffective={themeEffective}
+        onCycleTheme={onCycleTheme}
+        onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
       />
       {isZenMode ? (
         <button
@@ -173,6 +188,7 @@ export function WorkspaceScreen({
       {isPresenting && session.document ? (
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />
       ) : null}
+      <ShortcutsHelp open={isShortcutsHelpOpen} onClose={() => setIsShortcutsHelpOpen(false)} />
     </div>
   )
 }

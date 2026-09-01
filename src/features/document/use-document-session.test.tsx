@@ -18,6 +18,7 @@ const commandMocks = vi.hoisted(() => ({
   deleteTopics: vi.fn(),
   exportMarkdownFile: vi.fn(),
   exportOpmlFile: vi.fn(),
+  exportPdfFile: vi.fn(),
   exportPngFile: vi.fn(),
   exportRecoveryCopy: vi.fn(),
   exportSvgFile: vi.fn(),
@@ -65,6 +66,7 @@ const transportMocks = vi.hoisted(() => ({
 
 const renderMocks = vi.hoisted(() => ({
   renderSceneToPngBytes: vi.fn(),
+  renderSceneToPdfBytes: vi.fn(),
   renderSceneToSvg: vi.fn(),
 }))
 
@@ -76,6 +78,9 @@ vi.mock('../canvas/runtime/png-exporter', () => ({
 }))
 vi.mock('../canvas/runtime/svg-renderer', () => ({
   renderSceneToSvg: renderMocks.renderSceneToSvg,
+}))
+vi.mock('../canvas/runtime/pdf-exporter', () => ({
+  renderSceneToPdfBytes: renderMocks.renderSceneToPdfBytes,
 }))
 
 beforeEach(() => {

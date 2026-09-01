@@ -6,6 +6,7 @@ import { StatusBar } from '../features/status/status-bar'
 import { WorkspaceScreen } from '../features/workspace/workspace-screen'
 import { useUpdater } from '../features/updater/use-updater'
 import { UpdateNotification } from '../features/updater/update-notification'
+import { useTheme } from '../features/theme/use-theme'
 
 const NOTICE_TIMEOUT_MS = 4000
 
@@ -13,6 +14,7 @@ export function AppShell() {
   const session = useDocumentSession()
   const updater = useUpdater()
   const desktopFileActionsEnabled = hasTauriRuntime()
+  const theme = useTheme()
   const toastActionLabel = session.canRepairLastFailedOpen ? '修复为副本' : undefined
   const toastAction = session.canRepairLastFailedOpen
     ? () => {
@@ -117,6 +119,9 @@ export function AppShell() {
         onCheckForUpdates={() => void updater.manualCheck()}
         onNotify={notify}
         onSelectedTopicCountChange={setSelectedTopicCount}
+        themeMode={theme.mode}
+        themeEffective={theme.effective}
+        onCycleTheme={theme.cycleMode}
       />
       <StatusBar session={session} selectedTopicCount={selectedTopicCount} />
       <ToastRegion

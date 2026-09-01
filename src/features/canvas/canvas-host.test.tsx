@@ -89,6 +89,7 @@ function createSessionStub(overrides: Partial<DocumentSession> = {}): DocumentSe
     importOpmlOutline: async () => {},
     exportPngImage: async () => {},
     exportSvgImage: async () => {},
+    exportPdfDocument: async () => {},
     exportRecoveryCopy: async () => {},
     selectSheet: async () => {},
     createSheet: async () => {},

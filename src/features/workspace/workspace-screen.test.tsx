@@ -71,6 +71,7 @@ const sessionStub: DocumentSession = {
   importOpmlOutline: async () => {},
   exportPngImage: async () => {},
   exportSvgImage: async () => {},
+  exportPdfDocument: async () => {},
   exportRecoveryCopy: async () => {},
   selectSheet: async () => {},
   createSheet: async () => {},

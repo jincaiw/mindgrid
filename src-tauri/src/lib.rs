@@ -33,6 +33,7 @@ pub fn run() {
             app::commands::export_opml_file,
             app::commands::import_opml_file,
             app::commands::export_png_file,
+            app::commands::export_pdf_file,
             app::commands::export_svg_file,
             app::commands::repair_document_file,
             app::commands::clear_repair_report,

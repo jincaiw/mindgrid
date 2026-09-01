@@ -58,6 +58,10 @@ export function exportPngFile(path: string, data: Uint8Array) {
   return invokeCommand<void>('export_png_file', { path, data: Array.from(data) })
 }
 
+export function exportPdfFile(path: string, data: Uint8Array) {
+  return invokeCommand<void>('export_pdf_file', { path, data: Array.from(data) })
+}
+
 export function exportSvgFile(path: string, content: string) {
   return invokeCommand<void>('export_svg_file', { path, content })
 }
