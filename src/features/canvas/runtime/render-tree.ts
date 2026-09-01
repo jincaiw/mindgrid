@@ -6,6 +6,8 @@
  * 视口剔除在 Scene Builder 阶段完成，只有可见节点进入 Render Tree。
  */
 
+import type { TopicLink, TopicMarker, TopicShape, TopicTask } from '../../../lib/document/types'
+
 // ---- 图层定义（z-order 从低到高）----
 
 export const RENDER_LAYERS = [
@@ -48,12 +50,35 @@ export type NodeSide = 'left' | 'right' | 'center'
 
 // ---- Render Node 联合类型 ----
 
-/** 主题节点解析后的具体样式属性（由 style-resolver 计算，注入 TopicRenderNode）。 */
+/**
+ * 主题节点解析后的具体样式属性（由 style-resolver 计算，注入 TopicRenderNode）。
+ *
+ * 颜色字段来自主题层级配色 + 节点覆盖；形状与排印字段来自深度分级默认 + 节点覆盖。
+ * Canvas 2D / SVG / DOM 三端共用此类型，保证渲染一致。
+ */
 export interface ResolvedTopicStyle {
   fill: string
   textColor: string
   metaTextColor: string
   borderColor: string
+  /** 节点形状（默认 rounded，按深度分级圆角）。 */
+  shape: TopicShape
+  /** 标题字号（px，默认按深度分级）。 */
+  fontSize: number
+  /** 标题字重（默认按深度分级）。 */
+  fontWeight: number
+  /** 节点边框粗细（px，默认 1）。 */
+  borderWidth: number
+}
+
+/** 主题上的富内容投影（marker / label / note / link / task），全部可选。 */
+export interface TopicRichContent {
+  markers?: TopicMarker[]
+  labels?: string[]
+  /** 非空字符串表示有备注。 */
+  notes?: string
+  link?: TopicLink
+  task?: TopicTask
 }
 
 export interface TopicRenderNode {
@@ -69,6 +94,8 @@ export interface TopicRenderNode {
   state: TopicVisualState
   /** 解析后的样式（主题 + 节点覆盖合并结果）。 */
   style: ResolvedTopicStyle
+  /** 富内容投影，供 DOM/Canvas2D/SVG 三端渲染 meta 图标。 */
+  rich?: TopicRichContent
 }
 
 export interface TopicVisualState {
@@ -99,6 +126,10 @@ export interface EdgeRenderNode {
   childDepth: number
   /** 分支色（XMind 式多色分支编码，由 scene-builder 计算）。 */
   branchColor: string
+  /** 连线类型：curve=贝塞尔（默认）/ straight=直线 / elbow=正交折线。 */
+  edgeType: 'curve' | 'straight' | 'elbow'
+  /** 最终线宽（已应用 branchStyle.thickness 乘数）。 */
+  lineWidth: number
 }
 
 export interface SelectionBoxRenderNode {

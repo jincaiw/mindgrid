@@ -17,14 +17,12 @@ import {
   FONT_FAMILY,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
-  getEdgeLineWidth,
-  getNodeRadius,
-  getTitleFontSize,
-  getTitleFontWeight,
+  getNodeRadiusForShape,
   measureTextWidth,
   wrapText,
 } from './style-constants'
 import { resolveThemeBackground } from './style-resolver'
+import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
   type BoundaryRenderNode,
   type EdgeRenderNode,
@@ -140,33 +138,42 @@ function buildDefs(): string {
 // ---- 各节点序列化 ----
 
 function topicToSvg(node: TopicRenderNode): string {
-  const { bounds, text, depth, collapsed, childCount, style } = node
+  const { bounds, text, depth, collapsed, childCount, style, side } = node
   const isRoot = depth === 0
-  const radius = getNodeRadius(depth)
+  const isUnderline = style.shape === 'underline'
+  const radius = isUnderline ? 0 : getNodeRadiusForShape(style.shape, depth, bounds.height)
   const padding = depth === 0 ? 20 : depth === 1 ? 14 : 12
 
   const elements: string[] = []
 
-  // 节点组（带阴影滤镜）
-  elements.push(`  <g filter="url(#nodeShadow)">`)
-  elements.push(
-    `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${radius}" ry="${radius}" fill="${style.fill}"/>`,
-  )
-  // 边框（根节点无边框，与 canvas-renderer 一致）
-  if (!isRoot) {
+  if (isUnderline) {
+    // underline 形状：无填充矩形，仅底部下划线（对齐 canvas-renderer）
+    const lineColor = style.borderColor === 'transparent' ? style.textColor : style.borderColor
+    if (style.borderWidth > 0) {
+      elements.push(
+        `  <line x1="${fmt(bounds.x)}" y1="${fmt(bounds.y + bounds.height)}" x2="${fmt(bounds.x + bounds.width)}" y2="${fmt(bounds.y + bounds.height)}" stroke="${lineColor}" stroke-width="${fmt(style.borderWidth)}" stroke-linecap="round"/>`,
+      )
+    }
+  } else {
+    // 节点组（带阴影滤镜）
+    elements.push(`  <g filter="url(#nodeShadow)">`)
     elements.push(
-      `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${radius}" ry="${radius}" fill="none" stroke="${style.borderColor}" stroke-width="1"/>`,
+      `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="${style.fill}"/>`,
     )
+    // 边框（根节点无边框，与 canvas-renderer 一致；borderWidth=0 表示无边框）
+    if (!isRoot && style.borderWidth > 0) {
+      elements.push(
+        `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="none" stroke="${style.borderColor}" stroke-width="${fmt(style.borderWidth)}"/>`,
+      )
+    }
+    elements.push(`  </g>`)
   }
-  elements.push(`  </g>`)
 
-  // 标题文字：字号 / 字重按深度分级（参考 XMind）
-  const titleFontSize = getTitleFontSize(depth)
-  const titleFontWeight = getTitleFontWeight(depth)
-  const titleFont = `${titleFontWeight} ${titleFontSize}px ${FONT_FAMILY}`
+  // 标题文字：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
+  const titleFont = `${style.fontWeight} ${style.fontSize}px ${FONT_FAMILY}`
   const maxTextWidth = bounds.width - padding * 2
   const lines = wrapText(text, maxTextWidth, titleFont)
-  const lineHeight = titleFontSize * 1.35
+  const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding
 
   const tspans = lines
@@ -177,26 +184,120 @@ function topicToSvg(node: TopicRenderNode): string {
     .join('\n')
 
   elements.push(
-    `  <text x="${fmt(bounds.x + padding)}" y="${fmt(titleY)}" font-size="${titleFontSize}" font-weight="${titleFontWeight}" fill="${style.textColor}" dominant-baseline="hanging">`,
+    `  <text x="${fmt(bounds.x + padding)}" y="${fmt(titleY)}" font-size="${fmt(style.fontSize)}" font-weight="${style.fontWeight}" fill="${style.textColor}" dominant-baseline="hanging">`,
     tspans,
     `  </text>`,
   )
 
-  // 元信息已移除（参考 XMind：折叠状态由节点角的 +/− 按钮表达）
+  // —— 富内容投影：task / markers / notes / link / labels（与 DOM 渲染对齐）——
+  const rich = node.rich
+  if (rich) {
+    // 任务状态图标：节点左侧垂直居中
+    if (rich.task) {
+      const iconSize = 14
+      const tx = bounds.x - iconSize - 4
+      const ty = bounds.y + bounds.height / 2 - iconSize / 2
+      elements.push(
+        `  <g transform="translate(${fmt(tx)} ${fmt(ty)})" aria-label="任务状态 ${rich.task.status}">${taskStatusToSvgInner(rich.task.status, rich.task.priority)}</g>`,
+      )
+    }
 
-  // 折叠/展开按钮
+    // meta 图标行：节点右侧（markers + note + link），垂直居中
+    const metaIcons: string[] = []
+    if (rich.markers && rich.markers.length > 0) {
+      for (const m of rich.markers) {
+        metaIcons.push(markerToSvgInner(m))
+      }
+    }
+    if (rich.notes && rich.notes.length > 0) {
+      // 便签图标：黄色圆 + 横线
+      metaIcons.push(
+        '<circle cx="7" cy="7" r="6" fill="#f6be00"/><path d="M4 6h6M4 8h6M4 10h4" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>',
+      )
+    }
+    if (rich.link) {
+      // 链接图标：蓝色圆 + ↗ 箭头
+      metaIcons.push(
+        '<circle cx="7" cy="7" r="6" fill="#5b8cff"/><path d="M4.5 9.5L9 5M9 5H6M9 5v3" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>',
+      )
+    }
+    if (metaIcons.length > 0) {
+      const iconSize = 14
+      const gap = 4
+      let cursorX = bounds.x + bounds.width + 6
+      const cursorY = bounds.y + bounds.height / 2 - iconSize / 2
+      for (const inner of metaIcons) {
+        elements.push(
+          `  <g transform="translate(${fmt(cursorX)} ${fmt(cursorY)})">${inner}</g>`,
+        )
+        cursorX += iconSize + gap
+      }
+    }
+
+    // 标签胶囊行：节点下方水平居中，最多展示 3 个
+    if (rich.labels && rich.labels.length > 0) {
+      const shownLabels = rich.labels.slice(0, 3)
+      const labelFontSize = 11
+      const labelHeight = 18
+      const labelGap = 4
+      const labelY = bounds.y + bounds.height + 6
+
+      // 先测量每个标签宽度
+      const labelWidths = shownLabels.map((label) => {
+        const w = measureTextWidth(label, `400 ${labelFontSize}px ${FONT_FAMILY}`)
+        return Math.max(28, w + 16)
+      })
+      const totalWidth = labelWidths.reduce((sum, w) => sum + w + labelGap, -labelGap)
+      let labelX = bounds.x + bounds.width / 2 - totalWidth / 2
+
+      for (let i = 0; i < shownLabels.length; i++) {
+        const label = shownLabels[i]
+        const w = labelWidths[i]
+        elements.push(
+          `  <rect x="${fmt(labelX)}" y="${fmt(labelY)}" width="${fmt(w)}" height="${labelHeight}" rx="${labelHeight / 2}" ry="${labelHeight / 2}" fill="rgba(91,140,255,0.12)"/>`,
+        )
+        elements.push(
+          `  <text x="${fmt(labelX + w / 2)}" y="${fmt(labelY + labelHeight / 2)}" font-size="${labelFontSize}" fill="${style.metaTextColor ?? '#3b5bdb'}" text-anchor="middle" dominant-baseline="central">${escapeXml(label)}</text>`,
+        )
+        labelX += w + labelGap
+      }
+
+      // 多余标签以 +N 胶囊展示
+      if (rich.labels.length > 3) {
+        const moreText = `+${rich.labels.length - 3}`
+        const w = 28
+        elements.push(
+          `  <rect x="${fmt(labelX)}" y="${fmt(labelY)}" width="${w}" height="${labelHeight}" rx="${labelHeight / 2}" ry="${labelHeight / 2}" fill="rgba(91,140,255,0.12)"/>`,
+        )
+        elements.push(
+          `  <text x="${fmt(labelX + w / 2)}" y="${fmt(labelY + labelHeight / 2)}" font-size="${labelFontSize}" fill="${style.metaTextColor ?? '#3b5bdb'}" text-anchor="middle" dominant-baseline="central">${escapeXml(moreText)}</text>`,
+        )
+      }
+    }
+  }
+
+  // 折叠/展开按钮（XMind 式：位于连线起点侧，16px，半嵌于节点边）
   if (childCount > 0) {
-    const toggleX = bounds.x + bounds.width - 14 - TOGGLE_BUTTON_SIZE / 2
-    const toggleY = bounds.y - 8 + TOGGLE_BUTTON_SIZE / 2
+    const half = TOGGLE_BUTTON_SIZE / 2
+    const toggleX =
+      side === 'center'
+        ? bounds.x + bounds.width / 2
+        : side === 'left'
+          ? bounds.x - half
+          : bounds.x + bounds.width + half
+    const toggleY =
+      side === 'center'
+        ? bounds.y + bounds.height + half
+        : bounds.y + bounds.height / 2
     const toggleSign = collapsed ? '+' : '−'
 
     elements.push(`  <g filter="url(#toggleShadow)">`)
     elements.push(
-      `    <circle cx="${fmt(toggleX)}" cy="${fmt(toggleY)}" r="${TOGGLE_RADIUS}" fill="rgba(255,255,255,0.96)" stroke="rgba(15,23,42,0.1)" stroke-width="1"/>`,
+      `    <circle cx="${fmt(toggleX)}" cy="${fmt(toggleY)}" r="${TOGGLE_RADIUS}" fill="rgba(255,255,255,0.96)" stroke="rgba(15,23,42,0.14)" stroke-width="1"/>`,
     )
     elements.push(`  </g>`)
     elements.push(
-      `  <text x="${fmt(toggleX)}" y="${fmt(toggleY)}" font-size="13" font-weight="400" fill="${COLORS.text}" text-anchor="middle" dominant-baseline="central">${escapeXml(toggleSign)}</text>`,
+      `  <text x="${fmt(toggleX)}" y="${fmt(toggleY)}" font-size="10" font-weight="600" fill="${COLORS.text}" text-anchor="middle" dominant-baseline="central">${escapeXml(toggleSign)}</text>`,
     )
   }
 
@@ -204,12 +305,28 @@ function topicToSvg(node: TopicRenderNode): string {
 }
 
 function edgeToSvg(node: EdgeRenderNode): string {
-  const { start, end, control1, control2, isActive, childDepth, branchColor } = node
-  const strokeWidth = getEdgeLineWidth(childDepth, isActive)
+  const { start, end, control1, control2, branchColor, edgeType, lineWidth } = node
+  const strokeWidth = lineWidth
 
-  const d = `M ${fmt(start.x)} ${fmt(start.y)} C ${fmt(control1.x)} ${fmt(control1.y)}, ${fmt(control2.x)} ${fmt(control2.y)}, ${fmt(end.x)} ${fmt(end.y)}`
+  let d: string
+  if (edgeType === 'elbow') {
+    // 正交折线：根据起止点相对位置判断水平/垂直布局
+    const dx = Math.abs(end.x - start.x)
+    const dy = Math.abs(end.y - start.y)
+    if (dx >= dy) {
+      const midX = (start.x + end.x) / 2
+      d = `M ${fmt(start.x)} ${fmt(start.y)} L ${fmt(midX)} ${fmt(start.y)} L ${fmt(midX)} ${fmt(end.y)} L ${fmt(end.x)} ${fmt(end.y)}`
+    } else {
+      const midY = (start.y + end.y) / 2
+      d = `M ${fmt(start.x)} ${fmt(start.y)} L ${fmt(start.x)} ${fmt(midY)} L ${fmt(end.x)} ${fmt(midY)} L ${fmt(end.x)} ${fmt(end.y)}`
+    }
+  } else if (edgeType === 'straight') {
+    d = `M ${fmt(start.x)} ${fmt(start.y)} L ${fmt(end.x)} ${fmt(end.y)}`
+  } else {
+    d = `M ${fmt(start.x)} ${fmt(start.y)} C ${fmt(control1.x)} ${fmt(control1.y)}, ${fmt(control2.x)} ${fmt(control2.y)}, ${fmt(end.x)} ${fmt(end.y)}`
+  }
 
-  return `  <path d="${d}" fill="none" stroke="${branchColor}" stroke-width="${fmt(strokeWidth)}" stroke-linecap="round"/>`
+  return `  <path d="${d}" fill="none" stroke="${branchColor}" stroke-width="${fmt(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"/>`
 }
 
 function boundaryToSvg(node: BoundaryRenderNode): string {

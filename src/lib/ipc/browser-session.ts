@@ -5,6 +5,8 @@ import type {
   ChartType,
   DocumentSessionSnapshot,
   DocumentSnapshot,
+  EdgeType,
+  SheetBranchStyle,
   TopicLink,
   TopicMarker,
   TopicSnapshot,
@@ -560,6 +562,75 @@ export async function invokeBrowserCommand<TResult>(
           : getActiveSheet(draft).rootTopic.id
       }) as TResult
     }
+    case 'set_sheet_branch_style': {
+      return applyMutation('设置分支样式', (draft) => {
+        const sheetId = String(payload.sheet_id)
+        const sheet = getSheetById(draft, sheetId)
+        if (!sheet) {
+          throw new Error('找不到需要设置分支样式的画布')
+        }
+
+        // branch_style 为 null/undefined 时清除覆盖
+        const rawBranchStyle = payload.branch_style
+        if (rawBranchStyle == null) {
+          sheet.branchStyle = undefined
+          return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
+            ? activeTopicId
+            : getActiveSheet(draft).rootTopic.id
+        }
+
+        const raw = rawBranchStyle as Record<string, unknown>
+        // 校验 edge_type（如提供）
+        let edgeType: EdgeType | undefined
+        if (raw.edgeType != null) {
+          const candidate = String(raw.edgeType).trim().toLowerCase()
+          const allowed = ['curve', 'straight', 'elbow'] as const
+          if (!allowed.includes(candidate as (typeof allowed)[number])) {
+            throw new Error(
+              `不支持的连线类型“${candidate}”，支持 curve / straight / elbow`,
+            )
+          }
+          edgeType = candidate as EdgeType
+        }
+
+        // 校验 thickness（如提供）
+        let thickness: number | undefined
+        if (raw.thickness != null) {
+          const num = Number(raw.thickness)
+          if (!Number.isFinite(num) || num < 0.1 || num > 10) {
+            throw new Error('连线粗细超出范围（0.1–10.0）')
+          }
+          thickness = num
+        }
+
+        // 校验 colorPalette（如提供）
+        let colorPalette: string[] | undefined
+        if (raw.colorPalette != null) {
+          if (!Array.isArray(raw.colorPalette)) {
+            throw new Error('分支色板必须是字符串数组')
+          }
+          colorPalette = raw.colorPalette.map((c) => String(c))
+        }
+
+        const nextBranchStyle: SheetBranchStyle = {}
+        if (edgeType !== undefined) nextBranchStyle.edgeType = edgeType
+        if (thickness !== undefined) nextBranchStyle.thickness = thickness
+        if (colorPalette !== undefined) nextBranchStyle.colorPalette = colorPalette
+
+        // noop：相同值不入历史栈（与 Rust set_sheet_branch_style_raw 一致）
+        if (JSON.stringify(sheet.branchStyle) === JSON.stringify(nextBranchStyle)) {
+          return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
+            ? activeTopicId
+            : getActiveSheet(draft).rootTopic.id
+        }
+
+        sheet.branchStyle = nextBranchStyle
+
+        return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
+          ? activeTopicId
+          : getActiveSheet(draft).rootTopic.id
+      }) as TResult
+    }
     case 'select_topic': {
       const document = ensureDocument()
       const topicId = String(payload.topic_id)
@@ -594,8 +665,10 @@ export async function invokeBrowserCommand<TResult>(
     }
     case 'create_sibling_topic': {
       const topicId = String(payload.topic_id)
+      const position = payload.position === 'before' ? 'before' : 'after'
+      const label = position === 'before' ? '前插同级主题' : '创建同级主题'
 
-      return applyMutation('创建同级主题', (draft) => {
+      return applyMutation(label, (draft) => {
         const rootTopic = getActiveRootTopic(draft)
 
         if (rootTopic.id === topicId) {
@@ -609,10 +682,55 @@ export async function invokeBrowserCommand<TResult>(
         }
 
         const nextTopic = createTopic('新建同级主题')
+        const insertIndex = position === 'before' ? parentMatch.index : parentMatch.index + 1
 
-        parentMatch.parent.children.splice(parentMatch.index + 1, 0, nextTopic)
+        parentMatch.parent.children.splice(insertIndex, 0, nextTopic)
 
         return nextTopic.id
+      }) as TResult
+    }
+    case 'create_parent_topic': {
+      const topicId = String(payload.topic_id)
+
+      return applyMutation('插入父主题', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+
+        if (rootTopic.id === topicId) {
+          throw new Error('根主题不支持创建父主题')
+        }
+
+        const parentMatch = findParentTopicByChildId(rootTopic, topicId)
+
+        if (!parentMatch) {
+          throw new Error('找不到目标主题的父主题')
+        }
+
+        const newParent = createTopic('新建父主题')
+        const [removed] = parentMatch.parent.children.splice(parentMatch.index, 1)
+        parentMatch.parent.children.splice(parentMatch.index, 0, newParent)
+        newParent.children.push(removed)
+
+        return newParent.id
+      }) as TResult
+    }
+    case 'create_floating_topic': {
+      const text = String(payload.text ?? '新建浮动主题')
+      const offsetX = Number(payload.offset_x ?? 0)
+      const offsetY = Number(payload.offset_y ?? 0)
+
+      return applyMutation('创建浮动主题', (draft) => {
+        const sheet = getActiveSheet(draft)
+        const newTopic = createTopic(text)
+        newTopic.layoutHints = {
+          offsetX,
+          offsetY,
+        }
+        if (!sheet.floatingTopics) {
+          sheet.floatingTopics = []
+        }
+        sheet.floatingTopics.push(newTopic)
+
+        return newTopic.id
       }) as TResult
     }
     case 'rename_topic': {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveThemeBackground, resolveThemeEdge, resolveTopicStyle } from './style-resolver'
+import { DEFAULT_BORDER_WIDTH, getTitleFontSize, getTitleFontWeight } from './style-constants'
 
 describe('resolveTopicStyle', () => {
   it('returns root colors for depth 0 without overrides', () => {
@@ -67,26 +68,65 @@ describe('resolveTopicStyle', () => {
     }
   })
 
-  it('applies full overrides with all three properties', () => {
+  it('defaults shape/fontSize/fontWeight/borderWidth to depth-based defaults when no overrides', () => {
+    const style = resolveTopicStyle('classic-blue', 2, 'right', undefined)
+    expect(style.shape).toBe('rounded')
+    expect(style.fontSize).toBe(getTitleFontSize(2))
+    expect(style.fontWeight).toBe(getTitleFontWeight(2))
+    expect(style.borderWidth).toBe(DEFAULT_BORDER_WIDTH)
+  })
+
+  it('applies shape override', () => {
+    const style = resolveTopicStyle('classic-blue', 1, 'left', { shape: 'pill' })
+    expect(style.shape).toBe('pill')
+    // Other shape defaults fall back to depth-based
+    expect(style.fontSize).toBe(getTitleFontSize(1))
+  })
+
+  it('applies fontSize and fontWeight overrides over depth defaults', () => {
+    const style = resolveTopicStyle('classic-blue', 3, 'left', {
+      fontSize: 22,
+      fontWeight: 700,
+    })
+    expect(style.fontSize).toBe(22)
+    expect(style.fontWeight).toBe(700)
+    // Non-overridden shape keeps default
+    expect(style.shape).toBe('rounded')
+  })
+
+  it('applies borderWidth override', () => {
+    const style = resolveTopicStyle('classic-blue', 1, 'left', { borderWidth: 3 })
+    expect(style.borderWidth).toBe(3)
+  })
+
+  it('applies full overrides with all properties', () => {
     const style = resolveTopicStyle('warm', 2, 'right', {
       fill: '#abcdef',
       textColor: '#123456',
       borderColor: '#789abc',
+      shape: 'rect',
+      fontSize: 16,
+      fontWeight: 600,
+      borderWidth: 2,
     })
     expect(style).toEqual({
       fill: '#abcdef',
       textColor: '#123456',
       metaTextColor: 'rgba(124, 45, 18, 0.54)', // from theme branch
       borderColor: '#789abc',
+      shape: 'rect',
+      fontSize: 16,
+      fontWeight: 600,
+      borderWidth: 2,
     })
   })
 })
 
 describe('resolveThemeBackground', () => {
-  it('returns background and gridLine for classic-blue', () => {
+  it('returns background for classic-blue', () => {
     const bg = resolveThemeBackground('classic-blue')
     expect(bg.background).toBe('#f5f5f7')
-    expect(bg.gridLine).toBe('rgba(0, 0, 0, 0.06)')
+    expect(bg).not.toHaveProperty('gridLine')
   })
 
   it('returns background for dark theme', () => {

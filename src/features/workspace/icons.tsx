@@ -204,3 +204,98 @@ export function GroupIcon(props: IconProps) {
     </Svg>
   )
 }
+
+/** 新建子主题（父节点 → 带 + 的子节点） */
+export function SubTopicIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2" y="9" width="7" height="6" rx="1" />
+      <path d="M9 12h3" />
+      <rect x="12" y="9" width="10" height="6" rx="1" />
+      <path d="M17 10.5v3" />
+      <path d="M15.5 12h3" />
+    </Svg>
+  )
+}
+
+/** 新建同级主题（树状平级节点） */
+export function SiblingTopicIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M21 12h-8" />
+      <path d="M21 6H8" />
+      <path d="M21 18h-8" />
+      <path d="M3 6v4c0 1.1.9 2 2 2h3" />
+      <path d="M3 10v6c0 1.1.9 2 2 2h3" />
+    </Svg>
+  )
+}
+
+/** 删除 */
+export function TrashIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 6h18" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+    </Svg>
+  )
+}
+
+/** 插入（圆形加号） */
+export function InsertIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M8 12h8" />
+      <path d="M12 8v8" />
+    </Svg>
+  )
+}
+
+/** 搜索 */
+export function SearchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </Svg>
+  )
+}
+
+/** 检查器显隐（右侧面板） */
+export function PanelRightIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M15 3v18" />
+    </Svg>
+  )
+}
+
+/** 结构（分支） */
+export function StructureIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6 3v12" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </Svg>
+  )
+}
+
+/** 主题（调色板） */
+export function ThemeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <circle cx="13.5" cy="6.5" r="0.5" fill="currentColor" />
+      <circle cx="17.5" cy="10.5" r="0.5" fill="currentColor" />
+      <circle cx="8.5" cy="7.5" r="0.5" fill="currentColor" />
+      <circle cx="6.5" cy="12.5" r="0.5" fill="currentColor" />
+      <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z" />
+    </Svg>
+  )
+}

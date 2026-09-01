@@ -4,14 +4,17 @@ import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
 import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
 import type {
   DocumentSnapshot,
+  EdgeType,
   Relationship,
+  SheetBranchStyle,
   TopicLink,
-  TopicMarker,
+  TopicShape,
   TopicStyleOverrides,
   TopicTask,
   TopicTaskStatus,
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
+import { MarkerSelector } from '../canvas/marker-selector'
 import { GridIcon, GroupIcon, LinkIcon, TypeIcon } from './icons'
 
 interface DocumentTopicEntry {
@@ -60,20 +63,66 @@ function toHexColor(value: string | undefined, fallback: string): string {
   return fallback
 }
 
-/** 从三个 draft 字段构造样式覆盖对象；全空返回 null（清除覆盖）。 */
+/** 形状选项标签（对齐 XMind 节点形状）。 */
+const SHAPE_OPTIONS: { value: TopicShape; label: string }[] = [
+  { value: 'rounded', label: '圆角' },
+  { value: 'rect', label: '直角' },
+  { value: 'pill', label: '胶囊' },
+  { value: 'underline', label: '下划线' },
+]
+
+/** 字重选项标签（CSS font-weight 数值）。 */
+const FONT_WEIGHT_OPTIONS: { value: number; label: string }[] = [
+  { value: 400, label: '常规' },
+  { value: 500, label: '中粗' },
+  { value: 600, label: '半粗' },
+  { value: 700, label: '粗体' },
+]
+
+/** 字号边界（px），对齐 style-constants 深度分级范围。 */
+const FONT_SIZE_MIN = 8
+const FONT_SIZE_MAX = 32
+
+/** 边框粗细边界（px），0 表示无边框。 */
+const BORDER_WIDTH_MIN = 0
+const BORDER_WIDTH_MAX = 6
+
+/** 将 draft 中的数值字段规范化为 number | undefined（空串/NaN 视为未设置）。 */
+function toOptionalNumber(value: number | ''): number | undefined {
+  if (value === '' || Number.isNaN(value)) return undefined
+  return value
+}
+
+/**
+ * 从 draft 字段构造样式覆盖对象；全空返回 null（清除覆盖）。
+ * 颜色字段空串视为未设置；形状空串视为未设置（沿用默认 rounded）；
+ * 数值字段空串视为未设置（沿用深度分级默认）。
+ */
 function buildStyleOverrides(
   fill: string,
   textColor: string,
   borderColor: string,
+  shape: TopicShape | '',
+  fontSize: number | '',
+  fontWeight: number | '',
+  borderWidth: number | '',
 ): TopicStyleOverrides | null {
   const f = fill.trim() || undefined
   const t = textColor.trim() || undefined
   const b = borderColor.trim() || undefined
-  if (!f && !t && !b) return null
+  const sh = shape || undefined
+  const fs = toOptionalNumber(fontSize)
+  const fw = toOptionalNumber(fontWeight)
+  const bw = toOptionalNumber(borderWidth)
+  if (!f && !t && !b && !sh && fs == null && fw == null && bw == null) return null
   return {
     ...(f ? { fill: f } : {}),
     ...(t ? { textColor: t } : {}),
     ...(b ? { borderColor: b } : {}),
+    ...(sh ? { shape: sh } : {}),
+    ...(fs != null ? { fontSize: fs } : {}),
+    ...(fw != null ? { fontWeight: fw } : {}),
+    ...(bw != null ? { borderWidth: bw } : {}),
   }
 }
 
@@ -87,8 +136,43 @@ const FILL_PRESETS = [
   '#16a34a',
 ]
 
+/** 连线类型选项（画布级分支样式）。 */
+const EDGE_TYPE_OPTIONS: { value: EdgeType; label: string }[] = [
+  { value: 'curve', label: '曲线' },
+  { value: 'straight', label: '直线' },
+  { value: 'elbow', label: '折线' },
+]
+
+/** 连线粗细乘数边界（与 Rust 端 editor 校验范围对齐：0.1–10.0，UI 收窄到常用区间）。 */
+const BRANCH_THICKNESS_MIN = 0.5
+const BRANCH_THICKNESS_MAX = 3
+
+/** 分支色板预设（XMind 式多色分支编码）。第一个为默认 8 色循环。 */
+const BRANCH_PALETTE_PRESETS: { id: string; label: string; colors: string[] }[] = [
+  {
+    id: 'default',
+    label: '默认 8 色',
+    colors: ['#5B8DEF', '#FF8B3D', '#4CB050', '#E5484D', '#9B6BFF', '#00A6A6', '#F6BE00', '#EC6CB0'],
+  },
+  {
+    id: 'cool',
+    label: '冷色',
+    colors: ['#3B82F6', '#06B6D4', '#8B5CF6', '#0EA5E9', '#6366F1', '#14B8A6', '#2563EB', '#0891B2'],
+  },
+  {
+    id: 'warm',
+    label: '暖色',
+    colors: ['#F97316', '#EF4444', '#EAB308', '#F43F5E', '#FB923C', '#D97706', '#DC2626', '#CA8A04'],
+  },
+  {
+    id: 'mono',
+    label: '单色蓝',
+    colors: ['#1E40AF', '#2563EB', '#3B82F6', '#60A5FA', '#1D4ED8', '#1E3A8A', '#2196F3', '#42A5F5'],
+  },
+]
+
 /** Inspector tab 类型：上下文感知面板，参考 XMind 右侧 Inspector tab 结构。 */
-type InspectorTab = 'topic' | 'canvas' | 'relationships' | 'grouping'
+export type InspectorTab = 'topic' | 'canvas' | 'relationships' | 'grouping'
 
 interface TabConfig {
   id: InspectorTab
@@ -107,9 +191,11 @@ interface InspectorProps {
   session: DocumentSession
   selectedTopicIds: string[]
   onSelectedTopicIdsChange: (topicIds: string[]) => void
+  /** 外部 tab 切换请求（如工具栏“插入→备注”聚焦主题 tab）；nonce 变化时生效。 */
+  tabRequest?: { tab: InspectorTab; nonce: number } | null
 }
 
-export function Inspector({ session, selectedTopicIds }: InspectorProps) {
+export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const activeTopic =
     session.document && session.activeTopicId
@@ -153,6 +239,13 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
   // —— Tab 状态：默认主题 tab，选中节点时直接编辑富内容 ——
   const [activeTab, setActiveTab] = useState<InspectorTab>('topic')
 
+  // 外部 tab 切换请求（nonce 变化即切到指定 tab）
+  useEffect(() => {
+    if (tabRequest) {
+      setActiveTab(tabRequest.tab)
+    }
+  }, [tabRequest])
+
   useEffect(() => {
     setMoveTargetSheetId(movableTargetSheets[0]?.id ?? '')
   }, [movableTargetSheets])
@@ -166,15 +259,24 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
   const [linkUrlDraft, setLinkUrlDraft] = useState(activeTopic?.link?.url ?? '')
   const [linkTitleDraft, setLinkTitleDraft] = useState(activeTopic?.link?.title ?? '')
   const [labelsDraft, setLabelsDraft] = useState((activeTopic?.labels ?? []).join(', '))
-  const [markersDraft, setMarkersDraft] = useState(
-    (activeTopic?.markers ?? []).map((m) => m.label ?? m.id).join(', '),
-  )
   const [styleRefDraft, setStyleRefDraft] = useState(activeTopic?.styleRef ?? '')
-  // —— 节点级样式覆盖：fill / textColor / borderColor，失焦提交 ——
+  // —— 节点级样式覆盖：颜色 / 形状 / 排印 / 边框粗细，失焦或点击时提交 ——
   const [fillDraft, setFillDraft] = useState(activeTopic?.styleOverrides?.fill ?? '')
   const [textColorDraft, setTextColorDraft] = useState(activeTopic?.styleOverrides?.textColor ?? '')
   const [borderColorDraft, setBorderColorDraft] = useState(
     activeTopic?.styleOverrides?.borderColor ?? '',
+  )
+  const [shapeDraft, setShapeDraft] = useState<TopicShape | ''>(
+    activeTopic?.styleOverrides?.shape ?? '',
+  )
+  const [fontSizeDraft, setFontSizeDraft] = useState<number | ''>(
+    activeTopic?.styleOverrides?.fontSize ?? '',
+  )
+  const [fontWeightDraft, setFontWeightDraft] = useState<number | ''>(
+    activeTopic?.styleOverrides?.fontWeight ?? '',
+  )
+  const [borderWidthDraft, setBorderWidthDraft] = useState<number | ''>(
+    activeTopic?.styleOverrides?.borderWidth ?? '',
   )
   const [taskStatusDraft, setTaskStatusDraft] = useState<TopicTaskStatus>(
     activeTopic?.task?.status ?? 'none',
@@ -188,6 +290,13 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
       : '',
   )
 
+  // —— 画布级分支样式：连线类型 / 粗细 / 色板，写入 activeSheet.branchStyle ——
+  // edgeType 与 colorPalette 点击即提交（无 draft）；thickness 走 slider draft，失焦提交。
+  const activeBranchStyle = activeSheet?.branchStyle
+  const [branchThicknessDraft, setBranchThicknessDraft] = useState<number | ''>(
+    activeBranchStyle?.thickness ?? '',
+  )
+
   // 选中主题变化时同步本地态（用 topic id 作为依赖键）
   const activeTopicKey = activeTopic?.id ?? ''
   useEffect(() => {
@@ -195,11 +304,14 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
     setLinkUrlDraft(activeTopic?.link?.url ?? '')
     setLinkTitleDraft(activeTopic?.link?.title ?? '')
     setLabelsDraft((activeTopic?.labels ?? []).join(', '))
-    setMarkersDraft((activeTopic?.markers ?? []).map((m) => m.label ?? m.id).join(', '))
     setStyleRefDraft(activeTopic?.styleRef ?? '')
     setFillDraft(activeTopic?.styleOverrides?.fill ?? '')
     setTextColorDraft(activeTopic?.styleOverrides?.textColor ?? '')
     setBorderColorDraft(activeTopic?.styleOverrides?.borderColor ?? '')
+    setShapeDraft(activeTopic?.styleOverrides?.shape ?? '')
+    setFontSizeDraft(activeTopic?.styleOverrides?.fontSize ?? '')
+    setFontWeightDraft(activeTopic?.styleOverrides?.fontWeight ?? '')
+    setBorderWidthDraft(activeTopic?.styleOverrides?.borderWidth ?? '')
     setTaskStatusDraft(activeTopic?.task?.status ?? 'none')
     setTaskPriorityDraft(
       activeTopic?.task?.priority != null ? String(activeTopic.task.priority) : '',
@@ -236,11 +348,112 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
     setSummaryLabel('')
   }, [session.document?.documentId])
 
+  // 画布切换或 branchStyle 变化时同步 thickness draft
+  const activeSheetIdForBranch = activeSheet?.id ?? ''
+  useEffect(() => {
+    setBranchThicknessDraft(activeBranchStyle?.thickness ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSheetIdForBranch, activeBranchStyle?.thickness])
+
   const canCreateRelationship =
     !!relFromId && !!relToId && relFromId !== relToId && !!session.document
   const canCreateBoundaryFromSelection = normalizedSelectedTopicIds.length >= 2
   const canCreateSummaryFromSelection =
     normalizedSelectedTopicIds.length >= 2 && summaryLabel.trim().length > 0
+
+  /**
+   * 应用画布级分支样式覆盖：以 patch 合并到当前 activeSheet.branchStyle，
+   * 默认值字段（edgeType='curve' / thickness=1 / colorPalette=[]）不写入；全空时清除覆盖。
+   * 仅当与当前文档值不同时提交，避免 noop 入历史栈。
+   */
+  const applyBranchStyle = (
+    patch: Partial<{
+      edgeType: EdgeType
+      thickness: number | ''
+      colorPalette: string[] | null
+    }>,
+  ) => {
+    if (!activeSheet) return
+
+    const merged: SheetBranchStyle = {}
+    if (activeBranchStyle?.edgeType && activeBranchStyle.edgeType !== 'curve') {
+      merged.edgeType = activeBranchStyle.edgeType
+    }
+    if (
+      activeBranchStyle?.thickness != null &&
+      activeBranchStyle.thickness !== 1
+    ) {
+      merged.thickness = activeBranchStyle.thickness
+    }
+    if (
+      activeBranchStyle?.colorPalette &&
+      activeBranchStyle.colorPalette.length > 0
+    ) {
+      merged.colorPalette = activeBranchStyle.colorPalette
+    }
+
+    if ('edgeType' in patch && patch.edgeType !== undefined) {
+      if (patch.edgeType === 'curve') delete merged.edgeType
+      else merged.edgeType = patch.edgeType
+    }
+    if ('thickness' in patch && patch.thickness !== undefined) {
+      const t = patch.thickness
+      if (t === '' || t === 1) delete merged.thickness
+      else merged.thickness = t
+      setBranchThicknessDraft(t)
+    }
+    if ('colorPalette' in patch && patch.colorPalette !== undefined) {
+      const palette = patch.colorPalette
+      if (palette === null || palette.length === 0) {
+        delete merged.colorPalette
+      } else {
+        merged.colorPalette = palette
+      }
+    }
+
+    const keys = Object.keys(merged) as (keyof SheetBranchStyle)[]
+    const next: SheetBranchStyle | null = keys.length === 0 ? null : merged
+
+    if (JSON.stringify(activeBranchStyle ?? null) === JSON.stringify(next)) return
+    void session.setSheetBranchStyle(activeSheet.id, next)
+  }
+
+  /**
+   * 应用节点样式覆盖：以 patch 覆盖当前 draft，同步本地态并提交到会话。
+   * patch 中未提供的字段沿用当前 draft；空串/undefined 语义由 buildStyleOverrides 处理。
+   * 仅当与当前文档值不同时提交，避免 noop 入历史栈。
+   */
+  const applyStyleOverride = (
+    patch: Partial<{
+      fill: string
+      textColor: string
+      borderColor: string
+      shape: TopicShape | ''
+      fontSize: number | ''
+      fontWeight: number | ''
+      borderWidth: number | ''
+    }>,
+  ) => {
+    const f = patch.fill !== undefined ? patch.fill : fillDraft
+    const t = patch.textColor !== undefined ? patch.textColor : textColorDraft
+    const b = patch.borderColor !== undefined ? patch.borderColor : borderColorDraft
+    const sh = patch.shape !== undefined ? patch.shape : shapeDraft
+    const fs = patch.fontSize !== undefined ? patch.fontSize : fontSizeDraft
+    const fw = patch.fontWeight !== undefined ? patch.fontWeight : fontWeightDraft
+    const bw = patch.borderWidth !== undefined ? patch.borderWidth : borderWidthDraft
+    if (patch.fill !== undefined) setFillDraft(patch.fill)
+    if (patch.textColor !== undefined) setTextColorDraft(patch.textColor)
+    if (patch.borderColor !== undefined) setBorderColorDraft(patch.borderColor)
+    if (patch.shape !== undefined) setShapeDraft(patch.shape)
+    if (patch.fontSize !== undefined) setFontSizeDraft(patch.fontSize)
+    if (patch.fontWeight !== undefined) setFontWeightDraft(patch.fontWeight)
+    if (patch.borderWidth !== undefined) setBorderWidthDraft(patch.borderWidth)
+    if (!activeTopic) return
+    const next = buildStyleOverrides(f, t, b, sh, fs, fw, bw)
+    if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
+      void session.setTopicStyleOverrides(activeTopic.id, next)
+    }
+  }
 
   return (
     <aside className="panel panel--inspector" aria-label="右侧检查器">
@@ -375,33 +588,21 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
                   />
                 </label>
 
-                <label className="panel__field">
-                  <span>标记（逗号分隔）</span>
-                  <input
-                    type="text"
-                    value={markersDraft}
-                    onChange={(e) => setMarkersDraft(e.target.value)}
-                    onBlur={() => {
-                      const tokens = markersDraft
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                      const next: TopicMarker[] = tokens.map((token, index) => ({
-                        id: `${activeTopic.id}-marker-${index + 1}`,
-                        ...(token ? { label: token } : {}),
-                      }))
+                <div className="panel__field">
+                  <span>标记</span>
+                  <MarkerSelector
+                    markers={activeTopic.markers ?? []}
+                    onChange={(next) => {
                       const current = activeTopic.markers ?? []
-                      const sameLength = current.length === next.length
                       const same =
-                        sameLength &&
-                        next.every((m, i) => m.label === current[i]?.label)
+                        current.length === next.length &&
+                        current.every((m, i) => m.id === next[i]?.id)
                       if (!same) {
                         void session.setTopicMarkers(activeTopic.id, next)
                       }
                     }}
-                    placeholder="旗帜, 优先级1, 进度50%"
                   />
-                </label>
+                </div>
 
                 <label className="panel__field">
                   <span>样式引用</span>
@@ -429,12 +630,7 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
                         aria-label="节点填充色"
                         value={toHexColor(fillDraft, '#ffffff')}
                         onChange={(e) => setFillDraft(e.target.value)}
-                        onBlur={() => {
-                          const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
-                          if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
-                            void session.setTopicStyleOverrides(activeTopic.id, next)
-                          }
-                        }}
+                        onBlur={() => applyStyleOverride({})}
                       />
                     </label>
                     <label className="panel__color-input">
@@ -444,12 +640,7 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
                         aria-label="节点文字色"
                         value={toHexColor(textColorDraft, '#0f172a')}
                         onChange={(e) => setTextColorDraft(e.target.value)}
-                        onBlur={() => {
-                          const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
-                          if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
-                            void session.setTopicStyleOverrides(activeTopic.id, next)
-                          }
-                        }}
+                        onBlur={() => applyStyleOverride({})}
                       />
                     </label>
                     <label className="panel__color-input">
@@ -459,12 +650,7 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
                         aria-label="节点边框色"
                         value={toHexColor(borderColorDraft, '#94a3b8')}
                         onChange={(e) => setBorderColorDraft(e.target.value)}
-                        onBlur={() => {
-                          const next = buildStyleOverrides(fillDraft, textColorDraft, borderColorDraft)
-                          if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
-                            void session.setTopicStyleOverrides(activeTopic.id, next)
-                          }
-                        }}
+                        onBlur={() => applyStyleOverride({})}
                       />
                     </label>
                   </div>
@@ -476,23 +662,104 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
                         className="panel__chip panel__chip--color"
                         style={{ background: color }}
                         aria-label={`应用填充色 ${color}`}
-                        onClick={() => {
-                          const next = buildStyleOverrides(color, textColorDraft, borderColorDraft)
-                          void session.setTopicStyleOverrides(activeTopic.id, next)
-                        }}
+                        onClick={() => applyStyleOverride({ fill: color })}
                       />
                     ))}
                   </div>
-                  {activeTopic.styleOverrides ? (
-                    <button
-                      className="panel__action panel__action--ghost"
-                      type="button"
-                      onClick={() => void session.setTopicStyleOverrides(activeTopic.id, null)}
-                    >
-                      清除颜色覆盖
-                    </button>
-                  ) : null}
                 </div>
+
+                <div className="panel__field">
+                  <span>形状</span>
+                  <div className="panel__segmented" role="group" aria-label="节点形状">
+                    {SHAPE_OPTIONS.map((opt) => {
+                      const active = (shapeDraft || 'rounded') === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                          aria-pressed={active}
+                          onClick={() => applyStyleOverride({ shape: opt.value })}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="panel__field">
+                  <span>
+                    字号
+                    <output className="panel__value-out">
+                      {fontSizeDraft === '' ? '默认' : `${fontSizeDraft}px`}
+                    </output>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label="节点标题字号"
+                    min={FONT_SIZE_MIN}
+                    max={FONT_SIZE_MAX}
+                    step={1}
+                    value={fontSizeDraft === '' ? 14 : fontSizeDraft}
+                    onChange={(e) => setFontSizeDraft(Number(e.target.value))}
+                    onPointerUp={() => applyStyleOverride({})}
+                    onKeyUp={() => applyStyleOverride({})}
+                    onBlur={() => applyStyleOverride({})}
+                  />
+                </div>
+
+                <div className="panel__field">
+                  <span>字重</span>
+                  <div className="panel__segmented" role="group" aria-label="节点标题字重">
+                    {FONT_WEIGHT_OPTIONS.map((opt) => {
+                      const active = fontWeightDraft === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                          aria-pressed={active}
+                          onClick={() => applyStyleOverride({ fontWeight: opt.value })}
+                          style={{ fontWeight: opt.value }}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="panel__field">
+                  <span>
+                    边框粗细
+                    <output className="panel__value-out">
+                      {borderWidthDraft === '' ? '默认' : `${borderWidthDraft}px`}
+                    </output>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label="节点边框粗细"
+                    min={BORDER_WIDTH_MIN}
+                    max={BORDER_WIDTH_MAX}
+                    step={0.5}
+                    value={borderWidthDraft === '' ? 1 : borderWidthDraft}
+                    onChange={(e) => setBorderWidthDraft(Number(e.target.value))}
+                    onPointerUp={() => applyStyleOverride({})}
+                    onKeyUp={() => applyStyleOverride({})}
+                    onBlur={() => applyStyleOverride({})}
+                  />
+                </div>
+
+                {activeTopic.styleOverrides ? (
+                  <button
+                    className="panel__action panel__action--ghost"
+                    type="button"
+                    onClick={() => void session.setTopicStyleOverrides(activeTopic.id, null)}
+                  >
+                    清除全部样式覆盖
+                  </button>
+                ) : null}
 
                 <div className="panel__field">
                   <span>任务</span>
@@ -780,6 +1047,117 @@ export function Inspector({ session, selectedTopicIds }: InspectorProps) {
                   onClick={() => void session.setDocumentTheme(null)}
                 >
                   恢复默认主题
+                </button>
+              ) : null}
+            </div>
+
+            <div className="panel__section">
+              <p className="panel__eyebrow">Branch Style</p>
+              <h3 className="panel__title">分支样式</h3>
+              <p className="panel__muted">
+                调整当前画布所有连线的形状、粗细与分支配色（写入画布级覆盖，节点级颜色优先）。
+              </p>
+
+              <div className="panel__field">
+                <span>连线类型</span>
+                <div className="panel__segmented" role="group" aria-label="连线类型">
+                  {EDGE_TYPE_OPTIONS.map((opt) => {
+                    const active = (activeBranchStyle?.edgeType ?? 'curve') === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => applyBranchStyle({ edgeType: opt.value })}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="panel__field">
+                <span>
+                  连线粗细
+                  <output className="panel__value-out">
+                    {branchThicknessDraft === '' || branchThicknessDraft === 1
+                      ? '默认'
+                      : `${branchThicknessDraft}×`}
+                  </output>
+                </span>
+                <input
+                  type="range"
+                  aria-label="连线粗细乘数"
+                  min={BRANCH_THICKNESS_MIN}
+                  max={BRANCH_THICKNESS_MAX}
+                  step={0.1}
+                  value={branchThicknessDraft === '' ? 1 : branchThicknessDraft}
+                  onChange={(e) => setBranchThicknessDraft(Number(e.target.value))}
+                  onPointerUp={() => applyBranchStyle({ thickness: branchThicknessDraft })}
+                  onKeyUp={() => applyBranchStyle({ thickness: branchThicknessDraft })}
+                  onBlur={() => applyBranchStyle({ thickness: branchThicknessDraft })}
+                />
+              </div>
+
+              <div className="panel__field">
+                <span>分支色板</span>
+                <div
+                  className="panel__palette-grid"
+                  role="radiogroup"
+                  aria-label="分支色板预设"
+                >
+                  {BRANCH_PALETTE_PRESETS.map((preset) => {
+                    const currentPalette = activeBranchStyle?.colorPalette
+                    const isDefault = !currentPalette || currentPalette.length === 0
+                    const active =
+                      preset.id === 'default'
+                        ? isDefault
+                        : JSON.stringify(preset.colors) ===
+                          JSON.stringify(currentPalette ?? [])
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={`panel__palette-swatch${active ? ' panel__palette-swatch--active' : ''}`}
+                        title={preset.label}
+                        onClick={() =>
+                          applyBranchStyle({
+                            colorPalette:
+                              preset.id === 'default' ? null : preset.colors,
+                          })
+                        }
+                      >
+                        <span className="panel__palette-strip">
+                          {preset.colors.map((c, i) => (
+                            <span
+                              key={i}
+                              className="panel__palette-dot"
+                              style={{ background: c }}
+                            />
+                          ))}
+                        </span>
+                        <span className="panel__palette-name">{preset.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {activeBranchStyle ? (
+                <button
+                  className="panel__action panel__action--ghost"
+                  type="button"
+                  onClick={() => {
+                    if (!activeSheet) return
+                    setBranchThicknessDraft('')
+                    void session.setSheetBranchStyle(activeSheet.id, null)
+                  }}
+                >
+                  清除分支样式覆盖
                 </button>
               ) : null}
             </div>

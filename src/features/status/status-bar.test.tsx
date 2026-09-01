@@ -79,9 +79,12 @@ const sessionStub: DocumentSession = {
   deleteSheet: async () => {},
   moveSheet: async () => {},
   setSheetChartType: async () => {},
+  setSheetBranchStyle: async () => {},
   selectTopic: async () => {},
   createChildTopic: async () => {},
   createSiblingTopic: async () => {},
+  createParentTopic: async () => {},
+  createFloatingTopic: async () => {},
   renameTopic: async () => {},
   deleteTopic: async () => {},
   deleteTopics: async () => {},
@@ -112,67 +115,56 @@ const sessionStub: DocumentSession = {
   redo: async () => {},
 }
 
-it('shows detailed undo and redo history labels in the status bar', () => {
+it('shows status, document name, sheet title, selection count and recent action', () => {
   renderWithApp(<StatusBar session={sessionStub} />)
 
-  expect(
-    screen.getByText('历史：可撤销 删除 2 个主题 / 可重做 批量移动 2 个主题到其他画布'),
-  ).toBeInTheDocument()
-  expect(screen.getByText('记录：')).toBeInTheDocument()
+  expect(screen.getByText('状态：就绪')).toBeInTheDocument()
+  expect(screen.getByText('文档：未命名')).toBeInTheDocument()
+  expect(screen.getByText('画布：主画布')).toBeInTheDocument()
+  expect(screen.getByText('选中：1 个主题')).toBeInTheDocument()
   expect(screen.getByText('最近动作：已删除 2 个主题')).toBeInTheDocument()
-  expect(screen.getByText('删除')).toBeInTheDocument()
-  expect(screen.getByText('跨画布')).toBeInTheDocument()
-  expect(screen.getByText('执行画布')).toBeInTheDocument()
-  expect(screen.getByText('×2')).toBeInTheDocument()
 })
 
-it('shows a recovery-stage hint when no structural records exist after restore', () => {
+it('shows the file name with an unsaved marker for a dirty document', () => {
   renderWithApp(
     <StatusBar
       session={{
         ...sessionStub,
-        recentAction: '已恢复当前文档',
-        recentActions: [],
-        recoveredFromAutosave: true,
-      }}
-    />,
-  )
-
-  expect(screen.getByText('恢复起点')).toBeInTheDocument()
-  expect(screen.getByText('已从恢复快照回到当前文档，新的整理会从这里开始。')).toBeInTheDocument()
-})
-
-it('shows a save-stage hint when records were cleared after save', () => {
-  renderWithApp(
-    <StatusBar
-      session={{
-        ...sessionStub,
-        recentAction: '已保存文档',
-        recentActions: [],
-        recoveredFromAutosave: false,
-      }}
-    />,
-  )
-
-  expect(screen.getByText('已保存')).toBeInTheDocument()
-  expect(screen.getByText('当前整理已经落盘，下一段结构操作会从空白记录重新开始。')).toBeInTheDocument()
-})
-
-it('shows a soft autosave hint when the recovery snapshot was refreshed recently', () => {
-  renderWithApp(
-    <StatusBar
-      session={{
-        ...sessionStub,
-        recentAction: '已选中主题',
-        recentActions: [],
+        filePath: '/Users/jason/工作计划.mgd',
         hasUnsavedChanges: true,
-        lastSavedAtMs: Date.now() - 5 * 60 * 1000,
-        lastAutosavedAtMs: Date.now() - 30 * 1000,
-        recoveredFromAutosave: false,
       }}
     />,
   )
 
-  expect(screen.getByText('恢复区已更新')).toBeInTheDocument()
-  expect(screen.getByText('最近的结构变更已经写入恢复快照，异常退出后也能从这里继续。')).toBeInTheDocument()
+  expect(screen.getByText('文档：工作计划.mgd（未保存）')).toBeInTheDocument()
+})
+
+it('shows zero selected topics when no topic is active', () => {
+  renderWithApp(
+    <StatusBar
+      session={{
+        ...sessionStub,
+        activeTopicId: null,
+      }}
+    />,
+  )
+
+  expect(screen.getByText('选中：0 个主题')).toBeInTheDocument()
+})
+
+it('shows the real multi-selection count when provided by the workspace', () => {
+  renderWithApp(<StatusBar session={sessionStub} selectedTopicCount={3} />)
+
+  expect(screen.getByText('选中：3 个主题')).toBeInTheDocument()
+})
+
+it('does not expose debug fields like topic id, undo stack or recovery snapshot', () => {
+  renderWithApp(<StatusBar session={sessionStub} />)
+
+  expect(screen.queryByText(/topic_root/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/撤销栈/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/恢复快照/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/修复：/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/历史：/)).not.toBeInTheDocument()
+  expect(screen.queryByText(/记录：/)).not.toBeInTheDocument()
 })

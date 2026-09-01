@@ -26,6 +26,7 @@ const commandMocks = vi.hoisted(() => ({
   importOpmlFile: vi.fn(),
   moveSheet: vi.fn(),
   setSheetChartType: vi.fn(),
+  setSheetBranchStyle: vi.fn(),
   moveTopic: vi.fn(),
   moveTopics: vi.fn(),
   moveTopicInParent: vi.fn(),

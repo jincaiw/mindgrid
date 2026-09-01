@@ -10,8 +10,9 @@
 use crate::domain::document::{
     clone_topic_branch, contains_topic, create_id, find_parent_id_and_index, find_topic,
     find_topic_mut, normalize_topic_ids_for_batch, normalize_topic_ids_for_delete, Boundary,
-    ChartType, DocumentSnapshot, Relationship, SheetSnapshot, SummaryNode, ThemeRef, TopicLink,
-    TopicMarker, TopicSnapshot, TopicStyleOverrides, TopicTask,
+    ChartType, DocumentSnapshot, Relationship, SheetBranchStyle, SheetSnapshot,
+    SummaryNode, ThemeRef, TopicLink, TopicLayoutHints, TopicMarker, TopicSnapshot,
+    TopicStyleOverrides, TopicTask,
 };
 
 /// 主题字段级变更（正向 old→new，逆操作只需交换 old/new）。
@@ -100,6 +101,16 @@ pub enum Operation {
         old_chart_type: Option<ChartType>,
         new_chart_type: Option<ChartType>,
     },
+    /// 画布分支样式变更。逆操作交换 old/new。None 表示回退到默认（curve + 默认线宽 + 8 色循环）。
+    SetSheetBranchStyle {
+        sheet_id: String,
+        old_branch_style: Option<SheetBranchStyle>,
+        new_branch_style: Option<SheetBranchStyle>,
+    },
+    /// 在画布的 floating_topics 列表末尾插入浮动主题。逆操作为 RemoveFloatingTopic。
+    InsertFloatingTopic { sheet_id: String, topic: TopicSnapshot },
+    /// 从画布的 floating_topics 列表移除浮动主题。逆操作为 InsertFloatingTopic。
+    RemoveFloatingTopic { sheet_id: String, topic: TopicSnapshot },
     /// 在文档级 relationships 列表末尾插入关系线。逆操作为 RemoveRelationship。
     InsertRelationship { relationship: Relationship },
     /// 从文档级 relationships 列表移除关系线。逆操作为 InsertRelationship。
@@ -247,6 +258,23 @@ pub fn invert_operation(op: &Operation) -> Operation {
                 new_chart_type: *old_chart_type,
             }
         }
+        Operation::SetSheetBranchStyle {
+            sheet_id,
+            old_branch_style,
+            new_branch_style,
+        } => Operation::SetSheetBranchStyle {
+            sheet_id: sheet_id.clone(),
+            old_branch_style: new_branch_style.clone(),
+            new_branch_style: old_branch_style.clone(),
+        },
+        Operation::InsertFloatingTopic { sheet_id, topic } => Operation::RemoveFloatingTopic {
+            sheet_id: sheet_id.clone(),
+            topic: topic.clone(),
+        },
+        Operation::RemoveFloatingTopic { sheet_id, topic } => Operation::InsertFloatingTopic {
+            sheet_id: sheet_id.clone(),
+            topic: topic.clone(),
+        },
         Operation::InsertRelationship { relationship } => Operation::RemoveRelationship {
             relationship: relationship.clone(),
         },
@@ -283,7 +311,14 @@ pub fn invert_operation(op: &Operation) -> Operation {
 
 fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id: &str, change: &TopicFieldChange) {
     let Some(sheet) = document.find_sheet_mut(sheet_id) else { return };
-    let Some(topic) = find_topic_mut(&mut sheet.root_topic, topic_id) else { return };
+    // 先查树，再查浮动主题
+    let topic = if let Some(t) = find_topic_mut(&mut sheet.root_topic, topic_id) {
+        t
+    } else if let Some(t) = sheet.floating_topics.iter_mut().find(|t| t.id == topic_id) {
+        t
+    } else {
+        return;
+    };
     match change {
         TopicFieldChange::Text { new, .. } => topic.text = new.clone(),
         TopicFieldChange::Collapsed { new, .. } => topic.collapsed = *new,
@@ -398,6 +433,16 @@ fn do_set_sheet_chart_type(
     }
 }
 
+fn do_set_sheet_branch_style(
+    document: &mut DocumentSnapshot,
+    sheet_id: &str,
+    branch_style: Option<SheetBranchStyle>,
+) {
+    if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+        sheet.branch_style = branch_style;
+    }
+}
+
 /// 正向应用一个操作。用于 redo（以及 editor 执行后回放校验）。
 pub fn apply_operation(document: &mut DocumentSnapshot, op: &Operation) {
     match op {
@@ -441,6 +486,21 @@ pub fn apply_operation(document: &mut DocumentSnapshot, op: &Operation) {
         }
         Operation::SetSheetChartType { sheet_id, new_chart_type, .. } => {
             do_set_sheet_chart_type(document, sheet_id, *new_chart_type)
+        }
+        Operation::SetSheetBranchStyle { sheet_id, new_branch_style, .. } => {
+            do_set_sheet_branch_style(document, sheet_id, new_branch_style.clone())
+        }
+        Operation::InsertFloatingTopic { sheet_id, topic } => {
+            if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+                sheet.floating_topics.push(topic.clone());
+            }
+        }
+        Operation::RemoveFloatingTopic { sheet_id, topic } => {
+            if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+                if let Some(pos) = sheet.floating_topics.iter().position(|t| t.id == topic.id) {
+                    sheet.floating_topics.remove(pos);
+                }
+            }
         }
         Operation::InsertRelationship { relationship } => {
             document.relationships.push(relationship.clone());
@@ -524,13 +584,28 @@ impl<'a> DocumentEditor<'a> {
     fn set_topic_text(&mut self, sheet_id: &str, topic_id: &str, new_text: String) {
         let change = {
             let Some(sheet) = self.document.find_sheet_mut(sheet_id) else { return };
-            let Some(topic) = find_topic_mut(&mut sheet.root_topic, topic_id) else { return };
-            let old = topic.text.clone();
-            if old == new_text {
+            // 先查树，再查浮动主题
+            if let Some(topic) = find_topic_mut(&mut sheet.root_topic, topic_id) {
+                let old = topic.text.clone();
+                if old == new_text {
+                    return;
+                }
+                topic.text = new_text.clone();
+                TopicFieldChange::Text { old, new: new_text }
+            } else if let Some(topic) = sheet
+                .floating_topics
+                .iter_mut()
+                .find(|t| t.id == topic_id)
+            {
+                let old = topic.text.clone();
+                if old == new_text {
+                    return;
+                }
+                topic.text = new_text.clone();
+                TopicFieldChange::Text { old, new: new_text }
+            } else {
                 return;
             }
-            topic.text = new_text.clone();
-            TopicFieldChange::Text { old, new: new_text }
         };
         self.record(Operation::SetTopicField {
             sheet_id: sheet_id.to_string(),
@@ -572,7 +647,14 @@ impl<'a> DocumentEditor<'a> {
     {
         let change = {
             let Some(sheet) = self.document.find_sheet_mut(sheet_id) else { return };
-            let Some(topic) = find_topic_mut(&mut sheet.root_topic, topic_id) else { return };
+            // 先查树，再查浮动主题
+            let topic = if let Some(t) = find_topic_mut(&mut sheet.root_topic, topic_id) {
+                t
+            } else if let Some(t) = sheet.floating_topics.iter_mut().find(|t| t.id == topic_id) {
+                t
+            } else {
+                return;
+            };
             let old = read_old(topic);
             if old == new_value {
                 return;
@@ -803,6 +885,27 @@ impl<'a> DocumentEditor<'a> {
         });
     }
 
+    fn set_sheet_branch_style_raw(
+        &mut self,
+        sheet_id: &str,
+        new_branch_style: Option<SheetBranchStyle>,
+    ) {
+        let old_branch_style = self
+            .document
+            .find_sheet(sheet_id)
+            .map(|sheet| sheet.branch_style.clone());
+        let Some(old_branch_style) = old_branch_style else { return };
+        if old_branch_style == new_branch_style {
+            return;
+        }
+        do_set_sheet_branch_style(self.document, sheet_id, new_branch_style.clone());
+        self.record(Operation::SetSheetBranchStyle {
+            sheet_id: sheet_id.to_string(),
+            old_branch_style,
+            new_branch_style,
+        });
+    }
+
     fn insert_sheet(&mut self, index: usize, sheet: SheetSnapshot) {
         let op_sheet = sheet.clone();
         do_insert_sheet(self.document, index, sheet);
@@ -876,6 +979,37 @@ impl<'a> DocumentEditor<'a> {
 
         let active_root_topic_id = self.document.root_topic().id.clone();
         self.set_sheet_chart_type_raw(sheet_id, parsed);
+
+        Ok(active_root_topic_id)
+    }
+
+    /// 设置画布的分支样式。`branch_style` 为 None 表示清除覆盖（回退到默认）。
+    /// `edge_type` 由 serde 反序列化时校验（仅接受 curve/straight/elbow）。
+    /// `thickness` 范围限制 0.1–10.0。
+    /// 返回活动主题 id 供会话层保持选中。
+    pub fn set_sheet_branch_style(
+        &mut self,
+        sheet_id: &str,
+        branch_style: Option<SheetBranchStyle>,
+    ) -> Result<String, String> {
+        if let Some(style) = &branch_style {
+            // 校验 thickness 范围（0.1–10.0，超出则报错）
+            if let Some(thickness) = style.thickness {
+                if !(0.1..=10.0).contains(&thickness) {
+                    return Err(format!(
+                        "连线粗细 {} 超出范围（0.1–10.0）",
+                        thickness
+                    ));
+                }
+            }
+        }
+
+        if self.document.find_sheet(sheet_id).is_none() {
+            return Err("找不到需要设置分支样式的画布".to_string());
+        }
+
+        let active_root_topic_id = self.document.root_topic().id.clone();
+        self.set_sheet_branch_style_raw(sheet_id, branch_style);
 
         Ok(active_root_topic_id)
     }
@@ -954,7 +1088,17 @@ impl<'a> DocumentEditor<'a> {
         Ok(new_topic_id)
     }
 
-    pub fn create_sibling_topic(&mut self, topic_id: &str, text: &str) -> Result<String, String> {
+    /// 创建同级主题。
+    ///
+    /// `position`：`"after"` 在当前主题之后插入（XMind Enter，默认）；
+    /// `"before"` 在当前主题之前插入（XMind Shift+Enter 前插同级）。
+    /// 其他值按 `"after"` 处理。
+    pub fn create_sibling_topic(
+        &mut self,
+        topic_id: &str,
+        text: &str,
+        position: &str,
+    ) -> Result<String, String> {
         let sheet_id = self.active_sheet_id();
         if self.document.root_topic().id == topic_id {
             return Err("根主题不支持创建同级主题".into());
@@ -969,9 +1113,84 @@ impl<'a> DocumentEditor<'a> {
                 .ok_or_else(|| "找不到目标主题的父主题".to_string())?
         };
 
+        let insert_index = if position == "before" {
+            topic_index
+        } else {
+            topic_index + 1
+        };
+
         let new_topic = TopicSnapshot::new(text);
         let new_topic_id = new_topic.id.clone();
-        self.insert_topic(&sheet_id, &parent_id, topic_index + 1, new_topic);
+        self.insert_topic(&sheet_id, &parent_id, insert_index, new_topic);
+
+        Ok(new_topic_id)
+    }
+
+    /// 创建父主题：在当前主题的位置插入一个新主题，把当前主题（含整个子树）
+    /// 包裹为新主题的第一个子主题。对应 XMind Cmd+Enter「插入父主题」。
+    ///
+    /// 操作序列（事务化，可撤销）：
+    /// 1. 从原父主题取出当前主题（含子树）
+    /// 2. 在原位置插入新父主题
+    /// 3. 把取出的主题作为新父主题的第 0 个子主题插入
+    pub fn create_parent_topic(&mut self, topic_id: &str, text: &str) -> Result<String, String> {
+        let sheet_id = self.active_sheet_id();
+        if self.document.root_topic().id == topic_id {
+            return Err("根主题不支持创建父主题".into());
+        }
+
+        let (grandparent_id, topic_index) = {
+            let sheet = self
+                .document
+                .find_sheet(&sheet_id)
+                .ok_or_else(|| "找不到目标主题的父主题".to_string())?;
+            find_parent_id_and_index(&sheet.root_topic, topic_id)
+                .ok_or_else(|| "找不到目标主题的父主题".to_string())?
+        };
+
+        let new_topic = TopicSnapshot::new(text);
+        let new_topic_id = new_topic.id.clone();
+
+        let removed = self
+            .remove_topic_by_id(&sheet_id, topic_id)
+            .ok_or_else(|| "找不到需要包裹的主题".to_string())?;
+        self.insert_topic(&sheet_id, &grandparent_id, topic_index, new_topic);
+        self.insert_topic(&sheet_id, &new_topic_id, 0, removed);
+
+        Ok(new_topic_id)
+    }
+
+    /// 创建浮动主题：在活动画布的 floating_topics 列表末尾追加一个独立主题。
+    /// 浮动主题不参与树布局，坐标由 layout_hints.offset_x/offset_y 提供（世界坐标）。
+    /// 对应 XMind 双击空白创建浮动主题。
+    pub fn create_floating_topic(
+        &mut self,
+        text: &str,
+        offset_x: f64,
+        offset_y: f64,
+    ) -> Result<String, String> {
+        let sheet_id = self.active_sheet_id();
+        // 确认活动画布存在
+        if self.document.find_sheet(&sheet_id).is_none() {
+            return Err("找不到活动画布".to_string());
+        }
+
+        let mut topic = TopicSnapshot::new(text);
+        topic.layout_hints = Some(TopicLayoutHints {
+            direction: None,
+            offset_x: Some(offset_x),
+            offset_y: Some(offset_y),
+        });
+        let new_topic_id = topic.id.clone();
+
+        // 直接修改文档（record 仅存操作用于撤销/重做，不自动应用）
+        if let Some(sheet) = self.document.find_sheet_mut(&sheet_id) {
+            sheet.floating_topics.push(topic.clone());
+        }
+        self.record(Operation::InsertFloatingTopic {
+            sheet_id,
+            topic,
+        });
 
         Ok(new_topic_id)
     }
@@ -983,7 +1202,13 @@ impl<'a> DocumentEditor<'a> {
                 .document
                 .find_sheet(&sheet_id)
                 .ok_or_else(|| "找不到需要重命名的主题".to_string())?;
-            if find_topic(&sheet.root_topic, topic_id).is_none() {
+            // 先查树，再查浮动主题
+            let in_tree = find_topic(&sheet.root_topic, topic_id).is_some();
+            let in_floating = sheet
+                .floating_topics
+                .iter()
+                .any(|t| t.id == topic_id);
+            if !in_tree && !in_floating {
                 return Err("找不到需要重命名的主题".to_string());
             }
         }
@@ -1011,14 +1236,16 @@ impl<'a> DocumentEditor<'a> {
         Ok(topic_id.to_string())
     }
 
-    /// 校验主题在活动画布中存在，返回活动画布 id。供富字段命令复用。
+    /// 校验主题在活动画布中存在（含浮动主题），返回活动画布 id。供富字段命令复用。
     fn ensure_active_topic_sheet(&self, topic_id: &str, label: &str) -> Result<String, String> {
         let sheet_id = self.active_sheet_id();
         let sheet = self
             .document
             .find_sheet(&sheet_id)
             .ok_or_else(|| format!("找不到需要{label}的主题"))?;
-        if find_topic(&sheet.root_topic, topic_id).is_none() {
+        let in_tree = find_topic(&sheet.root_topic, topic_id).is_some();
+        let in_floating = sheet.floating_topics.iter().any(|t| t.id == topic_id);
+        if !in_tree && !in_floating {
             return Err(format!("找不到需要{label}的主题"));
         }
         Ok(sheet_id)
@@ -1088,6 +1315,21 @@ impl<'a> DocumentEditor<'a> {
             return Err("根主题不能删除".into());
         }
 
+        // 先检查是否为浮动主题
+        let is_floating = {
+            let sheet = self
+                .document
+                .find_sheet(&sheet_id)
+                .ok_or_else(|| "找不到目标主题".to_string())?;
+            sheet.floating_topics.iter().any(|t| t.id == topic_id)
+        };
+
+        if is_floating {
+            // 浮动主题：从 floating_topics 列表移除，撤销标签同删除树主题
+            self.remove_floating_topic(&sheet_id, topic_id);
+            return Ok(self.document.root_topic().id.clone());
+        }
+
         let parent_id = {
             let sheet = self
                 .document
@@ -1104,6 +1346,23 @@ impl<'a> DocumentEditor<'a> {
         Ok(parent_id)
     }
 
+    /// 从活动画布的 floating_topics 列表移除指定浮动主题。
+    fn remove_floating_topic(&mut self, sheet_id: &str, topic_id: &str) {
+        let topic = {
+            let Some(sheet) = self.document.find_sheet_mut(sheet_id) else {
+                return;
+            };
+            let Some(pos) = sheet.floating_topics.iter().position(|t| t.id == topic_id) else {
+                return;
+            };
+            sheet.floating_topics.remove(pos)
+        };
+        self.record(Operation::RemoveFloatingTopic {
+            sheet_id: sheet_id.to_string(),
+            topic,
+        });
+    }
+
     pub fn delete_topics(&mut self, topic_ids: &[String]) -> Result<String, String> {
         if topic_ids.is_empty() {
             return Err("没有可删除的主题".into());
@@ -1112,6 +1371,27 @@ impl<'a> DocumentEditor<'a> {
         let sheet_id = self.active_sheet_id();
         let root_topic_id = self.document.root_topic().id.clone();
         let root_topic_clone = self.document.root_topic().clone();
+
+        // 先处理浮动主题：normalize_topic_ids_for_delete 只识别树内主题，
+        // 浮动主题需在归一化前单独删除
+        let floating_ids: Vec<String> = {
+            let sheet = self
+                .document
+                .find_sheet(&sheet_id)
+                .ok_or_else(|| "找不到活动画布".to_string())?;
+            topic_ids
+                .iter()
+                .filter(|id| {
+                    id != &&root_topic_id && sheet.floating_topics.iter().any(|t| &t.id == *id)
+                })
+                .cloned()
+                .collect()
+        };
+        for fid in &floating_ids {
+            self.remove_floating_topic(&sheet_id, fid);
+        }
+
+        // 树内主题走原有归一化逻辑
         let normalized_topic_ids = normalize_topic_ids_for_delete(&root_topic_clone, topic_ids)?;
         let mut next_active_topic_id = root_topic_id;
 
@@ -1713,6 +1993,124 @@ mod tests {
     }
 
     #[test]
+    fn set_sheet_branch_style_round_trips_and_inverts() {
+        use crate::domain::document::EdgeType;
+
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        let new_style = Some(SheetBranchStyle {
+            edge_type: Some(EdgeType::Straight),
+            thickness: Some(1.5),
+            color_palette: vec!["#ff0000".into(), "#00ff00".into()],
+        });
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_sheet_branch_style(&sheet_id, new_style.clone()).unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Operation::SetSheetBranchStyle { new_branch_style, .. } => {
+                assert_eq!(*new_branch_style, new_style);
+            }
+            other => panic!("expected SetSheetBranchStyle, got {:?}", other),
+        }
+
+        // 正向应用后画布携带 branch_style
+        let sheet = document.find_sheet(&sheet_id).unwrap();
+        assert_eq!(sheet.branch_style, new_style);
+
+        // 逆操作回到 None
+        apply_inverse(&mut document, &ops);
+        let sheet = document.find_sheet(&sheet_id).unwrap();
+        assert!(sheet.branch_style.is_none());
+    }
+
+    #[test]
+    fn set_sheet_branch_style_noop_when_same() {
+        use crate::domain::document::EdgeType;
+
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        // 先设置一次
+        document.find_sheet_mut(&sheet_id).unwrap().branch_style = Some(SheetBranchStyle {
+            edge_type: Some(EdgeType::Elbow),
+            thickness: Some(2.0),
+            color_palette: vec!["#abc".into()],
+        });
+
+        let mut editor = DocumentEditor::new(&mut document);
+        // 相同值不应记录任何操作
+        editor
+            .set_sheet_branch_style(
+                &sheet_id,
+                Some(SheetBranchStyle {
+                    edge_type: Some(EdgeType::Elbow),
+                    thickness: Some(2.0),
+                    color_palette: vec!["#abc".into()],
+                }),
+            )
+            .unwrap();
+        assert!(editor.into_ops().is_empty());
+    }
+
+    #[test]
+    fn set_sheet_branch_style_rejects_invalid_thickness() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+
+        // thickness 超出上限
+        let too_thick = Some(SheetBranchStyle {
+            thickness: Some(20.0),
+            ..Default::default()
+        });
+        assert!(editor.set_sheet_branch_style(&sheet_id, too_thick).is_err());
+
+        // thickness 低于下限
+        let too_thin = Some(SheetBranchStyle {
+            thickness: Some(0.0),
+            ..Default::default()
+        });
+        assert!(editor.set_sheet_branch_style(&sheet_id, too_thin).is_err());
+
+        // 不应有操作被记录
+        assert!(editor.into_ops().is_empty());
+    }
+
+    #[test]
+    fn set_sheet_branch_style_clears_with_none() {
+        use crate::domain::document::EdgeType;
+
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        // 先设置
+        document.find_sheet_mut(&sheet_id).unwrap().branch_style = Some(SheetBranchStyle {
+            edge_type: Some(EdgeType::Straight),
+            ..Default::default()
+        });
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_sheet_branch_style(&sheet_id, None).unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        // 正向应用后 branch_style 被清除
+        assert!(document.find_sheet(&sheet_id).unwrap().branch_style.is_none());
+
+        // 逆操作恢复
+        apply_inverse(&mut document, &ops);
+        assert_eq!(
+            document.find_sheet(&sheet_id).unwrap().branch_style,
+            Some(SheetBranchStyle {
+                edge_type: Some(EdgeType::Straight),
+                ..Default::default()
+            })
+        );
+    }
+
+    #[test]
     fn parse_chart_type_covers_all_variants() {
         assert_eq!(parse_chart_type("mindmap").unwrap(), Some(ChartType::Mindmap));
         assert_eq!(parse_chart_type("Logic").unwrap(), Some(ChartType::Logic));
@@ -1968,7 +2366,7 @@ mod tests {
         let new_overrides = Some(TopicStyleOverrides {
             fill: Some("#ff8800".into()),
             text_color: Some("#ffffff".into()),
-            border_color: None,
+            ..Default::default()
         });
 
         let mut editor = DocumentEditor::new(&mut document);
@@ -2007,8 +2405,7 @@ mod tests {
         // 先写入一个 overrides
         let initial = Some(TopicStyleOverrides {
             fill: Some("#abc123".into()),
-            text_color: None,
-            border_color: None,
+            ..Default::default()
         });
         {
             let mut editor = DocumentEditor::new(&mut document);
@@ -2028,8 +2425,7 @@ mod tests {
         let mut editor = DocumentEditor::new(&mut document);
         let overrides = TopicStyleOverrides {
             fill: Some("#000".into()),
-            text_color: None,
-            border_color: None,
+            ..Default::default()
         };
         assert!(editor
             .set_topic_style_overrides("missing-topic", Some(overrides))
@@ -2131,5 +2527,215 @@ mod tests {
         assert_eq!(ops.len(), 1);
         assert!(document.theme.is_none());
         let _ = ops;
+    }
+
+    #[test]
+    fn create_sibling_topic_after_inserts_after_current() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let root_topic = document.find_sheet(&sheet_id).unwrap().root_topic.clone();
+        let target_id = root_topic.children[0].id.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        let new_id = editor
+            .create_sibling_topic(&target_id, "新建同级主题", "after")
+            .unwrap();
+        let ops = editor.into_ops();
+
+        let root = &document.find_sheet(&sheet_id).unwrap().root_topic;
+        assert_eq!(root.children.len(), 4);
+        assert_eq!(root.children[0].id, target_id);
+        assert_eq!(root.children[1].id, new_id);
+
+        // 撤销后回到原状（3 个子主题）
+        apply_inverse(&mut document, &ops);
+        assert_eq!(
+            document.find_sheet(&sheet_id).unwrap().root_topic.children.len(),
+            3
+        );
+    }
+
+    #[test]
+    fn create_sibling_topic_before_inserts_before_current() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let root_topic = document.find_sheet(&sheet_id).unwrap().root_topic.clone();
+        let target_id = root_topic.children[1].id.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        let new_id = editor
+            .create_sibling_topic(&target_id, "前插同级", "before")
+            .unwrap();
+        let ops = editor.into_ops();
+
+        let root = &document.find_sheet(&sheet_id).unwrap().root_topic;
+        assert_eq!(root.children.len(), 4);
+        // 前插：新主题占据 target 原位置(1)，target 顺延到 2
+        assert_eq!(root.children[1].id, new_id);
+        assert_eq!(root.children[2].id, target_id);
+
+        // 撤销后回到原状
+        apply_inverse(&mut document, &ops);
+        assert_eq!(
+            document.find_sheet(&sheet_id).unwrap().root_topic.children.len(),
+            3
+        );
+    }
+
+    #[test]
+    fn create_sibling_topic_rejects_root() {
+        let mut document = DocumentSnapshot::new_default();
+        let root_id = document.root_topic().id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+        assert!(editor
+            .create_sibling_topic(&root_id, "新建同级主题", "after")
+            .is_err());
+        assert!(editor
+            .create_sibling_topic(&root_id, "前插同级", "before")
+            .is_err());
+    }
+
+    #[test]
+    fn create_parent_topic_wraps_current_and_preserves_subtree() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        // 给第一个子主题挂一个孙主题，验证子树整体被包裹
+        let target_id = document.find_sheet(&sheet_id).unwrap().root_topic.children[0].id.clone();
+        let grandchild_id = {
+            let root = &mut document.find_sheet_mut(&sheet_id).unwrap().root_topic;
+            let child = &mut root.children[0];
+            child.children.push(TopicSnapshot::new("孙主题"));
+            child.children[0].id.clone()
+        };
+
+        let mut editor = DocumentEditor::new(&mut document);
+        let new_parent_id = editor
+            .create_parent_topic(&target_id, "新建父主题")
+            .unwrap();
+        let ops = editor.into_ops();
+
+        let root = &document.find_sheet(&sheet_id).unwrap().root_topic;
+        assert_eq!(root.children.len(), 3);
+        // 原位置(0)被新父主题占据
+        assert_eq!(root.children[0].id, new_parent_id);
+        // 新父主题的唯一子主题是原 target
+        let new_parent = &root.children[0];
+        assert_eq!(new_parent.children.len(), 1);
+        assert_eq!(new_parent.children[0].id, target_id);
+        // target 的子主题（孙主题）保留
+        assert_eq!(new_parent.children[0].children.len(), 1);
+        assert_eq!(new_parent.children[0].children[0].id, grandchild_id);
+
+        // 撤销后恢复原结构：root.children[0] == target，且 target 仍带孙主题
+        apply_inverse(&mut document, &ops);
+        let root = &document.find_sheet(&sheet_id).unwrap().root_topic;
+        assert_eq!(root.children.len(), 3);
+        assert_eq!(root.children[0].id, target_id);
+        assert_eq!(root.children[0].children.len(), 1);
+        assert_eq!(root.children[0].children[0].id, grandchild_id);
+    }
+
+    #[test]
+    fn create_parent_topic_rejects_root() {
+        let mut document = DocumentSnapshot::new_default();
+        let root_id = document.root_topic().id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+        assert!(editor.create_parent_topic(&root_id, "新建父主题").is_err());
+    }
+
+    #[test]
+    fn floating_topic_create_rename_delete_round_trips() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        // 创建浮动主题
+        let mut editor = DocumentEditor::new(&mut document);
+        let floating_id = editor
+            .create_floating_topic("浮动主题", 300.0, -200.0)
+            .unwrap();
+        let ops = editor.into_ops();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(
+            &ops[0],
+            Operation::InsertFloatingTopic { sheet_id: s, topic }
+                if *s == sheet_id && topic.id == floating_id
+        ));
+
+        // 正向应用后 floating_topics 有 1 个
+        assert_eq!(
+            document.find_sheet(&sheet_id).unwrap().floating_topics.len(),
+            1
+        );
+        let floating = &document.find_sheet(&sheet_id).unwrap().floating_topics[0];
+        assert_eq!(floating.text, "浮动主题");
+        assert_eq!(floating.layout_hints.as_ref().unwrap().offset_x, Some(300.0));
+        assert_eq!(floating.layout_hints.as_ref().unwrap().offset_y, Some(-200.0));
+
+        // 重命名浮动主题
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.rename_topic(&floating_id, "重命名后").unwrap();
+        let rename_ops = editor.into_ops();
+        assert_eq!(rename_ops.len(), 1);
+        assert_eq!(
+            document
+                .find_sheet(&sheet_id)
+                .unwrap()
+                .floating_topics[0]
+                .text,
+            "重命名后"
+        );
+
+        // 撤销重命名
+        apply_inverse(&mut document, &rename_ops);
+        assert_eq!(
+            document
+                .find_sheet(&sheet_id)
+                .unwrap()
+                .floating_topics[0]
+                .text,
+            "浮动主题"
+        );
+
+        // 删除浮动主题
+        let mut editor = DocumentEditor::new(&mut document);
+        let result = editor.delete_topic(&floating_id);
+        assert!(result.is_ok());
+        let delete_ops = editor.into_ops();
+        assert_eq!(delete_ops.len(), 1);
+        assert!(matches!(
+            &delete_ops[0],
+            Operation::RemoveFloatingTopic { topic, .. } if topic.id == floating_id
+        ));
+        assert_eq!(
+            document
+                .find_sheet(&sheet_id)
+                .unwrap()
+                .floating_topics
+                .len(),
+            0
+        );
+
+        // 撤销删除 → 浮动主题恢复
+        apply_inverse(&mut document, &delete_ops);
+        assert_eq!(
+            document
+                .find_sheet(&sheet_id)
+                .unwrap()
+                .floating_topics
+                .len(),
+            1
+        );
+
+        // 撤销创建 → 浮动主题消失
+        apply_inverse(&mut document, &ops);
+        assert_eq!(
+            document
+                .find_sheet(&sheet_id)
+                .unwrap()
+                .floating_topics
+                .len(),
+            0
+        );
     }
 }

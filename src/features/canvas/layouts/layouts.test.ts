@@ -90,6 +90,70 @@ describe('computeLayout dispatcher', () => {
   })
 })
 
+describe('computeLayout with floating topics', () => {
+  function makeFloatingTopic(
+    id: string,
+    text: string,
+    offsetX: number,
+    offsetY: number,
+  ): TopicSnapshot {
+    return {
+      id,
+      text,
+      collapsed: false,
+      children: [],
+      layoutHints: { offsetX, offsetY },
+    }
+  }
+
+  it('includes floating topics as layout nodes without adding edges', () => {
+    const root = makeRoot()
+    const floating = [
+      makeFloatingTopic('f1', 'Floating 1', 400, -200),
+      makeFloatingTopic('f2', 'Floating 2', -300, 250),
+    ]
+    const layout = computeLayout(root, 'mindmap', floating)
+
+    // 7 tree nodes + 2 floating
+    expect(layout.nodes.length).toBe(9)
+    // Edges unchanged (floating topics have no parent-child edges)
+    expect(layout.edges.length).toBe(6)
+
+    // Floating nodes present
+    const f1 = layout.nodes.find((n) => n.id === 'f1')
+    expect(f1).toBeDefined()
+    expect(f1!.x).toBe(400)
+    expect(f1!.y).toBe(-200)
+
+    const f2 = layout.nodes.find((n) => n.id === 'f2')
+    expect(f2).toBeDefined()
+    expect(f2!.x).toBe(-300)
+    expect(f2!.y).toBe(250)
+  })
+
+  it('returns unchanged layout when no floating topics', () => {
+    const root = makeRoot()
+    const layout = computeLayout(root, 'mindmap', undefined)
+    const layoutEmpty = computeLayout(root, 'mindmap', [])
+
+    expect(layout.nodes.length).toBe(7)
+    expect(layoutEmpty.nodes.length).toBe(7)
+    expect(layoutEmpty.offsetX).toBe(layout.offsetX)
+    expect(layoutEmpty.offsetY).toBe(layout.offsetY)
+  })
+
+  it('expands bounds to include floating topics outside tree bounds', () => {
+    const root = makeRoot()
+    const farFloating = [makeFloatingTopic('far', 'Far Away', 5000, 5000)]
+    const baseLayout = computeLayout(root, 'mindmap')
+    const layout = computeLayout(root, 'mindmap', farFloating)
+
+    // Layout must be large enough to contain the far floating topic
+    expect(layout.width).toBeGreaterThan(baseLayout.width)
+    expect(layout.height).toBeGreaterThan(baseLayout.height)
+  })
+})
+
 describe('computeLogicLayout', () => {
   it('places root at leftmost, children to the right', () => {
     const layout = computeLogicLayout(makeRoot())

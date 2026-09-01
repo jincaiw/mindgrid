@@ -48,11 +48,34 @@ export interface TopicLayoutHints {
   offsetY?: number
 }
 
-/** 主题节点级样式覆盖，优先于文档主题的层级默认色。 */
+/**
+ * 主题节点形状。对齐 XMind 节点形状选项：
+ * - rounded：圆角矩形（默认，按深度递减圆角）
+ * - rect：直角矩形
+ * - pill：全圆角胶囊（半径 = 高度/2）
+ * - underline：下划线式（无填充、仅底部描边，文字直绘于画布）
+ */
+export type TopicShape = 'rounded' | 'rect' | 'pill' | 'underline'
+
+/**
+ * 主题节点级样式覆盖，优先于文档主题的层级默认值。
+ *
+ * 颜色字段（fill / textColor / borderColor）覆盖主题层级配色；
+ * 形状与排印字段（shape / fontSize / fontWeight / borderWidth）覆盖
+ * 深度分级默认值（见 style-constants 的 getTitleFontSize 等）。
+ * 所有字段可选，缺省时回退到对应默认，保证 1.1.0 旧文档可直接加载。
+ */
 export interface TopicStyleOverrides {
   fill?: string
   textColor?: string
   borderColor?: string
+  shape?: TopicShape
+  /** 标题字号（px），建议范围 8–32。 */
+  fontSize?: number
+  /** 标题字重（CSS font-weight 数值，如 400/500/600/700）。 */
+  fontWeight?: number
+  /** 节点边框粗细（px），建议范围 0–6，0 表示无边框。 */
+  borderWidth?: number
 }
 
 export interface TopicSnapshot {
@@ -62,7 +85,7 @@ export interface TopicSnapshot {
   children: TopicSnapshot[]
   /** 样式表引用，见 styles.json。 */
   styleRef?: string
-  /** 节点级样式覆盖（fill / textColor / borderColor），优先于文档主题。 */
+  /** 节点级样式覆盖（颜色 / 形状 / 排印 / 边框粗细），优先于文档主题。 */
   styleOverrides?: TopicStyleOverrides
   markers?: TopicMarker[]
   labels?: string[]
@@ -114,6 +137,30 @@ export interface LayoutConfig {
   verticalSpacing?: number
 }
 
+/**
+ * 连线类型，决定父子主题之间的边线绘制方式。
+ * - curve：贝塞尔曲线（默认，XMind 经典 S 型）
+ * - straight：直线（控制点退化为起止点）
+ * - elbow：正交折线（L 型，组织结构图风格）
+ */
+export type EdgeType = 'curve' | 'straight' | 'elbow'
+
+/**
+ * 画布级分支样式覆盖，影响整张画布的连线视觉。
+ *
+ * 与节点级 `TopicStyleOverrides` 互补：前者作用于"边"，后者作用于"节点"。
+ * 所有字段可选，缺省时回退到默认（curve + 默认线宽 + 8 色循环色板），
+ * 保证 1.0.0 旧文档可直接加载。
+ */
+export interface SheetBranchStyle {
+  /** 连线类型，缺省为 curve。 */
+  edgeType?: EdgeType
+  /** 连线粗细乘数（1.0 为默认，建议范围 0.5–3.0）。 */
+  thickness?: number
+  /** 分支色板，覆盖默认 8 色循环。每个根直接子节点取一个色，其后代继承。 */
+  colorPalette?: string[]
+}
+
 export interface SheetSnapshot {
   id: string
   title: string
@@ -121,6 +168,15 @@ export interface SheetSnapshot {
   /** 图表类型，缺省为 mindmap。 */
   chartType?: ChartType
   layoutConfig?: LayoutConfig
+  /** 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。 */
+  branchStyle?: SheetBranchStyle
+  /**
+   * 浮动主题列表：独立于 rootTopic 树结构的自由节点。
+   * 每个浮动主题通过 layoutHints.offsetX/offsetY 存储世界坐标绝对位置，
+   * 布局引擎跳过其自动布局；拖拽浮动主题到普通主题上可吸附为子主题。
+   * 缺省为空数组，保证 1.0.0 旧文档可直接加载。
+   */
+  floatingTopics?: TopicSnapshot[]
   boundaries?: Boundary[]
   summaries?: SummaryNode[]
   extensions?: Record<string, unknown>

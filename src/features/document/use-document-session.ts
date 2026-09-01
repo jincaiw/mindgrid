@@ -11,6 +11,8 @@ import {
   createRelationship,
   createSheet,
   createSiblingTopic,
+  createParentTopic,
+  createFloatingTopic,
   createSummary,
   deleteBoundary,
   deleteRelationship,
@@ -44,6 +46,7 @@ import {
   selectTopic,
   setDocumentTheme,
   setSheetChartType,
+  setSheetBranchStyle,
   setTopicLabels,
   setTopicLink,
   setTopicMarkers,
@@ -58,6 +61,7 @@ import { hasTauriRuntime } from '../../lib/ipc/transport'
 import type {
   ChartType,
   DocumentSnapshot,
+  SheetBranchStyle,
   TopicLink,
   TopicMarker,
   TopicStyleOverrides,
@@ -96,9 +100,15 @@ export interface DocumentSession extends DocumentSessionState {
   deleteSheet: (sheetId: string) => Promise<void>
   moveSheet: (sheetId: string, direction: 'up' | 'down') => Promise<void>
   setSheetChartType: (sheetId: string, chartType: ChartType) => Promise<void>
+  setSheetBranchStyle: (
+    sheetId: string,
+    branchStyle: SheetBranchStyle | null,
+  ) => Promise<void>
   selectTopic: (topicId: string) => Promise<void>
   createChildTopic: (parentId: string) => Promise<void>
-  createSiblingTopic: (topicId: string) => Promise<void>
+  createSiblingTopic: (topicId: string, position?: 'before' | 'after') => Promise<void>
+  createParentTopic: (topicId: string) => Promise<void>
+  createFloatingTopic: (text: string, offsetX: number, offsetY: number) => Promise<void>
   renameTopic: (topicId: string, text: string) => Promise<void>
   deleteTopic: (topicId: string) => Promise<void>
   deleteTopics: (topicIds: string[], actionLabel?: string) => Promise<void>
@@ -314,6 +324,7 @@ function buildExportScene(document: DocumentSnapshot) {
     boundaries: sheet.boundaries,
     summaries: sheet.summaries,
     themeId: document.theme?.id,
+    branchStyle: sheet.branchStyle,
     enableCulling: false,
   })
 }
@@ -859,6 +870,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const setDocumentSheetBranchStyle = useCallback(
+    async (sheetId: string, branchStyle: SheetBranchStyle | null) => {
+      await runCommand('设置分支样式', () => setSheetBranchStyle(sheetId, branchStyle))
+    },
+    [runCommand],
+  )
+
   const selectActiveTopic = useCallback(
     async (topicId: string) => {
       await runCommand('切换选中主题', () => selectTopic(topicId))
@@ -874,8 +892,23 @@ export function useDocumentSession(): DocumentSession {
   )
 
   const createSibling = useCallback(
+    async (topicId: string, position?: 'before' | 'after') => {
+      const label = position === 'before' ? '前插同级主题' : '创建同级主题'
+      await runCommand(label, () => createSiblingTopic(topicId, position))
+    },
+    [runCommand],
+  )
+
+  const createParent = useCallback(
     async (topicId: string) => {
-      await runCommand('创建同级主题', () => createSiblingTopic(topicId))
+      await runCommand('插入父主题', () => createParentTopic(topicId))
+    },
+    [runCommand],
+  )
+
+  const createFloating = useCallback(
+    async (text: string, offsetX: number, offsetY: number) => {
+      await runCommand('创建浮动主题', () => createFloatingTopic(text, offsetX, offsetY))
     },
     [runCommand],
   )
@@ -1175,9 +1208,12 @@ export function useDocumentSession(): DocumentSession {
       deleteSheet: deleteDocumentSheet,
       moveSheet: moveDocumentSheet,
       setSheetChartType: setDocumentSheetChartType,
+      setSheetBranchStyle: setDocumentSheetBranchStyle,
       selectTopic: selectActiveTopic,
       createChildTopic: createChild,
       createSiblingTopic: createSibling,
+      createParentTopic: createParent,
+      createFloatingTopic: createFloating,
       renameTopic: renameActiveTopic,
       deleteTopic: deleteActiveTopic,
       deleteTopics: deleteMultipleTopics,
@@ -1212,6 +1248,8 @@ export function useDocumentSession(): DocumentSession {
       createNewDocument,
       createFromTemplate,
       createSibling,
+      createParent,
+      createFloating,
       deleteActiveTopic,
       deleteMultipleTopics,
       openCurrentDocument,
@@ -1241,6 +1279,7 @@ export function useDocumentSession(): DocumentSession {
       renameDocumentSheet,
       moveDocumentSheet,
       setDocumentSheetChartType,
+      setDocumentSheetBranchStyle,
       exportCurrentMarkdownOutline,
       importMarkdownOutline,
       exportCurrentOpmlOutline,

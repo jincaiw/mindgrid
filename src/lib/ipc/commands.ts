@@ -1,6 +1,7 @@
 import type {
   DocumentSessionSnapshot,
   DocumentSnapshot,
+  SheetBranchStyle,
   TopicLink,
   TopicMarker,
   TopicSnapshot,
@@ -102,6 +103,16 @@ export function setSheetChartType(sheetId: string, chartType: string) {
   })
 }
 
+export function setSheetBranchStyle(
+  sheetId: string,
+  branchStyle: SheetBranchStyle | null,
+) {
+  return invokeCommand<DocumentSessionSnapshot>('set_sheet_branch_style', {
+    sheet_id: sheetId,
+    branch_style: branchStyle,
+  })
+}
+
 export function selectTopic(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('select_topic', { topic_id: topicId })
 }
@@ -110,8 +121,23 @@ export function createChildTopic(parentId: string) {
   return invokeCommand<DocumentSessionSnapshot>('create_child_topic', { parent_id: parentId })
 }
 
-export function createSiblingTopic(topicId: string) {
-  return invokeCommand<DocumentSessionSnapshot>('create_sibling_topic', { topic_id: topicId })
+export function createSiblingTopic(topicId: string, position?: 'before' | 'after') {
+  return invokeCommand<DocumentSessionSnapshot>('create_sibling_topic', {
+    topic_id: topicId,
+    position: position ?? null,
+  })
+}
+
+export function createParentTopic(topicId: string) {
+  return invokeCommand<DocumentSessionSnapshot>('create_parent_topic', { topic_id: topicId })
+}
+
+export function createFloatingTopic(text: string, offsetX: number, offsetY: number) {
+  return invokeCommand<DocumentSessionSnapshot>('create_floating_topic', {
+    text,
+    offset_x: offsetX,
+    offset_y: offsetY,
+  })
 }
 
 export function renameTopic(topicId: string, text: string) {

@@ -1276,16 +1276,6 @@ export function Sidebar({
           </ul>
         ) : null}
       </div>
-
-      <div className="panel__section">
-        <p className="panel__eyebrow">Session</p>
-        <ul className="panel__list">
-          <li>文档：{session.summary?.documentId ?? '未创建'}</li>
-          <li>修订号：{session.summary?.revision ?? '-'}</li>
-          <li>当前画布：{activeSheet?.title ?? '-'}</li>
-          <li>选中主题：{session.activeTopicId ?? '-'}</li>
-        </ul>
-      </div>
     </aside>
   )
 }

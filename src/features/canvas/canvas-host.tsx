@@ -6,6 +6,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
   type SetStateAction,
   type WheelEvent as ReactWheelEvent,
@@ -17,7 +18,15 @@ import {
   collectVisibleTopicIds,
 } from '../../lib/document/tree'
 import { getActiveSheet } from '../../lib/document/sheets'
-import type { Boundary, ChartType, Relationship, SummaryNode, TopicSnapshot } from '../../lib/document/types'
+import type {
+  Boundary,
+  ChartType,
+  Relationship,
+  SheetBranchStyle,
+  SummaryNode,
+  TopicSnapshot,
+  TopicStyleOverrides,
+} from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import {
   animateCamera,
@@ -50,6 +59,7 @@ import { renderScene } from './runtime/canvas-renderer'
 import { resolveTopicStyle } from './runtime/style-resolver'
 import { buildScene, type TopicVisualStates } from './runtime/scene-builder'
 import { collectClipboardTopics } from './topic-clipboard'
+import { MarkerIcon } from './markers'
 import {
   readTopicsFromSystemClipboard,
   type SystemClipboardReadResult,
@@ -61,7 +71,6 @@ import {
   searchTopics,
   type TopicSearchEntry,
 } from './topic-search'
-import { TopicTreeNode } from '../workspace/topic-tree'
 import { ContextMenu, menuItem, menuSeparator, type ContextMenuItem } from '../workspace/context-menu'
 
 interface CanvasHostProps {
@@ -70,22 +79,17 @@ interface CanvasHostProps {
   // 受控回调接受 SetStateAction，与 workspace 传入的 useState setter 一致，
   // 使画布内部可以用函数式更新读取最新多选状态。
   onSelectedTopicIdsChange?: (topicIds: SetStateAction<string[]>) => void
+  // 瞬态通知（如系统剪贴板不可用），由 AppShell 经 ToastRegion 展示
+  onNotify?: (message: string) => void
+  // 搜索框开关：可选受控（工具栏搜索按钮与 Cmd/Ctrl + F 共用），缺省内部自管理
+  searchOpen?: boolean
+  onSearchOpenChange?: (open: boolean) => void
 }
 
 const HISTORY_FOCUS_HIGHLIGHT_MS = 1600
 
 const EDGE_AUTO_PAN_THRESHOLD = 72
 const EDGE_AUTO_PAN_MAX_STEP = 18
-
-function formatClipboardLabel(topics: TopicSnapshot[]) {
-  if (topics.length === 0) {
-    return null
-  }
-
-  return topics.length === 1
-    ? topics[0].text
-    : `${topics[0].text} 等 ${topics.length} 个主题`
-}
 
 function formatClipboardWriteHint(result: SystemClipboardWriteResult) {
   switch (result) {
@@ -168,10 +172,12 @@ function MindMapScene({
   onCameraChange,
   rootTopic,
   chartType,
+  floatingTopics,
   relationships,
   boundaries,
   summaries,
   themeId,
+  branchStyle,
   activeTopicId,
   selectedTopicIds,
   editingTopicId,
@@ -183,6 +189,7 @@ function MindMapScene({
   matchedSearchTopicIds,
   activeSearchTopicId,
   historyFocusTopicId,
+  focusRootNonce,
   onSelectedTopicIdsChange,
   onEditingTextChange,
   onStartEditingTopic,
@@ -203,15 +210,19 @@ function MindMapScene({
   onPasteTopics,
   canCopy,
   canPaste,
+  onOpenLink,
+  onCreateFloatingTopic,
 }: {
   initialCamera: CameraState | null
   onCameraChange: (camera: CameraState) => void
   rootTopic: TopicSnapshot
   chartType: ChartType | undefined
+  floatingTopics: TopicSnapshot[]
   relationships: Relationship[]
   boundaries: Boundary[]
   summaries: SummaryNode[]
   themeId: string | undefined
+  branchStyle: SheetBranchStyle | undefined
   activeTopicId: string | null
   selectedTopicIds: string[]
   editingTopicId: string | null
@@ -223,6 +234,8 @@ function MindMapScene({
   matchedSearchTopicIds: Set<string>
   activeSearchTopicId: string | null
   historyFocusTopicId: string | null
+  /** 聚焦根主题的请求 nonce：变化时触发相机动画居中根主题（Cmd+R）。0 表示初始无请求。 */
+  focusRootNonce: number
   onSelectedTopicIdsChange: (topicIds: string[]) => void
   onEditingTextChange: (text: string) => void
   onStartEditingTopic: (topicId: string) => void
@@ -244,8 +257,15 @@ function MindMapScene({
   onPasteTopics: () => Promise<void>
   canCopy: boolean
   canPaste: boolean
+  /** 点击节点上的链接图标时调用（由 TreeWorkspace 注入打开逻辑）。 */
+  onOpenLink?: (url: string) => void
+  /** 双击画布空白时创建浮动主题（XMind 式）。offsetX/offsetY 为根主题相对坐标。 */
+  onCreateFloatingTopic?: (text: string, offsetX: number, offsetY: number) => Promise<void>
 }) {
-  const layout = useMemo(() => computeLayout(rootTopic, chartType), [rootTopic, chartType])
+  const layout = useMemo(
+    () => computeLayout(rootTopic, chartType, floatingTopics),
+    [rootTopic, chartType, floatingTopics],
+  )
   const nodeMap = useMemo(
     () => new Map(layout.nodes.map((node) => [node.id, node])),
     [layout.nodes],
@@ -271,6 +291,32 @@ function MindMapScene({
     dropTargetId: string | null
   } | null>(null)
   const suppressClickRef = useRef(false)
+  // 小地图显隐：默认开，localStorage 持久化（对齐 XMind Navigator 开关）
+  const [minimapVisible, setMinimapVisible] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return true
+    try {
+      const stored = window.localStorage.getItem('mindgrid:minimap-visible')
+      return stored === null ? true : stored === '1'
+    } catch {
+      return true
+    }
+  })
+  const toggleMinimap = useCallback(() => {
+    setMinimapVisible((prev) => {
+      const next = !prev
+      try {
+        window.localStorage.setItem('mindgrid:minimap-visible', next ? '1' : '0')
+      } catch {
+        // localStorage 不可用时静默忽略
+      }
+      return next
+    })
+  }, [])
+  // Space 键状态：按下时作为平移修饰键（XMind 式 Space+拖拽平移）；
+  // 松开时若未发生拖拽则触发折叠切换（兼容旧 MindGrid 行为）。
+  // spaceUsedForPanRef：Space 按下期间是否发生指针拖拽，用于抑制 keyup 时的折叠切换。
+  const spacePressedRef = useRef(false)
+  const spaceUsedForPanRef = useRef(false)
   // 相机动画取消器：用户手动操作（拖拽/滚轮）时立即取消正在进行的缓动动画
   const cancelCameraAnimationRef = useRef<(() => void) | null>(null)
   // 节点出现动画追踪：
@@ -347,9 +393,10 @@ function MindMapScene({
         boundaries,
         summaries,
         themeId,
+        branchStyle,
         enableCulling: viewportSize.width > 0 && viewportSize.height > 0,
       }),
-    [layout, camera, visualStates, viewportSize, relationships, boundaries, summaries, themeId],
+    [layout, camera, visualStates, viewportSize, relationships, boundaries, summaries, themeId, branchStyle],
   )
 
   // ---- DOM 主题虚拟化：只渲染视口内（含 overscan）的主题 ----
@@ -447,6 +494,32 @@ function MindMapScene({
   useEffect(() => {
     onCameraChange(camera)
   }, [camera, onCameraChange])
+
+  /**
+   * 聚焦根主题（Cmd+R）：相机平滑动画居中到根主题，保持当前缩放。
+   * nonce 变化时触发，0 跳过（初始无请求）。
+   */
+  const focusRootTopic = useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const rootLayoutNode = layout.nodes.find((n) => n.depth === 0)
+    if (!rootLayoutNode) return
+    const rootCenter = {
+      x: rootLayoutNode.x + layout.offsetX,
+      y: rootLayoutNode.y + layout.offsetY,
+    }
+    const target = centerCameraOnWorldPoint(
+      { width: viewport.clientWidth, height: viewport.clientHeight },
+      rootCenter,
+      cameraRef.current.zoom,
+    )
+    animateCameraTo(target)
+  }, [animateCameraTo, layout.nodes, layout.offsetX, layout.offsetY])
+
+  useEffect(() => {
+    if (focusRootNonce === 0) return
+    focusRootTopic()
+  }, [focusRootNonce, focusRootTopic])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -567,17 +640,30 @@ function MindMapScene({
         return
       }
 
+      // 右键交给 onContextMenu 处理
+      if (event.button === 2) {
+        return
+      }
+
       // 用户开始手动操作，立即取消正在进行的相机缓动动画
       cancelCameraAnimation()
 
+      // 平移模式：中键拖拽，或 Space 按住时左键拖拽（对齐 XMind）；
+      // 其余（左键 / Shift+左键）= 框选（对齐 XMind：空白左键拖拽即框选）。
+      const isPanMode =
+        event.button === 1 || (event.button === 0 && spacePressedRef.current)
+      if (isPanMode) {
+        spaceUsedForPanRef.current = true
+      }
+
       interactionRef.current = {
-        kind: event.shiftKey ? 'box' : 'pan',
+        kind: isPanMode ? 'pan' : 'box',
         pointerId: event.pointerId,
         originX: event.clientX,
         originY: event.clientY,
       }
 
-      if (event.shiftKey) {
+      if (!isPanMode) {
         const rect = event.currentTarget.getBoundingClientRect()
 
         setSelectionBox({
@@ -816,6 +902,14 @@ function MindMapScene({
         return
       }
 
+      // Space：作为平移修饰键记录按下状态（不在此触发折叠）。
+      // 折叠切换延迟到 keyup（见下方 keyup 监听）：若期间发生拖拽则视为平移，不触发折叠。
+      if (event.key === ' ') {
+        spacePressedRef.current = true
+        spaceUsedForPanRef.current = false
+        return
+      }
+
       const isModifierPressed = event.metaKey || event.ctrlKey
 
       // 缩放快捷键（XMind 标配：Cmd/Ctrl + -/=/0/1）
@@ -900,6 +994,52 @@ function MindMapScene({
     setZoomFromViewportCenter,
   ])
 
+  // Space keyup：若按下期间未发生拖拽（且未在编辑/搜索态），触发折叠切换（兼容旧行为）。
+  // 拖拽发生时视为平移手势，抑制折叠切换，避免「Space+拖拽平移」误触折叠。
+  useEffect(() => {
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.key !== ' ') {
+        return
+      }
+
+      const wasPressed = spacePressedRef.current
+      spacePressedRef.current = false
+
+      if (!wasPressed) {
+        return
+      }
+
+      const usedForPan = spaceUsedForPanRef.current || interactionRef.current !== null
+      spaceUsedForPanRef.current = false
+
+      if (usedForPan || editingTopicId || searchOpen) {
+        return
+      }
+
+      const selectedTopicId = activeTopicId ?? rootTopic.id
+      const selectedTopic = findTopicById(rootTopic, selectedTopicId)
+
+      if (!selectedTopic || selectedTopic.children.length === 0) {
+        return
+      }
+
+      event.preventDefault()
+      void onToggleTopicCollapsed(selectedTopicId)
+    }
+
+    window.addEventListener('keyup', handleKeyUp)
+
+    return () => {
+      window.removeEventListener('keyup', handleKeyUp)
+    }
+  }, [
+    activeTopicId,
+    editingTopicId,
+    onToggleTopicCollapsed,
+    rootTopic,
+    searchOpen,
+  ])
+
   const handleViewportWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
       event.preventDefault()
@@ -942,6 +1082,32 @@ function MindMapScene({
       onStartEditingTopic(topicId)
     },
     [onStartEditingTopic],
+  )
+
+  // 画布空白双击：创建浮动主题（XMind 式）
+  const handleViewportDoubleClick = useCallback(
+    (event: ReactMouseEvent<HTMLDivElement>) => {
+      if (editingTopicId || searchOpen) {
+        return
+      }
+      // 仅画布空白处触发（节点双击由 handleNodeDoubleClick 处理）
+      if (event.target instanceof HTMLButtonElement) {
+        return
+      }
+      if (!onCreateFloatingTopic || !viewportRef.current) {
+        return
+      }
+
+      const rect = viewportRef.current.getBoundingClientRect()
+      const worldX = (event.clientX - rect.left - cameraRef.current.x) / cameraRef.current.zoom
+      const worldY = (event.clientY - rect.top - cameraRef.current.y) / cameraRef.current.zoom
+      // 转换为根主题相对坐标（与布局坐标系一致）
+      const rootX = worldX - layout.offsetX
+      const rootY = worldY - layout.offsetY
+
+      void onCreateFloatingTopic('新建浮动主题', rootX, rootY)
+    },
+    [editingTopicId, searchOpen, onCreateFloatingTopic, layout.offsetX, layout.offsetY],
   )
 
   // 节点右键：编辑/增删/复制/粘贴/折叠/删除（参考 XMind 节点右键菜单）
@@ -1059,9 +1225,18 @@ function MindMapScene({
         <button className="scene-toolbar__button" type="button" onClick={() => setZoomFromViewportCenter(1)} title="100%">
           100%
         </button>
+        <button
+          className="scene-toolbar__button"
+          type="button"
+          onClick={toggleMinimap}
+          title={minimapVisible ? '隐藏小地图' : '显示小地图'}
+          aria-pressed={minimapVisible}
+        >
+          {minimapVisible ? '🗺' : '🗺 off'}
+        </button>
       </div>
 
-      {viewportSize.width > 0 && viewportSize.height > 0 ? (
+      {minimapVisible && viewportSize.width > 0 && viewportSize.height > 0 ? (
         <Minimap
           layout={layout}
           camera={camera}
@@ -1147,6 +1322,7 @@ function MindMapScene({
         onPointerCancel={handleViewportPointerEnd}
         onWheel={handleViewportWheel}
         onContextMenu={handleViewportContextMenu}
+        onDoubleClick={handleViewportDoubleClick}
       >
         <canvas
           ref={canvasRef}
@@ -1216,6 +1392,7 @@ function MindMapScene({
               onCancelEditingTopic={onCancelEditingTopic}
               isAppearing={appearingTopicIdsRef.current.has(node.id)}
               onAppearEnd={handleNodeAppearEnd}
+              onOpenLink={onOpenLink}
             />
           ))}
         </div>
@@ -1230,6 +1407,75 @@ function MindMapScene({
         />
       ) : null}
     </section>
+  )
+}
+
+/** 任务状态图标：todo/doing/done/pending + 优先级色点。 */
+function TaskStatusIcon({ status, priority }: { status: string; priority?: number }) {
+  if (status === 'completed') {
+    return (
+      <svg className="task-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <circle cx="7" cy="7" r="6" fill="#34c759" />
+        <path d="M4 7l2 2 4-4.5" fill="none" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    )
+  }
+  if (status === 'started') {
+    return (
+      <svg className="task-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <circle cx="7" cy="7" r="5.5" fill="none" stroke="#5b8cff" strokeWidth="1.4" />
+        <path
+          d="M7 1.5a5.5 5.5 0 015.5 5.5h-5.5z"
+          fill="#5b8cff"
+          fillOpacity="0.35"
+        />
+      </svg>
+    )
+  }
+  if (status === 'pending') {
+    return (
+      <svg className="task-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+        <circle cx="7" cy="7" r="5.5" fill="none" stroke="#ff9f0a" strokeWidth="1.4" />
+        <path d="M4 7h6" stroke="#ff9f0a" strokeWidth="1.4" strokeLinecap="round" />
+      </svg>
+    )
+  }
+  // none：空复选框
+  const dot = priority != null && priority > 0 ? PRIORITY_DOT_COLORS[(priority - 1) % PRIORITY_DOT_COLORS.length] : null
+  return (
+    <svg className="task-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="7" cy="7" r="5.5" fill="none" stroke="rgba(15,23,42,0.28)" strokeWidth="1.2" />
+      {dot ? <circle cx="7" cy="1.5" r="1.6" fill={dot} /> : null}
+    </svg>
+  )
+}
+
+const PRIORITY_DOT_COLORS = ['#e5484d', '#ff8b3d', '#f6be00', '#4cb050', '#0ea5e9', '#5b8cff', '#9b6bff']
+
+/** 备注指示图标（便签纸样式）。 */
+function NoteGlyph() {
+  return (
+    <svg className="note-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path d="M2.5 1.5h6l3 3v8h-9z" fill="#f6be00" fillOpacity="0.18" stroke="#f6be00" strokeWidth="1" strokeLinejoin="round" />
+      <path d="M8.5 1.5v3h3" fill="none" stroke="#f6be00" strokeWidth="1" strokeLinejoin="round" />
+      <path d="M4 6.5h5M4 8.5h5M4 10.5h3" stroke="rgba(180,83,9,0.5)" strokeWidth="0.8" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+/** 链接指示图标。 */
+function LinkGlyph() {
+  return (
+    <svg className="link-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M5.5 8.5l3-3M5 6a2.5 2.5 0 00-3 0l-.5.5a2.5 2.5 0 003.5 3.5L6 9M9 8a2.5 2.5 0 003 0l.5-.5a2.5 2.5 0 00-3.5-3.5L8 5"
+        fill="none"
+        stroke="#5b8cff"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   )
 }
 
@@ -1257,6 +1503,7 @@ function MindMapNode({
   onCancelEditingTopic,
   isAppearing,
   onAppearEnd,
+  onOpenLink,
 }: {
   node: MindMapNodeLayout
   offsetX: number
@@ -1287,27 +1534,62 @@ function MindMapNode({
   onCancelEditingTopic: () => void
   isAppearing: boolean
   onAppearEnd: (topicId: string) => void
+  /** 点击节点上的链接图标时调用（非编辑态）。 */
+  onOpenLink?: (url: string) => void
 }) {
   const left = node.x - node.width / 2 + offsetX
   const top = node.y - node.height / 2 + offsetY
   const inlineEditShouldSkipBlurCommitRef = useRef(false)
-  // 解析主题 + 节点覆盖 → 具体颜色，作为内联样式覆盖 CSS 默认配色。
+  // 解析主题 + 节点覆盖 → 具体颜色与排印，作为内联样式覆盖 CSS 默认配色。
   // 使用 background 简写而非 backgroundColor，以清除 CSS 中的渐变背景。
   const resolvedStyle = resolveTopicStyle(themeId, node.depth, node.side, node.topic.styleOverrides)
-  const baseStyle = {
+  // 形状 → 圆角：rounded 沿用 CSS 深度分级圆角（不内联），其余形状内联覆盖。
+  const isUnderline = resolvedStyle.shape === 'underline'
+  const shapeRadius =
+    resolvedStyle.shape === 'rect' || isUnderline
+      ? 0
+      : resolvedStyle.shape === 'pill'
+        ? 9999
+        : undefined
+  // underline 形状下划线色：borderColor 透明时回退 textColor（根节点默认透明边框）
+  const underlineColor =
+    resolvedStyle.borderColor === 'transparent' ? resolvedStyle.textColor : resolvedStyle.borderColor
+  const baseStyle: CSSProperties = {
     width: `${node.width}px`,
     minHeight: `${node.height}px`,
     left: `${left}px`,
     top: `${top}px`,
-    background: resolvedStyle.fill,
     color: resolvedStyle.textColor,
-    borderColor: resolvedStyle.borderColor,
+    // underline 形状：透明背景 + 仅底部下划线（对齐 Canvas/SVG 渲染）
+    ...(isUnderline
+      ? {
+          background: 'transparent',
+          border: 'none',
+          borderBottom: `${resolvedStyle.borderWidth}px solid ${underlineColor}`,
+          boxShadow: 'none',
+        }
+      : {
+          background: resolvedStyle.fill,
+          borderColor: resolvedStyle.borderColor,
+          borderWidth: `${resolvedStyle.borderWidth}px`,
+        }),
+    ...(shapeRadius != null ? { borderRadius: `${shapeRadius}px` } : {}),
     transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
   }
-  const toggleStyle = {
-    left: `${left + node.width - 14}px`,
-    top: `${top - 8}px`,
+  // 标题排印：字号 / 字重来自解析样式（深度默认 + 节点覆盖），内联覆盖 CSS 深度分级
+  const titleStyle: CSSProperties = {
+    fontSize: resolvedStyle.fontSize,
+    fontWeight: resolvedStyle.fontWeight,
   }
+  // XMind 式：折叠 toggle 位于"连线起点侧"——中心节点贴下缘、
+  // 左侧分支贴左缘、右侧分支贴右缘，16px 按钮半嵌于节点边。
+  const toggleHalf = 8
+  const toggleStyle =
+    node.side === 'center'
+      ? { left: `${left + node.width / 2 - toggleHalf}px`, top: `${top + node.height - toggleHalf}px` }
+      : node.side === 'left'
+        ? { left: `${left - toggleHalf}px`, top: `${top + node.height / 2 - toggleHalf}px` }
+        : { left: `${left + node.width - toggleHalf}px`, top: `${top + node.height / 2 - toggleHalf}px` }
 
   if (isEditing) {
     return (
@@ -1321,8 +1603,14 @@ function MindMapNode({
             aria-label="内联编辑主题"
             value={editingText}
             rows={Math.max(2, Math.min(6, editingText.split('\n').length + 1))}
-            autoFocus
             onChange={(event) => onEditingTextChange(event.target.value)}
+            onClick={(event) => {
+              // 三击选中全部文本（对齐 XMind/MindNode 编辑体验）
+              if (event.detail >= 3) {
+                const target = event.currentTarget
+                target.select()
+              }
+            }}
             onBlur={() => {
               if (inlineEditShouldSkipBlurCommitRef.current) {
                 inlineEditShouldSkipBlurCommitRef.current = false
@@ -1339,14 +1627,16 @@ function MindMapNode({
                 return
               }
 
-              if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+              // Enter 提交编辑（对齐 XMind）；Shift+Enter 换行（textarea 默认行为，不阻止）
+              // Cmd/Ctrl+Enter 同样提交，保留肌肉记忆兼容
+              if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault()
                 inlineEditShouldSkipBlurCommitRef.current = true
                 void onCommitEditingTopic()
               }
             }}
           />
-          <span className="mindmap-node__edit-hint">Esc 取消，Cmd/Ctrl + Enter 提交</span>
+          <span className="mindmap-node__edit-hint">Enter 提交，Shift+Enter 换行，Esc 取消</span>
         </div>
         {node.topic.children.length > 0 ? (
           <button
@@ -1369,6 +1659,15 @@ function MindMapNode({
     )
   }
 
+  // —— 富内容投影（task / markers / notes / link / labels）——
+  const topicData = node.topic
+  const task = topicData.task
+  const markers = topicData.markers && topicData.markers.length > 0 ? topicData.markers : null
+  const notesText = topicData.notes && topicData.notes.length > 0 ? topicData.notes : null
+  const linkInfo = topicData.link ?? null
+  const labelList = topicData.labels && topicData.labels.length > 0 ? topicData.labels : null
+  const hasMeta = !!(markers || notesText || linkInfo)
+
   return (
     <>
       <button
@@ -1382,7 +1681,65 @@ function MindMapNode({
         onContextMenu={(event) => onContextMenu(event, node.id)}
         onAnimationEnd={() => onAppearEnd(node.id)}
       >
-        <span className="mindmap-node__title">{node.topic.text}</span>
+        <span className="mindmap-node__title" style={titleStyle}>{node.topic.text}</span>
+        {task ? (
+          <span
+            className="mindmap-node__task"
+            aria-label={`任务状态：${task.status}${task.priority ? `，优先级 ${task.priority}` : ''}`}
+          >
+            <TaskStatusIcon status={task.status} priority={task.priority} />
+          </span>
+        ) : null}
+        {hasMeta ? (
+          <span className="mindmap-node__meta">
+            {markers?.map((m) => (
+              <span className="mindmap-node__marker" key={m.id} title={m.label ?? m.id}>
+                <MarkerIcon marker={m} />
+              </span>
+            ))}
+            {notesText ? (
+              <span
+                className="mindmap-node__note-indicator"
+                title={notesText.length > 200 ? `${notesText.slice(0, 200)}…` : notesText}
+                aria-label={`备注：${notesText.slice(0, 50)}${notesText.length > 50 ? '…' : ''}`}
+              >
+                <NoteGlyph />
+              </span>
+            ) : null}
+            {linkInfo ? (
+              <a
+                className="mindmap-node__link-indicator"
+                href={linkInfo.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={linkInfo.title || linkInfo.url}
+                aria-label={`打开链接：${linkInfo.title || linkInfo.url}`}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  if (onOpenLink) {
+                    event.preventDefault()
+                    onOpenLink(linkInfo.url)
+                  }
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <LinkGlyph />
+              </a>
+            ) : null}
+          </span>
+        ) : null}
+        {labelList ? (
+          <span className="mindmap-node__labels">
+            {labelList.slice(0, 3).map((label, i) => (
+              <span key={`${i}-${label}`} className="mindmap-node__label">
+                {label}
+              </span>
+            ))}
+            {labelList.length > 3 ? (
+              <span className="mindmap-node__label mindmap-node__label--more">+{labelList.length - 3}</span>
+            ) : null}
+          </span>
+        ) : null}
       </button>
       {node.topic.children.length > 0 ? (
         <button
@@ -1440,33 +1797,33 @@ function TreeWorkspace({
   session,
   selectedTopicIds: controlledSelectedTopicIds,
   onSelectedTopicIdsChange: controlledOnSelectedTopicIdsChange,
+  onNotify,
+  searchOpen: controlledSearchOpen,
+  onSearchOpenChange: controlledOnSearchOpenChange,
 }: CanvasHostProps) {
   const {
     activeTopicId,
     createChildTopic,
     createSiblingTopic,
+    createParentTopic,
+    createFloatingTopic,
     deleteTopic,
     deleteTopics,
     moveTopic,
+    moveTopicInParent,
     pasteTopics,
     redo,
     renameTopic,
     selectSheet,
     selectTopic,
-    summary,
+    setTopicStyleOverrides,
+    setTopicStyleRef,
     toggleTopicCollapsed,
     undo,
   } = session
   const activeSheet = getActiveSheet(session.document!)
   const rootTopic = activeSheet.rootTopic
-  const activeTopic = useMemo(
-    () =>
-      activeTopicId
-        ? findTopicById(rootTopic, activeTopicId)
-        : rootTopic,
-    [activeTopicId, rootTopic],
-  )
-  const [draftName, setDraftName] = useState(activeTopic?.text ?? '')
+  const floatingTopics = activeSheet.floatingTopics ?? []
   const [localSelectedTopicIds, setLocalSelectedTopicIds] = useState<string[]>(() =>
     activeTopicId ? [activeTopicId] : [rootTopic.id],
   )
@@ -1475,12 +1832,24 @@ function TreeWorkspace({
   const [editingTopicId, setEditingTopicId] = useState<string | null>(null)
   const [editingText, setEditingText] = useState('')
   const [clipboardTopics, setClipboardTopics] = useState<TopicSnapshot[]>([])
-  const [clipboardLabel, setClipboardLabel] = useState<string | null>(null)
-  const [clipboardHint, setClipboardHint] = useState<string | null>(null)
-  const [searchOpen, setSearchOpen] = useState(false)
+  // 搜索框开关：受控（WorkspaceScreen 持有，工具栏按钮可触发）或非受控二选一
+  const [localSearchOpen, setLocalSearchOpen] = useState(false)
+  const searchOpen = controlledSearchOpen ?? localSearchOpen
+  const setSearchOpen = useCallback(
+    (open: boolean) => {
+      if (controlledOnSearchOpenChange) {
+        controlledOnSearchOpenChange(open)
+      } else {
+        setLocalSearchOpen(open)
+      }
+    },
+    [controlledOnSearchOpenChange],
+  )
   const [searchQuery, setSearchQuery] = useState('')
   const [activeSearchIndex, setActiveSearchIndex] = useState(0)
   const [historyFocusTopicId, setHistoryFocusTopicId] = useState<string | null>(null)
+  // Cmd+R 聚焦根主题的请求 nonce：变化时触发 MindMapScene 相机动画。0 = 初始无请求。
+  const [focusRootNonce, setFocusRootNonce] = useState(0)
   const historyFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sheetCameraMapRef = useRef<Record<string, CameraState>>({})
   const deletableTopicIds = useMemo(
@@ -1510,10 +1879,6 @@ function TreeWorkspace({
   )
   const activeSearchResult =
     searchResults.length > 0 ? searchResults[Math.min(activeSearchIndex, searchResults.length - 1)] : null
-
-  useEffect(() => {
-    setDraftName(activeTopic?.text ?? '')
-  }, [activeTopic?.id, activeTopic?.text])
 
   useEffect(() => {
     setSelectedTopicIds((currentSelected) =>
@@ -1649,11 +2014,11 @@ function TreeWorkspace({
     setSearchOpen(false)
     setSearchQuery('')
     setActiveSearchIndex(0)
-  }, [])
+  }, [setSearchOpen])
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
-  }, [])
+  }, [setSearchOpen])
 
   const goToSearchResult = useCallback(
     (index: number) => {
@@ -1719,12 +2084,13 @@ function TreeWorkspace({
     }
 
     setClipboardTopics(copyableTopics)
-    setClipboardLabel(formatClipboardLabel(copyableTopics))
-    setClipboardHint(null)
 
     const writeResult = await writeTopicsToSystemClipboard(copyableTopics)
-    setClipboardHint(formatClipboardWriteHint(writeResult))
-  }, [copyableTopics])
+
+    if (writeResult !== 'success') {
+      onNotify?.(formatClipboardWriteHint(writeResult))
+    }
+  }, [copyableTopics, onNotify])
 
   const handlePasteTopics = useCallback(async () => {
     const systemClipboardResult = await readTopicsFromSystemClipboard()
@@ -1733,9 +2099,6 @@ function TreeWorkspace({
       const topicsToPaste = systemClipboardResult.topics
 
       setClipboardTopics(topicsToPaste)
-      setClipboardLabel(formatClipboardLabel(topicsToPaste))
-      setClipboardHint('已从系统剪贴板粘贴')
-
       await pasteTopics(topicsToPaste, activeTopicId ?? rootTopic.id)
       return
     }
@@ -1743,16 +2106,110 @@ function TreeWorkspace({
     const topicsToPaste = clipboardTopics
 
     if (topicsToPaste.length === 0) {
-      setClipboardHint(formatClipboardReadHint(systemClipboardResult, false))
+      onNotify?.(formatClipboardReadHint(systemClipboardResult, false))
       return
     }
 
-    setClipboardTopics(topicsToPaste)
-    setClipboardLabel(formatClipboardLabel(topicsToPaste))
-    setClipboardHint(formatClipboardReadHint(systemClipboardResult, true))
-
+    onNotify?.(formatClipboardReadHint(systemClipboardResult, true))
     await pasteTopics(topicsToPaste, activeTopicId ?? rootTopic.id)
-  }, [activeTopicId, clipboardTopics, pasteTopics, rootTopic.id])
+  }, [activeTopicId, clipboardTopics, onNotify, pasteTopics, rootTopic.id])
+
+  /**
+   * 打开主题上的超链接：优先 window.open（浏览器/Tauri webview 均可用）；
+   * 被阻止时回退到剪贴板复制并提示用户。
+   */
+  const handleOpenLink = useCallback(
+    (url: string) => {
+      if (!url) return
+      try {
+        const win = window.open(url, '_blank', 'noopener,noreferrer')
+        if (!win) {
+          throw new Error('popup blocked')
+        }
+      } catch {
+        void navigator.clipboard?.writeText(url).then(
+          () => onNotify?.(`链接已复制：${url}`),
+          () => onNotify?.(`无法打开链接，请手动复制：${url}`),
+        )
+      }
+    },
+    [onNotify],
+  )
+
+  /**
+   * 剪切：复制选中主题到剪贴板后删除，撤销标签"剪切主题"。
+   * 根主题不可剪切（copyableTopics 已过滤）；走 deleteTopics 以携带自定义 actionLabel。
+   */
+  const handleCutTopics = useCallback(async () => {
+    if (copyableTopics.length === 0 || deletableTopicIds.length === 0) {
+      return
+    }
+    setClipboardTopics(copyableTopics)
+    await writeTopicsToSystemClipboard(copyableTopics)
+    await deleteTopics(deletableTopicIds, '剪切主题')
+  }, [copyableTopics, deletableTopicIds, deleteTopics])
+
+  /**
+   * 复制主题（Cmd+D）：复制为同级紧随，撤销标签"复制主题"。
+   * 实现复用粘贴管道：拷贝当前主题 → 作为父主题的子节点粘贴（即原主题的同级）。
+   */
+  const handleDuplicateTopic = useCallback(async () => {
+    if (copyableTopics.length === 0) {
+      return
+    }
+    const parentId =
+      activeTopicId && activeTopicId !== rootTopic.id
+        ? (findParentTopicByChildId(rootTopic, activeTopicId)?.parent.id ?? rootTopic.id)
+        : rootTopic.id
+    setClipboardTopics(copyableTopics)
+    await pasteTopics(copyableTopics, parentId)
+  }, [copyableTopics, activeTopicId, rootTopic, pasteTopics])
+
+  /**
+   * 会话内样式剪贴板：Alt+Cmd+C 复制、Alt+Cmd+V 粘贴节点样式（styleRef + styleOverrides）。
+   * 仅存于内存，不写入系统剪贴板；粘贴时复用 setTopicStyleRef/Overrides 的历史栈，支持撤销。
+   */
+  const styleClipboardRef = useRef<{
+    styleRef: string | null
+    styleOverrides: TopicStyleOverrides | null
+  } | null>(null)
+
+  const handleCopyStyle = useCallback(
+    (topicId: string) => {
+      const topic = findTopicById(rootTopic, topicId)
+      if (!topic) return
+      styleClipboardRef.current = {
+        styleRef: topic.styleRef ?? null,
+        styleOverrides: topic.styleOverrides ?? null,
+      }
+      onNotify?.('已复制节点样式')
+    },
+    [rootTopic, onNotify],
+  )
+
+  const handlePasteStyle = useCallback(
+    async (topicId: string) => {
+      const snapshot = styleClipboardRef.current
+      if (!snapshot) {
+        onNotify?.('无可粘贴的样式（先按 Alt+Cmd+C 复制）')
+        return
+      }
+      const target = findTopicById(rootTopic, topicId)
+      if (!target) return
+      // 仅在值变化时提交，避免 noop 入历史栈；styleRef 与 overrides 分两次提交（两次撤销）
+      if ((target.styleRef ?? null) !== snapshot.styleRef) {
+        await setTopicStyleRef(topicId, snapshot.styleRef)
+      }
+      if (
+        JSON.stringify(target.styleOverrides ?? null) !==
+        JSON.stringify(snapshot.styleOverrides)
+      ) {
+        await setTopicStyleOverrides(topicId, snapshot.styleOverrides)
+      }
+      onNotify?.('已粘贴节点样式')
+    },
+    [rootTopic, setTopicStyleRef, setTopicStyleOverrides, onNotify],
+  )
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1767,6 +2224,23 @@ function TreeWorkspace({
       }
 
       const isModifierPressed = event.metaKey || event.ctrlKey
+
+      // Alt+Cmd+C / Alt+Cmd+V：复制/粘贴节点样式（会话内 styleRef+overrides 快照）
+      // 须在普通 Cmd+C/V 之前判断，否则 Alt 组合会被前者吞掉。
+      if (isModifierPressed && event.altKey) {
+        const styleTopicId = selectedTopicIds[0] ?? activeTopicId ?? rootTopic.id
+        const styleKey = event.key.toLowerCase()
+        if (styleKey === 'c') {
+          event.preventDefault()
+          handleCopyStyle(styleTopicId)
+          return
+        }
+        if (styleKey === 'v') {
+          event.preventDefault()
+          void handlePasteStyle(styleTopicId)
+          return
+        }
+      }
 
       if (isModifierPressed && event.key.toLowerCase() === 'f') {
         event.preventDefault()
@@ -1786,6 +2260,20 @@ function TreeWorkspace({
         return
       }
 
+      // Cmd/Ctrl + X：剪切（复制 + 删除，撤销标签"剪切主题"）
+      if (isModifierPressed && event.key.toLowerCase() === 'x') {
+        event.preventDefault()
+        void handleCutTopics()
+        return
+      }
+
+      // Cmd/Ctrl + D：复制为主题同级（撤销标签沿用粘贴"复制主题"）
+      if (isModifierPressed && event.key.toLowerCase() === 'd') {
+        event.preventDefault()
+        void handleDuplicateTopic()
+        return
+      }
+
       // Cmd/Ctrl + A：全选当前画布可见主题（编辑中由 textarea 自行处理文本全选）
       if (isModifierPressed && event.key.toLowerCase() === 'a' && !editingTopicId) {
         event.preventDefault()
@@ -1793,11 +2281,20 @@ function TreeWorkspace({
         return
       }
 
+      // Cmd/Ctrl + R：回到中心主题（相机动画聚焦根节点，对齐 XMind）
+      if (isModifierPressed && event.key.toLowerCase() === 'r') {
+        event.preventDefault()
+        setFocusRootNonce((n) => n + 1)
+        return
+      }
+
       if (editingTopicId) {
         return
       }
 
-      const selectedTopicId = activeTopicId ?? rootTopic.id
+      // 优先使用本地选中态（点击即更新，测试与即时反馈一致），
+      // 回退到会话 activeTopicId（多选时为最后激活主题），最后回退到根主题。
+      const selectedTopicId = selectedTopicIds[0] ?? activeTopicId ?? rootTopic.id
 
       if (searchOpen) {
         if (event.key === 'Escape') {
@@ -1842,25 +2339,47 @@ function TreeWorkspace({
         return
       }
 
+      // Cmd/Ctrl + Enter：插入父主题（对齐 XMind，把当前主题包裹为新父主题的子主题）
+      if (isModifierPressed && event.key === 'Enter') {
+        if (selectedTopicId === rootTopic.id) {
+          return
+        }
+        event.preventDefault()
+        void createParentTopic(selectedTopicId)
+        return
+      }
+
       if (event.key === 'Enter') {
         if (selectedTopicId === rootTopic.id) {
           return
         }
 
         event.preventDefault()
-        void createSiblingTopic(selectedTopicId)
+        // Shift+Enter 前插同级（before）；Enter 默认后插同级（after）
+        void createSiblingTopic(selectedTopicId, event.shiftKey ? 'before' : 'after')
         return
       }
 
-      if (event.key === ' ') {
-        const selectedTopic = findTopicById(rootTopic, selectedTopicId)
+      // Space 折叠切换已迁移到 MindMapScene 的 keyup 监听（支持 Space+拖拽平移时不误触折叠）。
 
+      // Cmd/Ctrl + /：折叠/展开切换（XMind 主快捷键，Space 为兼容辅快捷键）
+      if (isModifierPressed && event.key === '/') {
+        const selectedTopic = findTopicById(rootTopic, selectedTopicId)
         if (!selectedTopic || selectedTopic.children.length === 0) {
           return
         }
-
         event.preventDefault()
         void toggleTopicCollapsed(selectedTopicId)
+        return
+      }
+
+      // Alt + ↑/↓：同级内排序（复用 moveTopicInParent，根主题不可排序）
+      if (event.altKey && !isModifierPressed && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+        if (selectedTopicId === rootTopic.id) {
+          return
+        }
+        event.preventDefault()
+        void moveTopicInParent(selectedTopicId, event.key === 'ArrowUp' ? 'up' : 'down')
         return
       }
 
@@ -1901,6 +2420,7 @@ function TreeWorkspace({
     activeTopicId,
     createChildTopic,
     createSiblingTopic,
+    createParentTopic,
     deleteTopic,
     deleteTopics,
     deletableTopicIds,
@@ -1909,14 +2429,20 @@ function TreeWorkspace({
     goToNextSearchResult,
     goToPreviousSearchResult,
     handleCopyTopics,
+    handleCopyStyle,
+    handleCutTopics,
+    handleDuplicateTopic,
+    handlePasteStyle,
     handlePasteTopics,
+    moveTopicInParent,
     openSearch,
     pasteTopics,
     redo,
     rootTopic,
     searchOpen,
     selectTopic,
-    selectedTopicIds.length,
+    selectedTopicIds,
+    setFocusRootNonce,
     setSelectedTopicIds,
     startInlineEditing,
     toggleTopicCollapsed,
@@ -1925,64 +2451,6 @@ function TreeWorkspace({
 
   return (
     <div className="canvas-stage canvas-stage--editor">
-      <div className="canvas-stage__hero">
-        <p className="canvas-stage__clipboard">
-          剪贴板：
-          {clipboardLabel ? `已复制 ${clipboardLabel}` : '当前为空'}
-          {clipboardHint ? (
-            <span className="canvas-stage__clipboard-detail">（{clipboardHint}）</span>
-          ) : null}
-        </p>
-        <div className="canvas-stage__actions">
-          <button
-            className="toolbar__button"
-            type="button"
-            onClick={() => void createChildTopic(activeTopicId ?? rootTopic.id)}
-          >
-            新建子主题
-          </button>
-          <button
-            className="toolbar__button"
-            type="button"
-            disabled={(activeTopicId ?? rootTopic.id) === rootTopic.id}
-            onClick={() => void createSiblingTopic(activeTopicId ?? rootTopic.id)}
-          >
-            新建同级主题
-          </button>
-          <button
-            className="toolbar__button"
-            type="button"
-            disabled={copyableTopics.length === 0}
-            onClick={() => void handleCopyTopics()}
-          >
-            复制主题
-          </button>
-          <button
-            className="toolbar__button"
-            type="button"
-            disabled={clipboardTopics.length === 0 && !canUseSystemClipboardPaste}
-            onClick={() => void handlePasteTopics()}
-          >
-            粘贴为子主题
-          </button>
-          <button
-            className="toolbar__button"
-            type="button"
-            disabled={(activeTopicId ?? rootTopic.id) === rootTopic.id}
-            onClick={() => {
-              if (deletableTopicIds.length > 1) {
-                void deleteTopics(deletableTopicIds, `删除 ${deletableTopicIds.length} 个主题`)
-                return
-              }
-
-              void deleteTopic(activeTopicId ?? rootTopic.id)
-            }}
-          >
-            {deletableTopicIds.length > 1 ? `删除已选 ${deletableTopicIds.length} 个主题` : '删除主题'}
-          </button>
-        </div>
-      </div>
-
       <div className="editor-grid editor-grid--scene">
         <MindMapScene
           key={activeSheet.id}
@@ -1992,10 +2460,12 @@ function TreeWorkspace({
           }}
           rootTopic={rootTopic}
           chartType={activeSheet.chartType}
+          floatingTopics={floatingTopics}
           relationships={session.document!.relationships ?? []}
           boundaries={activeSheet.boundaries ?? []}
           summaries={activeSheet.summaries ?? []}
           themeId={session.document!.theme?.id}
+          branchStyle={activeSheet.branchStyle}
           activeTopicId={activeTopicId}
           selectedTopicIds={selectedTopicIds}
           editingTopicId={editingTopicId}
@@ -2007,6 +2477,7 @@ function TreeWorkspace({
           matchedSearchTopicIds={matchedSearchTopicIds}
           activeSearchTopicId={activeSearchResult?.topicId ?? null}
           historyFocusTopicId={historyFocusTopicId}
+          focusRootNonce={focusRootNonce}
           onSelectedTopicIdsChange={setSelectedTopicIds}
           onEditingTextChange={setEditingText}
           onStartEditingTopic={startInlineEditing}
@@ -2030,91 +2501,9 @@ function TreeWorkspace({
           onPasteTopics={handlePasteTopics}
           canCopy={canCopy}
           canPaste={canPaste}
+          onOpenLink={handleOpenLink}
+          onCreateFloatingTopic={createFloatingTopic}
         />
-
-        <div className="editor-rail">
-          <section className="editor-card">
-            <div className="editor-card__header">
-              <div>
-                <p className="panel__eyebrow">Outline</p>
-                <h3>主题树</h3>
-              </div>
-              <span className="editor-card__hint">点击节点切换选中</span>
-            </div>
-
-            <ul className="topic-tree" aria-label="主题树">
-              <TopicTreeNode
-                topic={rootTopic}
-                activeTopicId={activeTopicId}
-                matchedTopicIds={matchedSearchTopicIds}
-                activeSearchTopicId={activeSearchResult?.topicId ?? null}
-                onSelect={(topicId) => void selectTopic(topicId)}
-                onToggleCollapsed={(topicId) => void toggleTopicCollapsed(topicId)}
-              />
-            </ul>
-          </section>
-
-          <section className="editor-card editor-card--focus">
-            <div className="editor-card__header">
-              <div>
-                <p className="panel__eyebrow">Inline Editor</p>
-                <h3>{activeTopic?.text ?? '未选中主题'}</h3>
-              </div>
-              <span className="editor-card__hint">主题 ID: {activeTopic?.id ?? '-'}</span>
-            </div>
-
-            <label className="editor-field">
-              <span>主题文本</span>
-              <input
-                value={draftName}
-                onChange={(event) => setDraftName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && activeTopic) {
-                    void renameTopic(activeTopic.id, draftName)
-                  }
-                }}
-              />
-            </label>
-
-            <div className="editor-inline-actions">
-              <button
-                className="toolbar__button toolbar__button--primary"
-                type="button"
-                disabled={!activeTopic}
-                onClick={() => activeTopic && void renameTopic(activeTopic.id, draftName)}
-              >
-                提交重命名
-              </button>
-              <button
-                className="toolbar__button"
-                type="button"
-                disabled={!activeTopic}
-                onClick={() => setDraftName(activeTopic?.text ?? '')}
-              >
-                恢复文本
-              </button>
-            </div>
-
-            <div className="stats-grid">
-              <article className="stat-card">
-                <span>文档 ID</span>
-                <strong>{summary!.documentId}</strong>
-              </article>
-              <article className="stat-card">
-                <span>修订号</span>
-                <strong>{summary!.revision}</strong>
-              </article>
-              <article className="stat-card">
-                <span>节点数</span>
-                <strong>{summary!.topicCount}</strong>
-              </article>
-              <article className="stat-card">
-                <span>活动 Sheet</span>
-                <strong>{activeSheet.title}</strong>
-              </article>
-            </div>
-          </section>
-        </div>
       </div>
     </div>
   )
@@ -2124,6 +2513,9 @@ export function CanvasHost({
   session,
   selectedTopicIds,
   onSelectedTopicIdsChange,
+  onNotify,
+  searchOpen,
+  onSearchOpenChange,
 }: CanvasHostProps) {
   return (
     <main className="canvas-host" aria-label="画布区域">
@@ -2132,6 +2524,9 @@ export function CanvasHost({
         session,
         selectedTopicIds,
         onSelectedTopicIdsChange,
+        onNotify,
+        searchOpen,
+        onSearchOpenChange,
       })}
     </main>
   )

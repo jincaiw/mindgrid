@@ -78,9 +78,12 @@ const sessionStub: DocumentSession = {
   deleteSheet: async () => {},
   moveSheet: async () => {},
   setSheetChartType: async () => {},
+  setSheetBranchStyle: async () => {},
   selectTopic: async () => {},
   createChildTopic: async () => {},
   createSiblingTopic: async () => {},
+  createParentTopic: async () => {},
+  createFloatingTopic: async () => {},
   renameTopic: async () => {},
   deleteTopic: async () => {},
   deleteTopics: async () => {},
@@ -497,14 +500,18 @@ it('forwards sidebar sheet actions to the session', () => {
     />,
   )
 
-  fireEvent.click(screen.getByRole('button', { name: '新建画布' }))
-  fireEvent.click(screen.getByRole('button', { name: '第二画布' }))
-  fireEvent.change(screen.getByRole('textbox', { name: '画布名称' }), {
+  // 限定在侧栏作用域：批次 19 引入的底部画布标签栏（SheetTabBar）也会渲染
+  // 同名画布按钮与“新建画布”入口，全局查询会产生多元素歧义。
+  const sidebar = within(screen.getByLabelText('左侧边栏'))
+
+  fireEvent.click(sidebar.getByRole('button', { name: '新建画布' }))
+  fireEvent.click(sidebar.getByRole('button', { name: '第二画布' }))
+  fireEvent.change(sidebar.getByRole('textbox', { name: '画布名称' }), {
     target: { value: '重命名画布' },
   })
-  fireEvent.click(screen.getByRole('button', { name: '重命名当前画布' }))
-  fireEvent.click(screen.getByRole('button', { name: '删除当前画布' }))
-  fireEvent.click(screen.getAllByRole('button', { name: '下移' })[0])
+  fireEvent.click(sidebar.getByRole('button', { name: '重命名当前画布' }))
+  fireEvent.click(sidebar.getByRole('button', { name: '删除当前画布' }))
+  fireEvent.click(sidebar.getAllByRole('button', { name: '下移' })[0])
 
   expect(createSheet).toHaveBeenCalledTimes(1)
   expect(selectSheet).toHaveBeenCalledWith('sheet_2')
@@ -1938,10 +1945,100 @@ it('applies node color overrides from the inspector color editor', () => {
     fill: '#ea580c',
   })
 
-  // 清除颜色覆盖按钮（topic 已有 styleOverrides 时显示）
-  const clearButton = inspector.getByRole('button', { name: '清除颜色覆盖' })
+  // 清除全部样式覆盖按钮（topic 已有 styleOverrides 时显示）
+  const clearButton = inspector.getByRole('button', { name: '清除全部样式覆盖' })
   fireEvent.click(clearButton)
   expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', null)
+})
+
+it('applies node shape override from the inspector style panel', () => {
+  const setTopicStyleOverrides = vi.fn(async () => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  {
+                    id: 'topic_branch',
+                    text: '待造型主题',
+                    collapsed: false,
+                    children: [],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStyleOverrides,
+      }}
+    />,
+  )
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+
+  // 形状分段控件：点击"胶囊"应用 shape 覆盖（其余 draft 为空，仅提交 shape）
+  fireEvent.click(inspector.getByRole('button', { name: '胶囊' }))
+  expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', {
+    shape: 'pill',
+  })
+})
+
+it('applies node font weight and border width overrides from the inspector style panel', () => {
+  const setTopicStyleOverrides = vi.fn(async () => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  {
+                    id: 'topic_branch',
+                    text: '待排版主题',
+                    collapsed: false,
+                    children: [],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStyleOverrides,
+      }}
+    />,
+  )
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+
+  // 字重分段控件：点击"粗体"应用 fontWeight=700
+  fireEvent.click(inspector.getByRole('button', { name: '粗体' }))
+  expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', {
+    fontWeight: 700,
+  })
 })
 
 it('hides the rich field editor when multiple topics are selected', () => {
@@ -2067,4 +2164,372 @@ it('supports keyboard navigation in presentation mode', () => {
   // Esc 退出
   fireEvent.keyDown(window, { key: 'Escape' })
   expect(screen.queryByRole('dialog', { name: '演示模式' })).not.toBeInTheDocument()
+})
+
+it('enters presentation mode via Shift+Cmd/Ctrl+P shortcut', () => {
+  renderWithApp(<WorkspaceScreen session={{ ...sessionStub, document: presentationDocument }} />)
+
+  // Shift + Ctrl + P 进入演示模式（与工具栏演示按钮同一路径）
+  fireEvent.keyDown(window, { key: 'P', ctrlKey: true, shiftKey: true })
+  const dialog = screen.getByRole('dialog', { name: '演示模式' })
+  expect(within(dialog).getByText('1 / 4')).toBeInTheDocument()
+
+  // 已打开时重复触发（Shift + Cmd + P）保持幂等，不会叠加或报错
+  fireEvent.keyDown(window, { key: 'P', metaKey: true, shiftKey: true })
+  expect(screen.getByRole('dialog', { name: '演示模式' })).toBeInTheDocument()
+
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(screen.queryByRole('dialog', { name: '演示模式' })).not.toBeInTheDocument()
+})
+
+it('ignores the presentation shortcut when no document is loaded', () => {
+  renderWithApp(<WorkspaceScreen session={{ ...sessionStub, document: null }} />)
+
+  fireEvent.keyDown(window, { key: 'P', ctrlKey: true, shiftKey: true })
+  expect(screen.queryByRole('dialog', { name: '演示模式' })).not.toBeInTheDocument()
+})
+
+
+// —— 批次 14：工具栏 XMind 化 ——
+
+/** 带两个子主题的文档：用于工具栏节点操作 / 插入菜单的多选场景。 */
+const twoChildDocument: DocumentSession['document'] = {
+  schemaVersion: '1.0.0',
+  documentId: 'doc_1',
+  revision: 1,
+  activeSheetId: 'sheet_1',
+  sheets: [
+    {
+      id: 'sheet_1',
+      title: '主画布',
+      rootTopic: {
+        id: 'topic_root',
+        text: '中心主题',
+        collapsed: false,
+        children: [
+          { id: 'topic_plan', text: '规划主题', collapsed: false, children: [] },
+          { id: 'topic_review', text: '复盘主题', collapsed: false, children: [] },
+        ],
+      },
+    },
+  ],
+}
+
+function renderBatch14Workspace(sessionOverrides: Partial<DocumentSession> = {}) {
+  return renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: twoChildDocument,
+        summary: { ...sessionStub.summary!, topicCount: 3 },
+        activeTopicId: 'topic_plan',
+        ...sessionOverrides,
+      }}
+    />,
+  )
+}
+
+/** 通过侧栏 Ctrl+Click 选中“规划主题 + 复盘主题”两个主题。 */
+function selectTwoTopicsViaSidebar() {
+  const sidebar = within(screen.getByLabelText('左侧边栏'))
+  fireEvent.click(sidebar.getByRole('button', { name: /规划主题/ }))
+  fireEvent.click(sidebar.getByRole('button', { name: /复盘主题/ }), { ctrlKey: true })
+}
+
+it('forwards toolbar topic actions (child/sibling/delete) to the session', () => {
+  const createChildTopic = vi.fn(async () => {})
+  const createSiblingTopic = vi.fn(async () => {})
+  const deleteTopic = vi.fn(async () => {})
+
+  renderBatch14Workspace({ createChildTopic, createSiblingTopic, deleteTopic })
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  fireEvent.click(toolbar.getByRole('button', { name: '新建子主题' }))
+  fireEvent.click(toolbar.getByRole('button', { name: '新建同级主题' }))
+  fireEvent.click(toolbar.getByRole('button', { name: '删除主题' }))
+
+  expect(createChildTopic).toHaveBeenCalledWith('topic_plan')
+  expect(createSiblingTopic).toHaveBeenCalledWith('topic_plan')
+  expect(deleteTopic).toHaveBeenCalledWith('topic_plan')
+})
+
+it('disables toolbar sibling and delete actions when only the root topic is selected', () => {
+  renderWithApp(<WorkspaceScreen session={sessionStub} />)
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  expect(toolbar.getByRole('button', { name: '新建子主题' })).toBeEnabled()
+  expect(toolbar.getByRole('button', { name: '新建同级主题' })).toBeDisabled()
+  expect(toolbar.getByRole('button', { name: '删除主题' })).toBeDisabled()
+})
+
+it('notifies instead of creating a relationship when fewer than two topics are selected', () => {
+  const onNotify = vi.fn()
+  const createRelationship = vi.fn(async () => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{ ...sessionStub, createRelationship }}
+      onNotify={onNotify}
+    />,
+  )
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '关系线' }))
+
+  expect(onNotify).toHaveBeenCalledWith('请先选中两个主题')
+  expect(createRelationship).not.toHaveBeenCalled()
+})
+
+it('creates a relationship between the two selected topics from the insert menu', () => {
+  const createRelationship = vi.fn(async () => {})
+
+  renderBatch14Workspace({ createRelationship })
+  selectTwoTopicsViaSidebar()
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '关系线' }))
+
+  expect(createRelationship).toHaveBeenCalledWith('topic_plan', 'topic_review', null)
+})
+
+it('creates boundary and summary for a multi-selection, and notifies otherwise', () => {
+  const onNotify = vi.fn()
+  const createBoundary = vi.fn(async () => {})
+  const createSummary = vi.fn(async () => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: twoChildDocument,
+        summary: { ...sessionStub.summary!, topicCount: 3 },
+        activeTopicId: 'topic_plan',
+        createBoundary,
+        createSummary,
+      }}
+      onNotify={onNotify}
+    />,
+  )
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+
+  // 单选：提示框选至少两个主题
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '边界' }))
+  expect(onNotify).toHaveBeenCalledWith('请先框选至少两个主题')
+  expect(createBoundary).not.toHaveBeenCalled()
+
+  // 多选：创建边界与概要
+  selectTwoTopicsViaSidebar()
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '边界' }))
+  expect(createBoundary).toHaveBeenCalledWith('sheet_1', ['topic_plan', 'topic_review'], null)
+
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '概要' }))
+  expect(createSummary).toHaveBeenCalledWith('sheet_1', ['topic_plan', 'topic_review'], '概要')
+})
+
+it('focuses the inspector topic tab when inserting note/label/link/marker', () => {
+  renderBatch14Workspace()
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+
+  // 先切到画布 tab，再通过插入→备注切回主题 tab
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+  expect(inspector.getByRole('tab', { name: '画布' })).toHaveAttribute('aria-selected', 'true')
+
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '备注' }))
+
+  expect(inspector.getByRole('tab', { name: '主题' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('reveals the inspector when inserting rich content while it is hidden', () => {
+  renderBatch14Workspace()
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+
+  // Cmd/Ctrl + I 隐藏检查器
+  fireEvent.keyDown(window, { key: 'i', metaKey: true })
+  expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
+
+  // 插入→标签：检查器重新显示并停在主题 tab
+  fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '标签' }))
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  expect(inspector.getByRole('tab', { name: '主题' })).toHaveAttribute('aria-selected', 'true')
+})
+
+it('switches the sheet chart type from the structure menu', () => {
+  const setSheetChartType = vi.fn(async () => {})
+
+  renderBatch14Workspace({ setSheetChartType })
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  const structureButton = toolbar.getByRole('button', { name: '结构' })
+  expect(structureButton).toHaveTextContent('思维导图')
+
+  fireEvent.click(structureButton)
+
+  const options = screen.getAllByRole('menuitemradio')
+  expect(options).toHaveLength(6)
+  expect(options[0]).toHaveAttribute('aria-checked', 'true')
+
+  fireEvent.click(screen.getByRole('menuitemradio', { name: /鱼骨图/ }))
+  expect(setSheetChartType).toHaveBeenCalledWith('sheet_1', 'fishbone')
+})
+
+it('commits branch style overrides from the inspector canvas tab', () => {
+  const setSheetBranchStyle = vi.fn(async () => {})
+
+  renderBatch14Workspace({ setSheetBranchStyle })
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+
+  // 分支样式控件在“画布” tab 下
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+
+  // 默认状态：连线类型组存在，"曲线" 高亮（默认值）
+  const edgeTypeGroup = inspector.getByRole('group', { name: '连线类型' })
+  expect(within(edgeTypeGroup).getByRole('button', { name: '曲线' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // 切换到直线：写入 { edgeType: 'straight' }
+  fireEvent.click(within(edgeTypeGroup).getByRole('button', { name: '直线' }))
+  expect(setSheetBranchStyle).toHaveBeenCalledWith('sheet_1', { edgeType: 'straight' })
+
+  // 分支色板：点击"冷色"预设写入 colorPalette
+  const paletteGroup = inspector.getByRole('radiogroup', { name: '分支色板预设' })
+  fireEvent.click(within(paletteGroup).getByRole('radio', { name: /冷色/ }))
+  expect(setSheetBranchStyle).toHaveBeenCalledWith('sheet_1', {
+    colorPalette: [
+      '#3B82F6',
+      '#06B6D4',
+      '#8B5CF6',
+      '#0EA5E9',
+      '#6366F1',
+      '#14B8A6',
+      '#2563EB',
+      '#0891B2',
+    ],
+  })
+})
+
+it('clears branch style overrides by clicking default values or reset button', () => {
+  const setSheetBranchStyle = vi.fn(async () => {})
+
+  // 预设 activeSheet 已有 branchStyle 覆盖（edgeType + thickness + colorPalette 全占）
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              ...sessionStub.document!.sheets[0],
+              branchStyle: {
+                edgeType: 'elbow',
+                thickness: 2,
+                colorPalette: ['#F97316', '#EF4444'],
+              },
+            },
+          ],
+        },
+        setSheetBranchStyle,
+      }}
+    />,
+  )
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+
+  // 已有覆盖时"折线"高亮
+  const edgeTypeGroup = inspector.getByRole('group', { name: '连线类型' })
+  expect(within(edgeTypeGroup).getByRole('button', { name: '折线' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // 点击"曲线"：仅清除 edgeType 字段，保留 thickness + colorPalette
+  fireEvent.click(within(edgeTypeGroup).getByRole('button', { name: '曲线' }))
+  expect(setSheetBranchStyle).toHaveBeenCalledWith('sheet_1', {
+    thickness: 2,
+    colorPalette: ['#F97316', '#EF4444'],
+  })
+
+  // 点击"默认 8 色"：仅清除 colorPalette 字段
+  setSheetBranchStyle.mockClear()
+  const paletteGroup = inspector.getByRole('radiogroup', { name: '分支色板预设' })
+  fireEvent.click(within(paletteGroup).getByRole('radio', { name: /默认 8 色/ }))
+  expect(setSheetBranchStyle).toHaveBeenCalledWith('sheet_1', {
+    edgeType: 'elbow',
+    thickness: 2,
+  })
+
+  // 一键清除全部覆盖
+  setSheetBranchStyle.mockClear()
+  fireEvent.click(inspector.getByRole('button', { name: '清除分支样式覆盖' }))
+  expect(setSheetBranchStyle).toHaveBeenCalledWith('sheet_1', null)
+})
+
+it('switches the document theme from the theme menu', () => {
+  const setDocumentTheme = vi.fn(async () => {})
+
+  renderBatch14Workspace({ setDocumentTheme })
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  const themeButton = toolbar.getByRole('button', { name: '主题' })
+  expect(themeButton).toHaveTextContent('经典蓝')
+
+  fireEvent.click(themeButton)
+
+  const current = screen.getAllByRole('menuitemradio').find(
+    (item) => item.getAttribute('aria-checked') === 'true',
+  )
+  expect(current).toHaveTextContent('经典蓝')
+
+  fireEvent.click(screen.getByRole('menuitemradio', { name: '暗夜' }))
+  expect(setDocumentTheme).toHaveBeenCalledWith('dark')
+})
+
+it('toggles the inspector via Cmd/Ctrl + I and the toolbar button', () => {
+  renderBatch14Workspace()
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  const inspectorToggle = toolbar.getByRole('button', { name: '检查器' })
+
+  expect(screen.getByLabelText('右侧检查器')).toBeInTheDocument()
+  expect(inspectorToggle).toHaveAttribute('aria-pressed', 'true')
+
+  // Cmd + I 隐藏
+  fireEvent.keyDown(window, { key: 'i', metaKey: true })
+  expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
+  expect(inspectorToggle).toHaveAttribute('aria-pressed', 'false')
+
+  // Ctrl + I 显示
+  fireEvent.keyDown(window, { key: 'i', ctrlKey: true })
+  expect(screen.getByLabelText('右侧检查器')).toBeInTheDocument()
+
+  // 工具栏按钮隐藏
+  fireEvent.click(inspectorToggle)
+  expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
+})
+
+it('opens the canvas search from the toolbar search button', () => {
+  renderBatch14Workspace()
+
+  const toolbar = within(screen.getByLabelText('主工具栏'))
+  expect(screen.queryByRole('textbox', { name: '搜索主题' })).not.toBeInTheDocument()
+
+  fireEvent.click(toolbar.getByRole('button', { name: '搜索' }))
+
+  expect(screen.getByRole('textbox', { name: '搜索主题' })).toBeInTheDocument()
 })

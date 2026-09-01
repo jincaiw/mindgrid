@@ -69,8 +69,23 @@ pub enum LayoutDirection {
     Down,
 }
 
-/// 主题节点级样式覆盖，优先于文档主题的层级默认色。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+/// 主题节点形状。对齐 XMind 节点形状选项（rounded/rect/pill/underline）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TopicShape {
+    #[default]
+    Rounded,
+    Rect,
+    Pill,
+    Underline,
+}
+
+/// 主题节点级样式覆盖，优先于文档主题的层级默认值。
+///
+/// 颜色字段覆盖主题层级配色；形状与排印字段覆盖深度分级默认值。
+/// 所有字段可选并 `#[serde(default)]`，缺省时回退到对应默认，
+/// 保证 1.1.0 旧文档（仅含颜色三字段）可直接加载、往返不丢失。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicStyleOverrides {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -79,6 +94,14 @@ pub struct TopicStyleOverrides {
     pub text_color: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_color: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape: Option<TopicShape>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_size: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_weight: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_width: Option<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -102,7 +125,7 @@ pub struct TopicSnapshot {
     /// 样式表引用，见 styles.json。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style_ref: Option<String>,
-    /// 节点级样式覆盖（fill / textColor / borderColor），优先于文档主题。
+    /// 节点级样式覆盖（颜色 / 形状 / 排印 / 边框粗细），优先于文档主题。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style_overrides: Option<TopicStyleOverrides>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -164,6 +187,47 @@ pub struct LayoutConfig {
     pub vertical_spacing: Option<f64>,
 }
 
+/// 连线类型，决定父子主题之间的边线绘制方式。
+/// 与 TS 侧 `EdgeType` 保持一致（serde 序列化为 lowercase）。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeType {
+    Curve,
+    Straight,
+    Elbow,
+}
+
+impl Default for EdgeType {
+    fn default() -> Self {
+        EdgeType::Curve
+    }
+}
+
+/// 画布级分支样式覆盖，影响整张画布的连线视觉。
+/// 与 TS 侧 `SheetBranchStyle` 保持结构一致（camelCase 序列化）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetBranchStyle {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_type: Option<EdgeType>,
+    /// 粗细乘数（1.0 为默认）。建议范围 0.5–3.0。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thickness: Option<f32>,
+    /// 分支色板，覆盖默认 8 色循环。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub color_palette: Vec<String>,
+}
+
+impl Default for SheetBranchStyle {
+    fn default() -> Self {
+        SheetBranchStyle {
+            edge_type: None,
+            thickness: None,
+            color_palette: Vec::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationshipControlPoint {
@@ -220,6 +284,13 @@ pub struct SheetSnapshot {
     pub chart_type: Option<ChartType>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_config: Option<LayoutConfig>,
+    /// 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_style: Option<SheetBranchStyle>,
+    /// 浮动主题列表：独立于 rootTopic 树结构的自由节点。
+    /// 每个浮动主题通过 layout_hints.offset_x/offset_y 存储世界坐标绝对位置。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub floating_topics: Vec<TopicSnapshot>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub boundaries: Vec<Boundary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -382,6 +453,8 @@ impl DocumentSnapshot {
                     root_topic: new_root,
                     chart_type: sheet.chart_type,
                     layout_config: sheet.layout_config,
+                    branch_style: sheet.branch_style.clone(),
+                    floating_topics: sheet.floating_topics.clone(),
                     boundaries,
                     summaries,
                     extensions: sheet.extensions,
@@ -632,6 +705,16 @@ impl DocumentSession {
         })
     }
 
+    pub fn set_sheet_branch_style(
+        &mut self,
+        sheet_id: &str,
+        branch_style: Option<SheetBranchStyle>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("设置分支样式", |editor| {
+            editor.set_sheet_branch_style(sheet_id, branch_style)
+        })
+    }
+
     pub fn create_child_topic(&mut self, parent_id: &str) -> Result<DocumentSessionSnapshot, String> {
         self.apply_change_set("创建子主题", |editor| {
             editor.create_child_topic(parent_id, "新建子主题")
@@ -641,9 +724,38 @@ impl DocumentSession {
     pub fn create_sibling_topic(
         &mut self,
         topic_id: &str,
+        position: Option<&str>,
     ) -> Result<DocumentSessionSnapshot, String> {
-        self.apply_change_set("创建同级主题", |editor| {
-            editor.create_sibling_topic(topic_id, "新建同级主题")
+        let resolved = position.unwrap_or("after");
+        let label = if resolved == "before" {
+            "前插同级主题"
+        } else {
+            "创建同级主题"
+        };
+        self.apply_change_set(label, |editor| {
+            editor.create_sibling_topic(topic_id, "新建同级主题", resolved)
+        })
+    }
+
+    pub fn create_parent_topic(
+        &mut self,
+        topic_id: &str,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("插入父主题", |editor| {
+            editor.create_parent_topic(topic_id, "新建父主题")
+        })
+    }
+
+    /// 创建浮动主题：在活动画布追加一个不参与树布局的独立主题。
+    /// 对应 XMind 双击空白创建浮动主题。
+    pub fn create_floating_topic(
+        &mut self,
+        text: &str,
+        offset_x: f64,
+        offset_y: f64,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("创建浮动主题", |editor| {
+            editor.create_floating_topic(text, offset_x, offset_y)
         })
     }
 
@@ -1100,6 +1212,8 @@ impl SheetSnapshot {
             },
             chart_type: None,
             layout_config: None,
+            branch_style: None,
+            floating_topics: Vec::new(),
             boundaries: Vec::new(),
             summaries: Vec::new(),
             extensions: None,
@@ -1986,6 +2100,78 @@ mod tests {
         // 旧 ID 不应出现在新文档中
         assert!(!boundary.topic_ids.contains(&child_a_id));
         assert!(!boundary.topic_ids.contains(&child_b_id));
+    }
+
+    #[test]
+    fn create_sibling_topic_before_inserts_in_front_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let target_id = root_topic.children[1].id.clone();
+
+        let created = session
+            .create_sibling_topic(&target_id, Some("before"))
+            .expect("前插同级应成功");
+        assert_eq!(created.summary.topic_count, 5);
+        assert!(created.can_undo);
+
+        let root = created.document.root_topic();
+        assert_eq!(root.children.len(), 4);
+        // 新主题占据 target 原位置(1)，target 顺延到 2
+        assert_ne!(root.children[1].id, target_id);
+        assert_eq!(root.children[2].id, target_id);
+
+        let undone = session.undo().expect("undo should succeed");
+        assert_eq!(undone.summary.topic_count, 4);
+        assert_eq!(undone.document.root_topic().children.len(), 3);
+    }
+
+    #[test]
+    fn create_parent_topic_wraps_topic_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let target_id = root_topic.children[0].id.clone();
+
+        let created = session
+            .create_parent_topic(&target_id)
+            .expect("插入父主题应成功");
+        // 新父主题 +1，原 target 不变
+        assert_eq!(created.summary.topic_count, 5);
+        assert!(created.can_undo);
+
+        let root = created.document.root_topic();
+        assert_eq!(root.children.len(), 3);
+        // 原位置(0)被新父主题占据，target 成为其子主题
+        let new_parent = &root.children[0];
+        assert_ne!(new_parent.id, target_id);
+        assert_eq!(new_parent.children.len(), 1);
+        assert_eq!(new_parent.children[0].id, target_id);
+
+        let undone = session.undo().expect("undo should succeed");
+        assert_eq!(undone.summary.topic_count, 4);
+        assert_eq!(undone.document.root_topic().children[0].id, target_id);
+    }
+
+    #[test]
+    fn create_parent_topic_rejects_root_topic() {
+        let mut session = DocumentSession::create_default();
+        let root_topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .id
+            .clone();
+        assert!(session.create_parent_topic(&root_topic_id).is_err());
     }
 
     /// 测试辅助：直接调用 create_id，避免与 DocumentSnapshot::create_id 混淆。

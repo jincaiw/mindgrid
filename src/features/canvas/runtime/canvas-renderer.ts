@@ -5,7 +5,7 @@
  * 支持高 DPI（devicePixelRatio）锐利渲染。
  * 纯绘制逻辑，不做布局计算或状态管理。
  *
- * 主题色（背景 / 网格 / 连线 / 节点填充/文字/边框）由 style-resolver 解析后注入：
+ * 主题色（背景 / 连线 / 节点填充/文字/边框）由 style-resolver 解析后注入：
  *   - 背景与连线：renderScene 入口解析文档主题 → 传入 drawBackgroundLayer / drawEdge
  *   - 节点样式：TopicRenderNode.style（主题层级色 + 节点覆盖合并结果）
  * 状态环、装饰元素、阴影、切换按钮等语义色仍来自共享 style-constants。
@@ -30,10 +30,7 @@ import {
   SELECTION_RADIUS,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
-  getEdgeLineWidth,
-  getNodeRadius,
-  getTitleFontSize,
-  getTitleFontWeight,
+  getNodeRadiusForShape,
   wrapText,
 } from './style-constants'
 
@@ -46,7 +43,7 @@ export interface RenderDPR {
  * 用于混合渲染（如 Canvas 画边 + DOM 画主题）场景。
  */
 export interface RenderOptions {
-  /** 是否绘制背景（纯色 + 网格）。默认 true。 */
+  /** 是否绘制背景（纯色）。默认 true。 */
   drawBackground?: boolean
   /** 是否绘制主题节点。默认 true。 */
   drawTopics?: boolean
@@ -161,51 +158,54 @@ function drawBackgroundLayer(
   ctx: CanvasRenderingContext2D,
   viewport: Viewport,
   dpr: number,
-  bg: { background: string; gridLine: string },
+  bg: { background: string },
 ): void {
   const w = viewport.width
   const h = viewport.height
 
   // 主题纯色背景（V1 主题不含渐变，保证 Canvas/SVG/PNG 三端一致）
+  // 对齐 XMind：默认无点阵网格，画布为纯净纯色
   ctx.fillStyle = bg.background
   ctx.fillRect(0, 0, w * dpr, h * dpr)
-
-  // 点阵网格（XMind 式：屏幕空间，固定间距，不随 camera 缩放）
-  drawDotGrid(ctx, viewport, dpr, bg.gridLine)
-}
-
-function drawDotGrid(
-  ctx: CanvasRenderingContext2D,
-  viewport: Viewport,
-  dpr: number,
-  dotColor: string,
-): void {
-  const gridSize = 24
-  const dotRadius = 1
-  ctx.fillStyle = dotColor
-  ctx.beginPath()
-  for (let x = gridSize; x < viewport.width; x += gridSize) {
-    for (let y = gridSize; y < viewport.height; y += gridSize) {
-      ctx.arc(x * dpr, y * dpr, dotRadius * dpr, 0, Math.PI * 2)
-    }
-  }
-  ctx.fill()
 }
 
 // ---- 边 ----
 
 function drawEdge(ctx: CanvasRenderingContext2D, edge: EdgeRenderNode): void {
+  // XMind 式多色分支编码：每条分支使用自己的色相，线宽按深度逐级递减。
+  // 连线类型由画布级 branchStyle.edgeType 决定：curve（默认）/ straight / elbow。
   ctx.beginPath()
   ctx.moveTo(edge.start.x, edge.start.y)
-  ctx.bezierCurveTo(
-    edge.control1.x, edge.control1.y,
-    edge.control2.x, edge.control2.y,
-    edge.end.x, edge.end.y,
-  )
-  // XMind 式多色分支编码：每条分支使用自己的色相，线宽按深度逐级递减。
+  if (edge.edgeType === 'elbow') {
+    // 正交折线：根据起止点相对位置判断水平/垂直布局，走 L 型路径
+    const dx = Math.abs(edge.end.x - edge.start.x)
+    const dy = Math.abs(edge.end.y - edge.start.y)
+    if (dx >= dy) {
+      // 水平布局：先水平到中点，再垂直到目标行，再水平到终点
+      const midX = (edge.start.x + edge.end.x) / 2
+      ctx.lineTo(midX, edge.start.y)
+      ctx.lineTo(midX, edge.end.y)
+    } else {
+      // 垂直布局：先垂直到中点，再水平到目标列，再垂直到终点
+      const midY = (edge.start.y + edge.end.y) / 2
+      ctx.lineTo(edge.start.x, midY)
+      ctx.lineTo(edge.end.x, midY)
+    }
+    ctx.lineTo(edge.end.x, edge.end.y)
+  } else if (edge.edgeType === 'straight') {
+    ctx.lineTo(edge.end.x, edge.end.y)
+  } else {
+    // curve：贝塞尔曲线（默认）
+    ctx.bezierCurveTo(
+      edge.control1.x, edge.control1.y,
+      edge.control2.x, edge.control2.y,
+      edge.end.x, edge.end.y,
+    )
+  }
   ctx.strokeStyle = edge.branchColor
-  ctx.lineWidth = getEdgeLineWidth(edge.childDepth, edge.isActive)
+  ctx.lineWidth = edge.lineWidth
   ctx.lineCap = 'round'
+  ctx.lineJoin = 'round'
   ctx.stroke()
 }
 
@@ -243,13 +243,16 @@ function drawTopic(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
 }
 
 function drawNodeShadow(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
-  const { bounds, state, depth } = node
-  const radius = getNodeRadius(depth)
+  const { bounds, state, depth, style } = node
+  // underline 形状无填充矩形，不投射阴影
+  if (style.shape === 'underline') return
+  const radius = getNodeRadiusForShape(style.shape, depth, bounds.height)
   ctx.save()
-  // XMind 式紧凑双层阴影：底层弥散 + 顶层贴近，避免过散的模糊。
-  ctx.shadowColor = 'rgba(15, 23, 42, 0.10)'
-  ctx.shadowBlur = state.isActive ? 20 : state.isSelected ? 16 : 12
-  ctx.shadowOffsetY = state.isActive ? 6 : 4
+  // XMind 式：状态由 2px 描边表达（drawStateOutline），阴影保持轻量统一，
+  // 仅拖拽态略加重以体现悬浮感。
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.08)'
+  ctx.shadowBlur = state.isDragging ? 16 : 8
+  ctx.shadowOffsetY = state.isDragging ? 6 : 3
   ctx.fillStyle = 'rgba(255, 255, 255, 0.01)' // 几乎透明，只为触发阴影
   roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius)
   ctx.fill()
@@ -262,57 +265,60 @@ function drawNodeBackground(
   style: ResolvedTopicStyle,
   depth: number,
 ): void {
+  // underline 形状无填充，文字直绘于画布
+  if (style.shape === 'underline') return
   ctx.fillStyle = style.fill
-  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, getNodeRadius(depth))
+  roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, getNodeRadiusForShape(style.shape, depth, bounds.height))
   ctx.fill()
 }
 
 function drawStateRing(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
-  const { bounds, state } = node
-  const padding = 4
-
+  const { bounds, state, style, depth } = node
+  const cornerRadius = getNodeRadiusForShape(style.shape, depth, bounds.height)
+  // XMind 式：状态以 2px 实心描边表达（取代填充光环），与 DOM outline 一致
   if (state.isActive) {
-    drawRing(ctx, bounds, padding, COLORS.activeRing, node.depth)
+    drawStateOutline(ctx, bounds, COLORS.activeOutline, cornerRadius)
   } else if (state.isSelected) {
-    drawRing(ctx, bounds, padding, COLORS.selectedRing, node.depth)
+    drawStateOutline(ctx, bounds, COLORS.selectedOutline, cornerRadius)
   }
 
   if (state.isActiveSearchResult) {
-    drawRing(ctx, bounds, padding, COLORS.searchActiveRing, node.depth)
+    drawStateOutline(ctx, bounds, COLORS.searchActiveOutline, cornerRadius)
   }
 
   if (state.isDropTarget) {
-    drawRing(ctx, bounds, padding, COLORS.dropTargetRing, node.depth)
+    drawStateOutline(ctx, bounds, COLORS.dropTargetOutline, cornerRadius)
   }
 
   if (state.isHistoryFocus) {
-    drawRing(ctx, bounds, padding, COLORS.historyFocusRing, node.depth)
+    drawStateOutline(ctx, bounds, COLORS.historyFocusOutline, cornerRadius)
   }
 }
 
-function drawRing(
+/** 在节点包围盒外 2px 处绘制 2px 描边（对应 DOM `outline: 2px solid; outline-offset: 2px`）。 */
+function drawStateOutline(
   ctx: CanvasRenderingContext2D,
   bounds: { x: number; y: number; width: number; height: number },
-  padding: number,
   color: string,
-  depth: number,
+  cornerRadius: number,
 ): void {
-  ctx.fillStyle = color
+  const offset = 2
+  ctx.strokeStyle = color
+  ctx.lineWidth = 2
   roundRect(
     ctx,
-    bounds.x - padding,
-    bounds.y - padding,
-    bounds.width + padding * 2,
-    bounds.height + padding * 2,
-    getNodeRadius(depth) + padding,
+    bounds.x - offset,
+    bounds.y - offset,
+    bounds.width + offset * 2,
+    bounds.height + offset * 2,
+    cornerRadius + offset,
   )
-  ctx.fill()
+  ctx.stroke()
 }
 
 function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
   const { bounds, state, depth, style } = node
   const isRoot = depth === 0
-  const radius = getNodeRadius(depth)
 
   // 默认边框色来自解析后的主题/覆盖；状态语义色（放置目标/激活/搜索匹配）优先覆盖。
   let borderColor: string = style.borderColor
@@ -324,9 +330,26 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
     borderColor = COLORS.searchMatchBorder
   }
 
+  // underline 形状：仅绘制底部下划线（对齐 XMind 下划线主题），
+  // 线色取 borderColor（若透明则回退 textColor），线宽取 style.borderWidth。
+  if (style.shape === 'underline') {
+    const lineColor = borderColor === 'transparent' ? style.textColor : borderColor
+    if (style.borderWidth <= 0) return
+    ctx.strokeStyle = lineColor
+    ctx.lineWidth = style.borderWidth
+    ctx.beginPath()
+    ctx.moveTo(bounds.x, bounds.y + bounds.height)
+    ctx.lineTo(bounds.x + bounds.width, bounds.y + bounds.height)
+    ctx.stroke()
+    return
+  }
+
   // 根节点边框恒为透明（由主题 root.borderColor=transparent 体现，此处显式保留语义）
   ctx.strokeStyle = isRoot ? 'transparent' : borderColor
-  ctx.lineWidth = 1
+  ctx.lineWidth = style.borderWidth
+  // borderWidth=0 表示无边框，跳过描边以避免 0 宽度描边伪影
+  if (style.borderWidth <= 0) return
+  const radius = getNodeRadiusForShape(style.shape, depth, bounds.height)
   roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius)
   ctx.stroke()
 }
@@ -335,16 +358,14 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): voi
   const { bounds, text, depth, style } = node
   const padding = depth === 0 ? 20 : depth === 1 ? 14 : 12
 
-  // 标题：字号 / 字重按深度分级（参考 XMind）
-  const titleFontSize = getTitleFontSize(depth)
-  const titleFontWeight = getTitleFontWeight(depth)
-  ctx.font = `${titleFontWeight} ${titleFontSize}px ${FONT_FAMILY}`
+  // 标题：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
+  ctx.font = `${style.fontWeight} ${style.fontSize}px ${FONT_FAMILY}`
   ctx.fillStyle = style.textColor
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
 
   const lines = wrapText(text, bounds.width - padding * 2, ctx.font)
-  const lineHeight = titleFontSize * 1.35
+  const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding
   for (let i = 0; i < lines.length; i++) {
     ctx.fillText(lines[i], bounds.x + padding, titleY + i * lineHeight)
@@ -354,18 +375,28 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): voi
 }
 
 function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
-  const { bounds, collapsed } = node
+  const { bounds, collapsed, side } = node
   const toggleSize = TOGGLE_BUTTON_SIZE
-  const toggleX = bounds.x + bounds.width - 18 - toggleSize / 2
-  const toggleY = bounds.y - 12 + toggleSize / 2
+  const half = toggleSize / 2
+  // XMind 式：toggle 位于连线起点侧（center→下缘、left→左缘、right→右缘），半嵌于节点边
+  const toggleX =
+    side === 'center'
+      ? bounds.x + bounds.width / 2
+      : side === 'left'
+        ? bounds.x - half
+        : bounds.x + bounds.width + half
+  const toggleY =
+    side === 'center'
+      ? bounds.y + bounds.height + half
+      : bounds.y + bounds.height / 2
 
   ctx.save()
-  ctx.shadowColor = 'rgba(15, 23, 42, 0.12)'
-  ctx.shadowBlur = 28
-  ctx.shadowOffsetY = 12
+  ctx.shadowColor = 'rgba(15, 23, 42, 0.1)'
+  ctx.shadowBlur = 6
+  ctx.shadowOffsetY = 2
 
   ctx.fillStyle = 'rgba(255, 255, 255, 0.96)'
-  ctx.strokeStyle = 'rgba(15, 23, 42, 0.1)'
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.14)'
   ctx.lineWidth = 1
   ctx.beginPath()
   ctx.arc(toggleX, toggleY, TOGGLE_RADIUS, 0, Math.PI * 2)
@@ -376,7 +407,7 @@ function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode):
 
   // +/− 符号（切换按钮为独立 UI 控件，符号色不随主题变化）
   ctx.fillStyle = COLORS.text
-  ctx.font = `400 16px ${FONT_FAMILY}`
+  ctx.font = `600 10px ${FONT_FAMILY}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(collapsed ? '+' : '−', toggleX, toggleY)

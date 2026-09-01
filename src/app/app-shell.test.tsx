@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { renderWithApp } from '../test/render'
 import { AppShell } from './app-shell'
@@ -15,7 +15,14 @@ vi.mock('../lib/ipc/transport', () => ({
 }))
 
 vi.mock('../features/workspace/workspace-screen', () => ({
-  WorkspaceScreen: () => <div>workspace</div>,
+  WorkspaceScreen: ({ onNotify }: { onNotify?: (message: string) => void }) => (
+    <>
+      <span>workspace</span>
+      <button type="button" onClick={() => onNotify?.('系统剪贴板暂不可写，仍可在当前会话内粘贴')}>
+        trigger-notify
+      </button>
+    </>
+  ),
 }))
 
 vi.mock('../features/status/status-bar', () => ({
@@ -23,7 +30,9 @@ vi.mock('../features/status/status-bar', () => ({
 }))
 
 vi.mock('../features/feedback/toast-region', () => ({
-  ToastRegion: () => <div>toast</div>,
+  ToastRegion: ({ message }: { message: string | null }) => (
+    <div>{message ? `toast:${message}` : 'toast'}</div>
+  ),
 }))
 
 function createSessionStub(overrides: Record<string, unknown> = {}) {
@@ -103,6 +112,32 @@ it('handles desktop file workflow shortcuts globally', () => {
   expect(openDocument).toHaveBeenCalledTimes(1)
   expect(saveDocument).toHaveBeenCalledTimes(1)
   expect(saveDocumentAs).toHaveBeenCalledTimes(1)
+})
+
+it('routes workspace notifications to the toast region', () => {
+  useDocumentSessionMock.mockReturnValue(createSessionStub())
+
+  renderWithApp(<AppShell />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'trigger-notify' }))
+
+  expect(
+    screen.getByText('toast:系统剪贴板暂不可写，仍可在当前会话内粘贴'),
+  ).toBeInTheDocument()
+})
+
+it('prefers the session error over transient notifications in the toast region', () => {
+  useDocumentSessionMock.mockReturnValue(
+    createSessionStub({
+      error: '文档打开失败',
+    }),
+  )
+
+  renderWithApp(<AppShell />)
+
+  fireEvent.click(screen.getByRole('button', { name: 'trigger-notify' }))
+
+  expect(screen.getByText('toast:文档打开失败')).toBeInTheDocument()
 })
 
 it('does not trigger open or save shortcuts outside desktop runtime', () => {

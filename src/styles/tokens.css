@@ -11,10 +11,28 @@
   --color-background-canvas: #f5f5f7;
   --color-surface-panel: rgba(255, 255, 255, 0.82);
   --color-surface-panel-strong: rgba(255, 255, 255, 0.96);
+  /* 不透明表面：用于 toast / 弹层 / 浮窗等需要纯色底的面板 */
+  --color-surface: #ffffff;
+  /* 略带冷色调的抬升表面：用于模态 / 高优先级弹层（slate-50） */
+  --color-surface-elevated: #f8fafc;
+  /* 抬升卡片表面：用于 popover / 下拉菜单等纯白抬层 */
+  --color-surface-raised: #ffffff;
+  /* 细微背景：用于 hover / inactive 的底纹（4% 黑） */
+  --color-surface-subtle: rgba(0, 0, 0, 0.04);
+  /* 较强 hover 底纹：用于 active / pressed 状态（6% 黑） */
+  --color-surface-hover: rgba(0, 0, 0, 0.06);
   --color-text-primary: #1d1d1f;
   --color-text-secondary: rgba(60, 60, 67, 0.6);
+  /* 次级 muted 文本：介于 primary 与 secondary 之间，用于标题/标签 */
+  --color-text-muted: #3c3c43;
+  /* toast / 通知默认文本色（深海军蓝，保证暗色底纹上对比度） */
+  --color-text: #1a1a2e;
   --color-border-default: rgba(0, 0, 0, 0.08);
   --color-accent: #5b8cff;
+  /* accent 浅底（12% 蓝）：用于选中态底纹 / chip 选中背景 */
+  --color-accent-tint: rgba(91, 140, 255, 0.12);
+  /* accent 较深底（16% 蓝）：用于 active / pressed 选中态 */
+  --color-accent-tint-strong: rgba(91, 140, 255, 0.16);
   --color-selection: rgba(91, 140, 255, 0.24);
   --color-focus-ring: rgba(91, 140, 255, 0.45);
   --color-success: #34c759;

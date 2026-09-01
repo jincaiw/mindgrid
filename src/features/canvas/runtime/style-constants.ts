@@ -13,14 +13,13 @@
  * 文本度量通过模块级离屏 canvas 实现；jsdom 等无真实 2D 上下文的环境回退到字符数估算。
  */
 
+import type { TopicShape } from '../../../lib/document/types'
+
 // ---- 色彩（从 canvas-renderer.ts 投影）----
 
 export const COLORS = {
-  // 背景
-  backgroundRadial: 'rgba(91, 140, 255, 0.08)',
-  backgroundLinearTop: 'rgba(238, 244, 255, 0.82)',
-  backgroundLinearBottom: 'rgba(229, 236, 248, 0.66)',
-  gridLine: 'rgba(91, 140, 255, 0.06)',
+  // 背景：画布纯色由主题 palette（background）提供，Canvas/SVG/PNG 三端一致，
+  // 默认主题与 --color-background-canvas 同为 #f5f5f7
 
   // 边（回退色，实际连线优先使用分支色）
   edge: 'rgba(41, 88, 176, 0.34)',
@@ -34,16 +33,16 @@ export const COLORS = {
   nodeBgLeft: 'rgba(255, 255, 255, 0.94)',
   nodeBgRight: 'rgba(255, 255, 255, 0.96)',
 
-  // 状态
+  // 状态（XMind 式 2px 实心描边，取代填充光环）
   activeBorder: 'rgba(59, 130, 246, 0.45)',
-  activeRing: 'rgba(59, 130, 246, 0.12)',
-  selectedRing: 'rgba(59, 130, 246, 0.16)',
+  activeOutline: '#5b8cff',
+  selectedOutline: '#5b8cff',
   searchMatchBorder: 'rgba(14, 165, 233, 0.22)',
-  searchActiveRing: 'rgba(14, 165, 233, 0.12)',
+  searchActiveOutline: '#0ea5e9',
   dropTargetBorder: 'rgba(16, 185, 129, 0.52)',
-  dropTargetRing: 'rgba(16, 185, 129, 0.12)',
+  dropTargetOutline: '#10b981',
   historyFocusBorder: 'rgba(59, 130, 246, 0.4)',
-  historyFocusRing: 'rgba(59, 130, 246, 0.1)',
+  historyFocusOutline: '#5b8cff',
 
   // 覆盖层
   selectionBorder: 'rgba(59, 130, 246, 0.48)',
@@ -62,7 +61,18 @@ export const COLORS = {
   summaryLabelText: 'rgba(2, 132, 199, 0.92)',
 } as const
 
-export const FONT_FAMILY = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+/**
+ * Canvas/SVG/PNG 共用字体栈。
+ *
+ * 与 tokens.css :root font-family 对齐，并显式补 CJK 字形覆盖：
+ * - 系统优先：-apple-system / SF Pro（macOS）/ Segoe UI Variable（Win11）
+ * - CJK：PingFang SC（macOS）/ Microsoft YaHei（Win）/ Hiragino Sans GB（macOS 旧）/ Noto Sans SC（Linux/ChromeOS）
+ * - 西文回退：Segoe UI / Roboto / sans-serif
+ *
+ * 保证中英文混排时画布、SVG 导出、PNG 导出三端字形一致。
+ */
+export const FONT_FAMILY =
+  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", "Noto Sans SC", "Segoe UI", "Segoe UI Variable", Roboto, sans-serif'
 
 // ---- 深度分级几何常量（参考 XMind）----
 
@@ -73,11 +83,45 @@ export function getNodeRadius(depth: number): number {
   return 6
 }
 
+/** 默认节点边框粗细（px），与历史版本 drawNodeBorder 的 lineWidth=1 对齐。 */
+export const DEFAULT_BORDER_WIDTH = 1
+
+/**
+ * 按节点形状解析圆角半径，供 Canvas/SVG/DOM 三端填充与描边共用。
+ *
+ * - rounded：按深度分级（getNodeRadius）
+ * - rect：0（直角）
+ * - pill：min(高度/2, 宽度/2)，形成全圆角胶囊
+ * - underline：0（不绘制填充矩形，仅底部描边，由渲染端单独处理）
+ *
+ * @param shape 节点形状
+ * @param depth 节点深度（rounded 时决定半径）
+ * @param height 节点高度（pill 时决定半径）
+ */
+export function getNodeRadiusForShape(
+  shape: TopicShape,
+  depth: number,
+  height: number,
+): number {
+  switch (shape) {
+    case 'rect':
+      return 0
+    case 'pill':
+      // roundRect 内部会再做 min(r, w/2, h/2) 收敛，此处返回 height/2 即可
+      return height / 2
+    case 'underline':
+      return 0
+    case 'rounded':
+    default:
+      return getNodeRadius(depth)
+  }
+}
+
 /** 保留旧常量名供 SVG renderer 过渡使用（等同于 depth>0 的默认圆角）。 */
 export const NODE_RADIUS = 12
 export const SELECTION_RADIUS = 12
-export const TOGGLE_RADIUS = 11
-export const TOGGLE_BUTTON_SIZE = 22
+export const TOGGLE_RADIUS = 8
+export const TOGGLE_BUTTON_SIZE = 16
 
 // ---- 深度分级字号 / 字重 ----
 

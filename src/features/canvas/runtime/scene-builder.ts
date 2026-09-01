@@ -10,9 +10,9 @@
  */
 
 import type { MindMapEdgeLayout, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
-import type { Boundary, Relationship, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
+import type { Boundary, Relationship, SheetBranchStyle, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
 import { resolveTopicStyle } from './style-resolver'
-import { getBranchColor } from './style-constants'
+import { BRANCH_COLORS, getEdgeLineWidth } from './style-constants'
 import {
   expandRect,
   rectsIntersect,
@@ -81,6 +81,8 @@ export interface BuildSceneOptions {
   summaries?: SummaryNode[]
   /** 文档主题 ID（用于样式解析）。缺省使用 classic-blue。 */
   themeId?: string
+  /** 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。 */
+  branchStyle?: SheetBranchStyle
   /** 是否启用视口剔除（虚拟化）。测试或全量导出时可关闭。 */
   enableCulling?: boolean
 }
@@ -107,6 +109,19 @@ export function buildScene(options: BuildSceneOptions): Scene {
   // 用于 XMind 式多色分支编码（每条主分支不同色的连线）。
   const branchIndexMap = buildBranchIndexMap(layout.nodes)
 
+  // 画布级分支样式解析：edgeType / thickness / colorPalette
+  const branchStyle = options.branchStyle
+  const resolvedEdgeType: 'curve' | 'straight' | 'elbow' = branchStyle?.edgeType ?? 'curve'
+  const thicknessMultiplier = branchStyle?.thickness ?? 1
+  const palette =
+    branchStyle?.colorPalette && branchStyle.colorPalette.length > 0
+      ? branchStyle.colorPalette
+      : BRANCH_COLORS
+
+  /** 按分支索引取色（支持自定义色板覆盖默认 8 色循环）。 */
+  const resolveBranchColor = (branchIndex: number): string =>
+    palette[branchIndex % palette.length]
+
   const nodes: RenderNode[] = []
 
   // 边界（z-order 最低，在边之前）
@@ -129,13 +144,17 @@ export function buildScene(options: BuildSceneOptions): Scene {
     const childNode = layoutNodeMap.get(edge.childId)
     const childDepth = childNode?.depth ?? 1
     const branchIndex = branchIndexMap.get(edge.childId) ?? 0
+    const baseLineWidth = getEdgeLineWidth(childDepth, childIsActive)
+    const finalLineWidth = Math.max(0.5, baseLineWidth * thicknessMultiplier)
     nodes.push(
       edgeToRenderNode(
         edge,
         edgeBounds,
         childIsActive,
         childDepth,
-        getBranchColor(branchIndex),
+        resolveBranchColor(branchIndex),
+        resolvedEdgeType,
+        finalLineWidth,
       ),
     )
   }
@@ -256,6 +275,24 @@ function topicToRenderNode(
     layoutNode.topic.styleOverrides,
   )
 
+  // 富内容投影：仅当存在任意 meta 字段时携带，避免空对象污染渲染端判断
+  const topic = layoutNode.topic
+  const hasRichContent =
+    (topic.markers && topic.markers.length > 0) ||
+    (topic.labels && topic.labels.length > 0) ||
+    (topic.notes && topic.notes.length > 0) ||
+    topic.link ||
+    topic.task
+  const rich = hasRichContent
+    ? {
+        markers: topic.markers?.slice(),
+        labels: topic.labels?.slice(),
+        notes: topic.notes,
+        link: topic.link,
+        task: topic.task,
+      }
+    : undefined
+
   return {
     type: 'topic',
     id,
@@ -268,6 +305,7 @@ function topicToRenderNode(
     childCount: layoutNode.topic.children.length,
     state: visualState,
     style,
+    rich,
   }
 }
 
@@ -277,6 +315,8 @@ function edgeToRenderNode(
   isActive: boolean,
   childDepth: number,
   branchColor: string,
+  edgeType: 'curve' | 'straight' | 'elbow',
+  lineWidth: number,
 ): EdgeRenderNode {
   return {
     type: 'edge',
@@ -292,6 +332,8 @@ function edgeToRenderNode(
     isActive,
     childDepth,
     branchColor,
+    edgeType,
+    lineWidth,
   }
 }
 

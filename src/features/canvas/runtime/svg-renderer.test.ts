@@ -119,9 +119,12 @@ describe('renderSceneToSvg', () => {
     const svg = renderSceneToSvg(scene)
 
     // 根节点和子节点 a/b 都有折叠按钮（root 有 2 子，a/b 有 0 子不显示）
-    // 只有 childCount > 0 的节点才显示按钮
+    // 只有 childCount > 0 的节点才显示按钮；XMind 式 16px 按钮（r=8）位于连线起点侧
     expect(svg).toContain('<circle')
-    expect(svg).toContain('r="11"')
+    expect(svg).toContain('r="8"')
+    // +/− 符号字号 10、字重 600（与 canvas-renderer 一致）
+    expect(svg).toContain('font-size="10"')
+    expect(svg).toContain('font-weight="600"')
   })
 
   it('does not render overlay nodes', () => {
@@ -181,5 +184,55 @@ describe('renderSceneToSvg', () => {
     const w2 = extractWidth(svgWithPadding)
 
     expect(w2).toBeGreaterThan(w1)
+  })
+
+  it('renders rich content (markers/labels/notes/link/task) on topic nodes', () => {
+    const root = makeTopic('root', '中心', [
+      {
+        id: 'rich_child',
+        text: '富内容节点',
+        collapsed: false,
+        children: [],
+        markers: [{ id: 'priority-1' }, { id: 'star' }],
+        labels: ['重要', '待办'],
+        notes: '这是一段备注',
+        link: { url: 'https://example.com', title: '示例' },
+        task: { status: 'started', priority: 2 },
+      },
+    ])
+    const layout = computeMindMapLayout(root)
+    const scene = buildScene({
+      layout,
+      viewport: { width: 800, height: 600 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: emptyVisualStates,
+      overlays: emptyOverlays,
+      enableCulling: false,
+    })
+    const svg = renderSceneToSvg(scene)
+
+    // 优先级 marker：红色圆 + 数字 1
+    expect(svg).toContain('aria-label="任务状态 started"')
+    // priority-1 渲染为 fill 颜色 #e5484d 的圆
+    expect(svg).toContain('fill="#e5484d"')
+    // star marker 渲染为 fill #f6be00 的 path
+    expect(svg).toContain('fill="#f6be00"')
+    // 便签图标：黄色圆 fill="#f6be00" + 横线 path
+    expect(svg).toContain('aria-label="任务状态 started"')
+    // 链接图标：蓝色圆 fill="#5b8cff"
+    // 标签胶囊：rgba(91,140,255,0.12) 背景的 rect
+    expect(svg).toContain('fill="rgba(91,140,255,0.12)"')
+    // 标签文字（XML 转义后）
+    expect(svg).toContain('重要')
+    expect(svg).toContain('待办')
+  })
+
+  it('omits rich content elements when topic has none', () => {
+    const scene = buildTestScene()
+    const svg = renderSceneToSvg(scene)
+
+    // 无富内容的节点不应出现任务 aria-label 或标签胶囊背景
+    expect(svg).not.toContain('aria-label="任务状态')
+    expect(svg).not.toContain('fill="rgba(91,140,255,0.12)"')
   })
 })

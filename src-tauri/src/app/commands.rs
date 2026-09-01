@@ -1,6 +1,6 @@
 use crate::domain::document::{
-    DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot, TopicLink,
-    TopicMarker, TopicStyleOverrides, TopicTask,
+    DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
+    SheetBranchStyle, TopicLink, TopicMarker, TopicStyleOverrides, TopicTask,
 };
 use crate::AppState;
 use tauri::{AppHandle, Runtime, State};
@@ -375,6 +375,23 @@ pub fn set_sheet_chart_type(
 }
 
 #[tauri::command]
+pub fn set_sheet_branch_style(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sheet_id: String,
+    branch_style: Option<SheetBranchStyle>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_sheet_branch_style(&sheet_id, branch_style)?;
+
+    persist_recovery_and_snapshot(&app, &mut guard)
+}
+
+#[tauri::command]
 pub fn select_topic(
     state: State<'_, AppState>,
     topic_id: String,
@@ -408,13 +425,48 @@ pub fn create_sibling_topic(
     app: AppHandle,
     state: State<'_, AppState>,
     topic_id: String,
+    position: Option<String>,
 ) -> Result<DocumentSessionSnapshot, String> {
     let mut guard = state
         .document_session
         .lock()
         .map_err(|_| "unable to acquire document state".to_string())?;
 
-    guard.create_sibling_topic(&topic_id)?;
+    guard.create_sibling_topic(&topic_id, position.as_deref())?;
+
+    persist_recovery_and_snapshot(&app, &mut guard)
+}
+
+#[tauri::command]
+pub fn create_parent_topic(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.create_parent_topic(&topic_id)?;
+
+    persist_recovery_and_snapshot(&app, &mut guard)
+}
+
+#[tauri::command]
+pub fn create_floating_topic(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+    offset_x: f64,
+    offset_y: f64,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.create_floating_topic(&text, offset_x, offset_y)?;
 
     persist_recovery_and_snapshot(&app, &mut guard)
 }

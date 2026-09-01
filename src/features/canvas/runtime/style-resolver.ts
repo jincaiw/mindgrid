@@ -3,14 +3,18 @@
  *
  * 解析优先级（从低到高）：
  *   文档主题的层级默认色 → 主题节点 styleOverrides 覆盖
+ *   深度分级排印/形状默认 → 主题节点 styleOverrides 覆盖
  *
  * 元信息文字色（metaTextColor）不纳入节点覆盖，始终跟随主题，
  * 保证深度/子主题数等辅助信息的视觉一致性。
+ * 形状/字号/字重/边框粗细的深度分级默认由 style-constants 提供，
+ * 节点覆盖优先于深度默认，未覆盖时回退到对应深度的默认值。
  */
 
 import { getTheme, type ThemePalette } from '../../../lib/document/themes'
 import type { TopicStyleOverrides } from '../../../lib/document/types'
 import type { NodeSide, ResolvedTopicStyle } from './render-tree'
+import { DEFAULT_BORDER_WIDTH, getTitleFontSize, getTitleFontWeight } from './style-constants'
 
 export type { ResolvedTopicStyle } from './render-tree'
 
@@ -36,15 +40,19 @@ export function resolveTopicStyle(
     textColor: overrides?.textColor ?? base.textColor,
     metaTextColor: base.metaTextColor,
     borderColor: overrides?.borderColor ?? base.borderColor,
+    shape: overrides?.shape ?? 'rounded',
+    fontSize: overrides?.fontSize ?? getTitleFontSize(depth),
+    fontWeight: overrides?.fontWeight ?? getTitleFontWeight(depth),
+    borderWidth: overrides?.borderWidth ?? DEFAULT_BORDER_WIDTH,
   }
 }
 
-/** 解析主题的画布背景与网格线颜色。 */
+/** 解析主题的画布背景色（对齐 XMind：纯色背景，无网格）。 */
 export function resolveThemeBackground(
   themeId: string | undefined,
-): Pick<ThemePalette, 'background' | 'gridLine'> {
+): Pick<ThemePalette, 'background'> {
   const theme = getTheme(themeId)
-  return { background: theme.background, gridLine: theme.gridLine }
+  return { background: theme.background }
 }
 
 /** 解析主题的连线颜色。 */

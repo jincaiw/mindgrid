@@ -46,7 +46,7 @@ const LEAF_BLOCK = 92
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
 
-function estimateNodeSize(topic: TopicSnapshot, depth: number) {
+export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
   const widthBase = depth === 0 ? 180 : 140
   const width = Math.min(widthBase + textLength * 12, depth === 0 ? 300 : 250)

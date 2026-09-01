@@ -96,6 +96,25 @@ describe('renderScene', () => {
     expect(calls.some((c) => c.method === 'fillRect')).toBe(true)
   })
 
+  it('does not draw a dot grid on the background', () => {
+    const { ctx, calls } = createMockCtx()
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    // 对齐 XMind：默认无点阵网格。唯一的 arc 调用来自根节点的折叠/展开按钮。
+    const arcCalls = calls.filter((c) => c.method === 'arc')
+    expect(arcCalls).toHaveLength(1)
+  })
+
   it('applies camera transform before drawing world content', () => {
     const { ctx, calls } = createMockCtx()
     const layout = computeMindMapLayout(makeRoot())
@@ -280,5 +299,37 @@ describe('renderScene', () => {
       ['Root', 'Alpha', 'Beta'].some((t) => (c.args[0] as string).includes(t)),
     )
     expect(topicTexts.length).toBe(0)
+  })
+
+  it('draws XMind-style 2px outline (stroke) for active topic instead of filled ring', () => {
+    const { ctx, calls } = createMockCtx()
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      // root 同时为 active + selected
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    // 状态描边色（accent #5b8cff）应被设置为 strokeStyle
+    const accentStrokes = calls.filter(
+      (c) => c.method === 'strokeStyle' && c.args[0] === '#5b8cff',
+    )
+    expect(accentStrokes.length).toBeGreaterThan(0)
+    // 线宽 2px（XMind 式 outline）
+    const lineWidth2 = calls.filter(
+      (c) => c.method === 'lineWidth' && c.args[0] === 2,
+    )
+    expect(lineWidth2.length).toBeGreaterThan(0)
+    // 不应再出现旧的半透明填充光环色 rgba(59,130,246,0.12)
+    const oldRingFills = calls.filter(
+      (c) => c.method === 'fillStyle' && c.args[0] === 'rgba(59, 130, 246, 0.12)',
+    )
+    expect(oldRingFills.length).toBe(0)
   })
 })
