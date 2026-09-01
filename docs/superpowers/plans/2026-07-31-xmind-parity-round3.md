@@ -194,4 +194,8 @@
 - [x] 批次 18：样式系统深化（TopicStyleOverrides 扩展 shape/fontSize/fontWeight/borderWidth + DOM/Canvas/SVG 三端同步 + Inspector 样式区重构 + Alt+Cmd+C/V 复制粘贴样式 + SheetBranchStyle 分支样式数据模型与渲染 + 画布 Tab 线形/粗细/色板控件 + token 归拢与 CJK 字体栈）
 - [x] 批次 19：组织与面板（Cmd+I 检查器显隐 + 画布底部 Sheet 标签栏：单击切换/双击重命名/右键删除与左右移动/+新建 + 大纲全屏视图：隐藏画布全宽编辑主题树、操作栏增删排序、键盘 ArrowUp/Down 导航、Tab/Enter/Delete、Esc 返回 + Minimap 开关 localStorage 持久化）
   - 后续可选：Inspector tab 进一步细分（样式 / 图标 / 任务备注链接 / 画布），当前 4-tab（主题/画布/关系线/分组）已与 XMind 方向对齐，富内容编辑集中在「主题」tab，进一步拆分为低优先级细化项。
-- [ ] 批次 20：外观与其他（可后置）
+- [x] 批次 20：外观与其他
+  - 暗色 UI 主题：tokens.css 双套变量 + `prefers-color-scheme` 跟随 + 工具栏三态切换（system/light/dark）+ localStorage 持久化 + 硬编码 rgba 归拢
+  - 导出 PDF：jsPDF + svg2pdf.js 将 Scene→SVG→矢量 PDF，工具栏导出菜单接入，IPC `export_pdf_file` 写盘
+  - 快捷键集中注册表：`src/features/shortcuts/`（registry/match/help），20+ 快捷键声明式注册，工具栏浮层帮助面板
+  - 后续可选：窗口 `titleBarStyle: overlay`（macOS 红绿灯融合，非必做，未实现）
