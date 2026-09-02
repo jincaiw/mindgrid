@@ -145,6 +145,12 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # Tauri 自带的精简版 NSIS 缺少语言文件（en-US.nlf 等），
+      # 安装完整版 NSIS 后 Tauri 会优先使用 PATH 中的 makensis
+      - name: Install full NSIS
+        if: matrix.platform == 'windows'
+        run: choco install nsis -y --no-progress
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
