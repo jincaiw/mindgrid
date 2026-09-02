@@ -35,7 +35,7 @@
     "category": "Productivity",
     "shortDescription": "MindGrid — 思维导图与可视化思考工具",
     "longDescription": "MindGrid 是一款桌面思维导图应用，支持 6 种图表类型（思维导图、逻辑图、树形图、组织架构图、鱼骨图、时间线），具备富内容编辑、关系线/边界/概要、模板系统、演示模式、Markdown/OPML 导入导出、PNG/SVG 图像导出，以及 10k 节点级别的高性能画布运行时。",
-    "homepage": "https://github.com/mindgrid/mindgrid",
+    "homepage": "https://github.com/jincaiw/mindgrid",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -85,7 +85,7 @@
     "updater": {
       "active": true,
       "endpoints": [
-        "https://github.com/mindgrid/mindgrid/releases/latest/download/latest.json"
+        "https://github.com/jincaiw/mindgrid/releases/latest/download/latest.json"
       ],
       "pubkey": "REPLACE_WITH_TAURI_SIGNING_PUBLIC_KEY",
       "dialog": false
