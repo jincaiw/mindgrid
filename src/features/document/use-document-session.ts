@@ -38,7 +38,9 @@ import {
   openDocumentFile,
   pasteTopics,
   repairDocumentFile,
+  readAssetDataUrl,
   redoDocumentCommand,
+  removeTopicImage,
   renameSheet,
   renameTopic,
   saveDocumentFile,
@@ -48,6 +50,7 @@ import {
   setDocumentTheme,
   setSheetChartType,
   setSheetBranchStyle,
+  setTopicImage,
   setTopicLabels,
   setTopicLink,
   setTopicMarkers,
@@ -65,11 +68,16 @@ import type {
   SheetBranchStyle,
   TopicLink,
   TopicMarker,
+  TopicSnapshot,
   TopicStyleOverrides,
   TopicTask,
 } from '../../lib/document/types'
 import { getActiveSheet } from '../../lib/document/sheets'
 import { computeLayout } from '../canvas/layouts'
+import {
+  collectTopicImageAssetIds,
+  collectTopicImageRefs,
+} from '../canvas/runtime/topic-image-store'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from '../canvas/runtime/scene-builder'
 import { renderSceneToSvg } from '../canvas/runtime/svg-renderer'
 import { renderSceneToPngBytes } from '../canvas/runtime/png-exporter'
@@ -117,6 +125,11 @@ export interface DocumentSession extends DocumentSessionState {
   deleteTopics: (topicIds: string[], actionLabel?: string) => Promise<void>
   toggleTopicCollapsed: (topicId: string) => Promise<void>
   setTopicNotes: (topicId: string, notes: string | null) => Promise<void>
+  /** 插入主题图片：sourcePath 为本地绝对路径（Tauri），浏览器开发态传 data: URL。 */
+  setTopicImage: (topicId: string, sourcePath: string) => Promise<void>
+  removeTopicImage: (topicId: string) => Promise<void>
+  /** 读取资源 data URL 供画布渲染（不入历史栈）。 */
+  readAssetDataUrl: (assetId: string) => Promise<string>
   setTopicLink: (topicId: string, link: TopicLink | null) => Promise<void>
   setTopicMarkers: (topicId: string, markers: TopicMarker[]) => Promise<void>
   setTopicLabels: (topicId: string, labels: string[]) => Promise<void>
@@ -312,10 +325,57 @@ const EXPORT_OVERLAYS: InteractionOverlays = {
   dropIndicator: null,
 }
 
-/** 从文档构建全量导出场景（关闭视口剔除，渲染所有节点）。 */
-function buildExportScene(document: DocumentSnapshot) {
+/**
+ * 把当前工作表里主题引用的图片资产解析为 data URL：topicId → data URL。
+ *
+ * 渲染端需要的是字节本身（`<image href>` / `drawImage` 都吃 data URL），
+ * 而文档里只存 assetId，所以导出前必须做这一次解析。
+ *
+ * 单个资产解析失败（资源缺失 / 后端未就绪）时**静默跳过**该主题：
+ * 导出不应因为一张坏图就整体失败，退化为「该主题无图」但版式与其余内容完整。
+ */
+async function resolveTopicImageUrls(rootTopic: TopicSnapshot): Promise<Record<string, string>> {
+  const refs = collectTopicImageRefs(rootTopic)
+  if (refs.length === 0) {
+    return {}
+  }
+
+  // 按 assetId 去重，同一张图被多个主题引用时只请求一次
+  const assetIds = collectTopicImageAssetIds(refs.map((ref) => ({ assetId: ref.assetId })))
+
+  const entries = await Promise.all(
+    assetIds.map(async (assetId) => {
+      try {
+        return { assetId, dataUrl: await readAssetDataUrl(assetId) }
+      } catch {
+        return { assetId, dataUrl: '' }
+      }
+    }),
+  )
+
+  const dataUrlByAssetId = new Map<string, string>()
+  for (const entry of entries) {
+    if (entry.dataUrl) {
+      dataUrlByAssetId.set(entry.assetId, entry.dataUrl)
+    }
+  }
+
+  const result: Record<string, string> = {}
+  for (const ref of refs) {
+    const dataUrl = dataUrlByAssetId.get(ref.assetId)
+    if (dataUrl) {
+      result[ref.topicId] = dataUrl
+    }
+  }
+
+  return result
+}
+
+/** 从文档构建全量导出场景（关闭视口剔除，渲染所有节点，并解析主题图片）。 */
+async function buildExportScene(document: DocumentSnapshot) {
   const sheet = getActiveSheet(document)
   const layout = computeLayout(sheet.rootTopic, sheet.chartType ?? 'mindmap')
+  const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
 
   return buildScene({
     layout,
@@ -329,6 +389,7 @@ function buildExportScene(document: DocumentSnapshot) {
     themeId: document.theme?.id,
     branchStyle: sheet.branchStyle,
     enableCulling: false,
+    topicImageUrls,
   })
 }
 
@@ -775,7 +836,7 @@ export function useDocumentSession(): DocumentSession {
     }))
 
     try {
-      const scene = buildExportScene(state.document)
+      const scene = await buildExportScene(state.document)
       const bytes = await renderSceneToPngBytes(scene, { scale: 2 })
       await exportPngFile(selectedPath, bytes)
 
@@ -819,7 +880,7 @@ export function useDocumentSession(): DocumentSession {
     }))
 
     try {
-      const scene = buildExportScene(state.document)
+      const scene = await buildExportScene(state.document)
       const svgContent = renderSceneToSvg(scene)
       await exportSvgFile(selectedPath, svgContent)
 
@@ -864,7 +925,7 @@ export function useDocumentSession(): DocumentSession {
     }))
 
     try {
-      const scene = buildExportScene(state.document)
+      const scene = await buildExportScene(state.document)
       const bytes = await renderSceneToPdfBytes(scene)
       await exportPdfFile(selectedPath, bytes)
 
@@ -996,6 +1057,21 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicImage = useCallback(
+    async (topicId: string, sourcePath: string) => {
+      await runCommand('插入图片', () => setTopicImage(topicId, sourcePath))
+    },
+    [runCommand],
+  )
+
+  const clearTopicImage = useCallback(
+    async (topicId: string) => {
+      await runCommand('移除图片', () => removeTopicImage(topicId))
+    },
+    [runCommand],
+  )
+
+  // 延迟取用命令绑定：渲染期不访问模块属性，避免单元测试对 commands 做部分 mock 时误触发
   const updateTopicLink = useCallback(
     async (topicId: string, link: TopicLink | null) => {
       await runCommand('编辑链接', () => setTopicLink(topicId, link))
@@ -1268,6 +1344,9 @@ export function useDocumentSession(): DocumentSession {
       deleteTopics: deleteMultipleTopics,
       toggleTopicCollapsed: toggleCollapsedTopic,
       setTopicNotes: updateTopicNotes,
+      setTopicImage: updateTopicImage,
+      removeTopicImage: clearTopicImage,
+      readAssetDataUrl,
       setTopicLink: updateTopicLink,
       setTopicMarkers: updateTopicMarkers,
       setTopicLabels: updateTopicLabels,
@@ -1306,6 +1385,8 @@ export function useDocumentSession(): DocumentSession {
       dismissRepairReport,
       toggleCollapsedTopic,
       updateTopicNotes,
+      updateTopicImage,
+      clearTopicImage,
       updateTopicLink,
       updateTopicMarkers,
       updateTopicLabels,

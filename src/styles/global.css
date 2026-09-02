@@ -33,22 +33,43 @@ button {
 
 .workspace-shell {
   display: grid;
-  grid-template-rows: 52px minmax(0, 1fr) auto;
-  padding: var(--space-2);
-  gap: var(--space-2);
+  grid-template-rows: 44px minmax(0, 1fr);
   height: 100vh;
 }
 
+/* XMind 式贴边布局：三栏无间距，以 1px 细分割线区隔 */
 .workspace-shell__body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
-  gap: var(--space-2);
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
+  min-height: 0;
+}
+
+/* 画布列：顶部 Sheet 标签栏 + 画布主体纵向排布 */
+.canvas-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.canvas-column .canvas-host {
+  flex: 1 1 auto;
   min-height: 0;
 }
 
 /* 检查器隐藏（Cmd/Ctrl + I）：两列布局，画布占满剩余空间 */
 .workspace-shell__body--inspector-hidden {
   grid-template-columns: 280px minmax(0, 1fr);
+}
+
+/* 侧栏隐藏（批次 26，Cmd/Ctrl + B）：画布 + 检查器两列 */
+.workspace-shell__body--sidebar-hidden {
+  grid-template-columns: minmax(0, 1fr) 280px;
+}
+
+/* 侧栏 + 检查器同时隐藏：画布占满 */
+.workspace-shell__body--sidebar-hidden.workspace-shell__body--inspector-hidden {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 /* ZEN 专注模式：隐藏 toolbar / sidebar / inspector，画布占满 */
@@ -100,17 +121,15 @@ button {
   display: none;
 }
 
-/* 画布底部标签栏（批次 19，对标 XMind） */
+/* 画布顶部标签栏（批次 26，对标 XMind：贴顶、30px、hover 出关闭 ×） */
 .sheet-tab-bar {
   display: flex;
   align-items: stretch;
   gap: var(--space-2);
   padding: 0 var(--space-2);
-  min-height: 36px;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-medium);
+  min-height: 30px;
+  border-bottom: 1px solid var(--color-border-default);
   background: var(--color-surface-glass);
-  box-shadow: var(--shadow-level-1);
   backdrop-filter: blur(20px);
 }
 
@@ -180,7 +199,7 @@ button {
 
 .sheet-tab-bar__menu {
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   left: 0;
   z-index: 20;
   display: flex;
@@ -225,6 +244,36 @@ button {
   cursor: pointer;
   border-radius: 6px;
   transition: background 120ms ease, color 120ms ease;
+}
+
+/* 标签 hover 关闭 ×：非 hover 时隐藏，避免视觉噪音（对标 XMind） */
+.sheet-tab-bar__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 2px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 4px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.sheet-tab-bar__tab:hover .sheet-tab-bar__close,
+.sheet-tab-bar__close:focus-visible {
+  opacity: 1;
+}
+
+.sheet-tab-bar__close:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-error);
 }
 
 .sheet-tab-bar__add:hover {
@@ -556,20 +605,19 @@ button {
 .panel,
 .canvas-host,
 .status-bar {
-  border: 1px solid var(--color-border-default);
-  box-shadow: var(--shadow-level-1);
   backdrop-filter: blur(20px);
 }
 
+/* 贴边工具栏：无圆角外框，仅底部 1px 分割线（参考 XMind） */
 .toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-medium);
+  border-bottom: 1px solid var(--color-border-default);
   background: var(--color-surface-glass);
   color: var(--color-text-primary);
-  min-height: 52px;
+  min-height: 44px;
 }
 
 .toolbar__left {
@@ -651,15 +699,15 @@ button {
   background: rgba(59, 130, 246, 0.2);
 }
 
-/* 图标按钮：32×32 方形，参考 XMind / macOS 工具栏 */
+/* 图标按钮：28×28 方形，参考 XMind / macOS 工具栏 */
 .toolbar__icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0 8px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
   border: none;
   background: transparent;
   color: var(--color-text-muted);
@@ -798,8 +846,12 @@ button {
 
 .panel {
   background: var(--color-surface-panel);
-  border-radius: var(--radius-medium);
   padding: var(--space-3);
+}
+
+/* 贴边侧栏：与画布之间 1px 竖向分割线 */
+.panel--sidebar {
+  border-right: 1px solid var(--color-border-default);
 }
 
 .panel__section + .panel__section {
@@ -953,6 +1005,23 @@ button {
   white-space: nowrap;
   flex: 1;
   min-width: 0;
+}
+
+/* 主题图片：隐藏的 file input（非 Tauri 环境的选图降级路径） */
+.panel__hidden-file-input {
+  display: none;
+}
+
+/* 主题图片：Inspector 缩略图预览 */
+.panel__image-preview {
+  display: block;
+  width: 100%;
+  max-width: 200px;
+  max-height: 120px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  object-fit: contain;
+  background: var(--color-surface-hover);
 }
 
 .panel__action--ghost {
@@ -1507,6 +1576,7 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  border-left: 1px solid var(--color-border-default);
 }
 
 .panel__tabs {
@@ -1517,7 +1587,6 @@ button {
   border-bottom: 1px solid var(--color-border-default);
   flex-shrink: 0;
   background: var(--color-surface-panel);
-  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
 }
 
 .panel__tab {
@@ -1664,7 +1733,6 @@ button {
   min-height: 640px;
   background: var(--color-background-canvas);
 }
-
 /* 线网格默认隐藏（XMind 默认无网格），可通过 canvas-host--grid-on 开启 */
 .canvas-host__texture {
   display: none;
@@ -1692,7 +1760,6 @@ button {
   position: relative;
   z-index: 1;
   height: 100%;
-  padding: var(--space-2);
 }
 
 .canvas-stage--editor {
@@ -1726,7 +1793,6 @@ button {
   flex-direction: column;
   min-height: 0;
   background: var(--color-background-canvas);
-  border-radius: var(--radius-medium);
   overflow: hidden;
 }
 
@@ -1987,11 +2053,9 @@ button {
   position: relative;
   overflow: hidden;
   flex: 1;
-  min-height: 660px;
+  min-height: 0;
   user-select: none;
-  border-radius: 22px;
   background: var(--color-background-canvas);
-  border: 1px solid rgba(15, 23, 42, 0.08);
   cursor: grab;
 }
 
@@ -2152,32 +2216,31 @@ button {
 }
 
 .mindmap-node:hover {
-  /* XMind 式：hover 仅轻微提亮，不抬升、不加阴影 */
-  filter: brightness(0.97);
+  /* XMind 式：hover 无视觉滤镜变化，仅节点的 toggle/快捷控件浮现 */
 }
 
 /* 深度分级：根节点 */
 .mindmap-node--depth-0 {
-  padding: 10px 20px;
+  padding: 10px 16px;
   border-radius: 12px;
   border-color: transparent;
 }
 
 /* 深度分级：一级分支 */
 .mindmap-node--depth-1 {
-  padding: 8px 14px;
+  padding: 8px 12px;
   border-radius: 8px;
 }
 
 /* 深度分级：二级 */
 .mindmap-node--depth-2 {
-  padding: 6px 12px;
+  padding: 6px 10px;
   border-radius: 6px;
 }
 
 /* 深度分级：叶子（3+） */
 .mindmap-node--depth-3 {
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 6px;
   border-color: transparent;
   background: transparent;
@@ -2354,6 +2417,24 @@ button {
   color: rgba(60, 60, 67, 0.72);
 }
 
+/* 主题图片：渲染在标题上方，限幅居中，缺图时不渲染元素（不留空白框） */
+.mindmap-node__image {
+  display: block;
+  /* 与 runtime/topic-image-constants.ts 的 TOPIC_IMAGE_MAX_WIDTH / TOPIC_IMAGE_MAX_HEIGHT 对齐。
+     原 max-height 为 120px，但布局只预留了 88px，会溢出节点；现已统一。
+     min(200px, 100%)：小节点（TOPIC_IMAGE_MIN_WIDTH=120，扣掉内边距后内宽约 96）
+     不能被固定 200px 撑破。 */
+  max-width: min(200px, 100%);
+  max-height: 88px;
+  /* TOPIC_IMAGE_GAP = 8 */
+  margin: 0 auto 8px;
+  /* TOPIC_IMAGE_RADIUS = 6 */
+  border-radius: 6px;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
 .mindmap-node__title {
   font-size: 14px;
   font-weight: 600;
@@ -2364,8 +2445,8 @@ button {
 
 /* 深度分级字号 */
 .mindmap-node--depth-0 .mindmap-node__title {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .mindmap-node--depth-1 .mindmap-node__title {
@@ -2392,9 +2473,8 @@ button {
   background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.4;
+  /* 字号/字重由组件按 resolvedStyle 内联注入（与显示态同源，避免进入编辑跳动） */
+  line-height: 1.35;
 }
 
 .mindmap-node__editor::placeholder {
@@ -2452,9 +2532,8 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin: 0 var(--space-3) var(--space-3);
-  padding: 10px var(--space-3);
-  border-radius: var(--radius-medium);
+  padding: 6px var(--space-3);
+  border-top: 1px solid var(--color-border-default);
   background: var(--color-surface-panel-strong);
   color: var(--color-text-secondary);
   font-size: 12px;

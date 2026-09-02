@@ -14,8 +14,8 @@ import {
   estimateNodeSize,
 } from './layout-utils'
 
-const ROW_HEIGHT = 140
-const SIBLING_GAP = 40
+const ROW_HEIGHT = 104
+const SIBLING_GAP = 28
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
 

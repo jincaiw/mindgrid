@@ -150,8 +150,8 @@ cargo build --manifest-path src-tauri/Cargo.toml --features cli --bin mindgrid-f
 
 ### 测试覆盖
 
-- **前端**：299 个单测（Vitest + Testing Library）
-- **Rust**：73 个单测（cargo test）
+- **前端**：414 个单测（Vitest + Testing Library）
+- **Rust**：87 个单测（cargo test）
 - **三绿门禁**：`pnpm test` + `pnpm build` + `cargo test` 全部通过
 
 ## 发布

@@ -1,17 +1,21 @@
 pub mod app;
 pub mod domain;
 
+use crate::app::assets::AssetStore;
 use crate::domain::document::DocumentSession;
 use std::sync::Mutex;
 
 pub struct AppState {
     pub document_session: Mutex<DocumentSession>,
+    /// 进程内资源存储：主题图片等二进制资源，保存时随 document.json 一起写入 .mgd。
+    pub asset_store: Mutex<AssetStore>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             document_session: Mutex::new(DocumentSession::default()),
+            asset_store: Mutex::new(AssetStore::default()),
         }
     }
 }
@@ -60,6 +64,9 @@ pub fn run() {
             app::commands::set_topic_task,
             app::commands::set_topic_style_ref,
             app::commands::set_topic_style_overrides,
+            app::commands::set_topic_image,
+            app::commands::remove_topic_image,
+            app::commands::read_asset_data_url,
             app::commands::set_document_theme,
             app::commands::create_relationship,
             app::commands::delete_relationship,

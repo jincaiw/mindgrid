@@ -35,7 +35,9 @@ const commandMocks = vi.hoisted(() => ({
   moveTopicsToSheet: vi.fn(),
   openDocumentFile: vi.fn(),
   pasteTopics: vi.fn(),
+  readAssetDataUrl: vi.fn(),
   redoDocumentCommand: vi.fn(),
+  removeTopicImage: vi.fn(),
   renameSheet: vi.fn(),
   renameTopic: vi.fn(),
   repairDocumentFile: vi.fn(),
@@ -51,6 +53,7 @@ const commandMocks = vi.hoisted(() => ({
   setTopicTask: vi.fn(),
   setTopicStyleRef: vi.fn(),
   setTopicStyleOverrides: vi.fn(),
+  setTopicImage: vi.fn(),
   setDocumentTheme: vi.fn(),
   undoDocumentCommand: vi.fn(),
 }))

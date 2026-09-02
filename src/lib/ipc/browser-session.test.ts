@@ -816,3 +816,51 @@ describe('invokeBrowserCommand', () => {
     ).rejects.toThrow(/浏览器开发态暂不支持 SVG 导出/)
   })
 })
+
+describe('invokeBrowserCommand 主题图片', () => {
+  it('在浏览器开发态以 data URL 插入图片并可回读，移除后可撤销', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const topicId = created.activeTopicId
+    const dataUrl = 'data:image/png;base64,iVBORw0KGgo='
+
+    const inserted = await invokeBrowserCommand<DocumentSessionSnapshot>('set_topic_image', {
+      topic_id: topicId,
+      source_path: dataUrl,
+    })
+    const assetId = findTopicById(inserted.document.sheets[0].rootTopic, topicId)?.image?.assetId
+
+    expect(assetId).toBeTruthy()
+    expect(inserted.nextUndoAction).toBe('插入图片')
+
+    await expect(
+      invokeBrowserCommand<string>('read_asset_data_url', { asset_id: assetId }),
+    ).resolves.toBe(dataUrl)
+
+    const removed = await invokeBrowserCommand<DocumentSessionSnapshot>('remove_topic_image', {
+      topic_id: topicId,
+    })
+    expect(findTopicById(removed.document.sheets[0].rootTopic, topicId)?.image).toBeUndefined()
+
+    const undone = await invokeBrowserCommand<DocumentSessionSnapshot>('undo_document_command')
+    expect(findTopicById(undone.document.sheets[0].rootTopic, topicId)?.image?.assetId).toBe(
+      assetId,
+    )
+  })
+
+  it('读取不存在的资源返回空串，渲染层据此静默降级', async () => {
+    await expect(
+      invokeBrowserCommand<string>('read_asset_data_url', { asset_id: 'asset_missing' }),
+    ).resolves.toBe('')
+  })
+
+  it('浏览器开发态拒绝本地绝对路径', async () => {
+    await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+
+    await expect(
+      invokeBrowserCommand<DocumentSessionSnapshot>('set_topic_image', {
+        topic_id: 'topic_x',
+        source_path: '/Users/demo/a.png',
+      }),
+    ).rejects.toThrow(/浏览器开发态暂不支持读取本地图片路径/)
+  })
+})

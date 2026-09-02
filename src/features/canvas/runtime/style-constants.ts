@@ -125,19 +125,33 @@ export const TOGGLE_BUTTON_SIZE = 16
 
 // ---- 深度分级字号 / 字重 ----
 
-/** 标题字号按深度递减：根 18 → L1 14 → L2 13 → L3+ 12。 */
+/** 标题字号按深度递减：根 20 → L1 14 → L2 13 → L3+ 12。 */
 export function getTitleFontSize(depth: number): number {
-  if (depth === 0) return 18
+  if (depth === 0) return 20
   if (depth === 1) return 14
   if (depth === 2) return 13
   return 12
 }
 
-/** 标题字重按深度递减：根 600 → L1 600 → L2 500 → L3+ 400。 */
+/** 标题字重按深度递减：根 700 → L1 600 → L2 500 → L3+ 400。 */
 export function getTitleFontWeight(depth: number): number {
-  if (depth <= 1) return 600
+  if (depth === 0) return 700
+  if (depth === 1) return 600
   if (depth === 2) return 500
   return 400
+}
+
+/**
+ * 节点内边距（横向取值，同时用作纵向留白），与 DOM 的 `.mindmap-node--depth-N`
+ * 的 padding 横向分量对齐：根 16 → L1 12 → L2+ 10。
+ *
+ * Canvas Renderer 与 SVG Renderer 必须共用此函数。历史上 SVG 端硬编码了
+ * 20/14/12 的旧值，导致 SVG/PDF 导出与屏幕显示不一致，因此统一收敛到这里。
+ */
+export function getNodePadding(depth: number): number {
+  if (depth === 0) return 16
+  if (depth === 1) return 12
+  return 10
 }
 
 // ---- 分支色板（8 色循环，参考 XMind）----
@@ -167,7 +181,7 @@ export function getBranchColor(branchIndex: number): string {
 /** 父→子连线的线宽，按子节点深度递减。激活态 +0.5px。 */
 export function getEdgeLineWidth(childDepth: number, isActive = false): number {
   let width: number
-  if (childDepth <= 1) width = 2.5
+  if (childDepth <= 1) width = 3
   else if (childDepth === 2) width = 2
   else if (childDepth === 3) width = 1.5
   else width = 1

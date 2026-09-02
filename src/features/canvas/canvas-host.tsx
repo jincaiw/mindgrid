@@ -58,6 +58,7 @@ import { computeLayout } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveTopicStyle } from './runtime/style-resolver'
 import { buildScene, type TopicVisualStates } from './runtime/scene-builder'
+import { pickTopicImageUrl, useTopicImageUrls } from './runtime/topic-image-store'
 import { collectClipboardTopics } from './topic-clipboard'
 import { MarkerIcon } from './markers'
 import {
@@ -200,6 +201,7 @@ function MindMapScene({
   onSearchNext,
   onSearchPrevious,
   onCloseSearch,
+  onRenameTopicText,
   onToggleTopicCollapsed,
   onSelect,
   onMoveTopic,
@@ -246,6 +248,8 @@ function MindMapScene({
   onSearchNext: () => void
   onSearchPrevious: () => void
   onCloseSearch: () => void
+  /** 批次 27：查找替换——直接改写主题文本（复用 rename 管道，可撤销） */
+  onRenameTopicText: (topicId: string, text: string) => Promise<void>
   onToggleTopicCollapsed: (topicId: string) => Promise<void>
   onSelect: (topicId: string) => void
   onMoveTopic: (topicId: string, targetParentId: string) => Promise<void>
@@ -291,6 +295,8 @@ function MindMapScene({
     dropTargetId: string | null
   } | null>(null)
   const suppressClickRef = useRef(false)
+  // 批次 27：查找替换的替换词输入（局部状态，随搜索浮层开关保留）
+  const [replaceQuery, setReplaceQuery] = useState('')
   // 小地图显隐：默认开，localStorage 持久化（对齐 XMind Navigator 开关）
   const [minimapVisible, setMinimapVisible] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true
@@ -312,6 +318,28 @@ function MindMapScene({
       return next
     })
   }, [])
+  // 批次 27：查找替换——按字面量替换（split/join，避免正则转义问题），复用 rename 管道可撤销
+  const handleReplaceCurrent = useCallback(async () => {
+    const result = searchResults[activeSearchIndex]
+    if (!result || !searchQuery) return
+    const nextText = searchQuery ? result.text.split(searchQuery).join(replaceQuery) : result.text
+    if (nextText !== result.text) {
+      await onRenameTopicText(result.topicId, nextText)
+    }
+  }, [searchResults, activeSearchIndex, searchQuery, replaceQuery, onRenameTopicText])
+
+  const handleReplaceAll = useCallback(async () => {
+    if (!searchQuery) return
+    const seen = new Set<string>()
+    for (const result of searchResults) {
+      if (seen.has(result.topicId)) continue
+      seen.add(result.topicId)
+      const nextText = result.text.split(searchQuery).join(replaceQuery)
+      if (nextText !== result.text) {
+        await onRenameTopicText(result.topicId, nextText)
+      }
+    }
+  }, [searchResults, searchQuery, replaceQuery, onRenameTopicText])
   // Space 键状态：按下时作为平移修饰键（XMind 式 Space+拖拽平移）；
   // 松开时若未发生拖拽则触发折叠切换（兼容旧 MindGrid 行为）。
   // spaceUsedForPanRef：Space 按下期间是否发生指针拖拽，用于抑制 keyup 时的折叠切换。
@@ -412,6 +440,11 @@ function MindMapScene({
     if (dragPreview?.topicId) visibleIds.add(dragPreview.topicId)
     return layout.nodes.filter((n) => visibleIds.has(n.id))
   }, [layout.nodes, scene, viewportSize, editingTopicId, dragPreview])
+
+  // 主题图片：按 assetId 去重拉取 data URL，缺图/加载中时节点不渲染图片元素
+  const topicImageUrls = useTopicImageUrls(
+    visibleLayoutNodes.map((node) => node.topic.image),
+  )
 
   // 标记本画布内所有布局节点为"已知"（含视口外），首次出现的新节点加入动画集合。
   // 仅可见的新节点会真正播放出现动画；视口外的新节点只登记，避免滚入时重复动画。
@@ -1292,6 +1325,32 @@ function MindMapScene({
               关闭
             </button>
           </div>
+          <div className="mindmap-search__controls">
+            <input
+              className="mindmap-search__input"
+              type="text"
+              aria-label="替换为"
+              value={replaceQuery}
+              placeholder="替换为（留空即删除匹配文本）"
+              onChange={(event) => setReplaceQuery(event.target.value)}
+            />
+            <button
+              className="scene-toolbar__button"
+              type="button"
+              disabled={!searchQuery || searchResults.length === 0}
+              onClick={() => void handleReplaceCurrent()}
+            >
+              替换当前
+            </button>
+            <button
+              className="scene-toolbar__button"
+              type="button"
+              disabled={!searchQuery || searchResults.length === 0}
+              onClick={() => void handleReplaceAll()}
+            >
+              全部替换
+            </button>
+          </div>
           {searchResults.length > 0 ? (
             <div className="mindmap-search__results">
               {searchResults.slice(0, 6).map((result, index) => (
@@ -1393,6 +1452,7 @@ function MindMapScene({
               isAppearing={appearingTopicIdsRef.current.has(node.id)}
               onAppearEnd={handleNodeAppearEnd}
               onOpenLink={onOpenLink}
+              imageUrl={pickTopicImageUrl(node.topic.image, topicImageUrls)}
             />
           ))}
         </div>
@@ -1504,6 +1564,7 @@ function MindMapNode({
   isAppearing,
   onAppearEnd,
   onOpenLink,
+  imageUrl,
 }: {
   node: MindMapNodeLayout
   offsetX: number
@@ -1536,6 +1597,8 @@ function MindMapNode({
   onAppearEnd: (topicId: string) => void
   /** 点击节点上的链接图标时调用（非编辑态）。 */
   onOpenLink?: (url: string) => void
+  /** 主题图片的 data URL，null 表示无图或尚未加载完成（此时不渲染图片元素）。 */
+  imageUrl: string | null
 }) {
   const left = node.x - node.width / 2 + offsetX
   const top = node.y - node.height / 2 + offsetY
@@ -1603,6 +1666,7 @@ function MindMapNode({
             aria-label="内联编辑主题"
             value={editingText}
             rows={Math.max(2, Math.min(6, editingText.split('\n').length + 1))}
+            style={titleStyle}
             onChange={(event) => onEditingTextChange(event.target.value)}
             onClick={(event) => {
               // 三击选中全部文本（对齐 XMind/MindNode 编辑体验）
@@ -1681,6 +1745,14 @@ function MindMapNode({
         onContextMenu={(event) => onContextMenu(event, node.id)}
         onAnimationEnd={() => onAppearEnd(node.id)}
       >
+        {imageUrl ? (
+          <img
+            className="mindmap-node__image"
+            src={imageUrl}
+            alt={`${node.topic.text} 的主题图片`}
+            draggable={false}
+          />
+        ) : null}
         <span className="mindmap-node__title" style={titleStyle}>{node.topic.text}</span>
         {task ? (
           <span
@@ -2472,6 +2544,7 @@ function TreeWorkspace({
           editingText={editingText}
           searchOpen={searchOpen}
           searchQuery={searchQuery}
+          onRenameTopicText={renameTopic}
           searchResults={searchResults}
           activeSearchIndex={activeSearchResult ? activeSearchIndex : -1}
           matchedSearchTopicIds={matchedSearchTopicIds}

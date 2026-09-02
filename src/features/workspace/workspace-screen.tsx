@@ -44,6 +44,14 @@ export function WorkspaceScreen({
   const [searchOpen, setSearchOpen] = useState(false)
   // 批次 14：检查器显隐（Cmd/Ctrl + I 或工具栏按钮），默认显示
   const [inspectorVisible, setInspectorVisible] = useState(true)
+  // 批次 26：侧栏折叠（工具栏按钮 + Cmd/Ctrl + B），默认展开，sessionStorage 记忆
+  const [sidebarVisible, setSidebarVisible] = useState<boolean>(() => {
+    try {
+      return window.sessionStorage.getItem('mindgrid.sidebar-visible') !== '0'
+    } catch {
+      return true
+    }
+  })
   // 批次 19：大纲全屏视图（隐藏画布，全宽编辑主题树，Esc 返回）
   const [isOutlinerMode, setIsOutlinerMode] = useState(false)
   // 批次 20：快捷键帮助浮层显隐
@@ -78,6 +86,15 @@ export function WorkspaceScreen({
   useEffect(() => {
     onSelectedTopicCountChange?.(selectedTopicIds.length)
   }, [selectedTopicIds.length, onSelectedTopicCountChange])
+
+  // 批次 26：侧栏显隐状态记忆
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem('mindgrid.sidebar-visible', sidebarVisible ? '1' : '0')
+    } catch {
+      // 存储不可用（如隐私模式）时静默忽略
+    }
+  }, [sidebarVisible])
 
   // 快捷键：Cmd/Ctrl + . 切换 ZEN 模式（Esc 退出），Shift + Cmd/Ctrl + P 进入演示模式，
   // Cmd/Ctrl + I 切换检查器显隐（preventDefault 避免浏览器书签栏冲突），
@@ -126,6 +143,8 @@ export function WorkspaceScreen({
         onOpenSearch={() => setSearchOpen(true)}
         inspectorVisible={inspectorVisible}
         onToggleInspector={() => setInspectorVisible((v) => !v)}
+        sidebarVisible={sidebarVisible}
+        onToggleSidebar={() => setSidebarVisible((v) => !v)}
         isOutlinerMode={isOutlinerMode}
         onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
         onFocusInspectorTopicTab={focusInspectorTopicTab}
@@ -149,6 +168,8 @@ export function WorkspaceScreen({
       <div
         className={`workspace-shell__body${
           inspectorVisible && !isOutlinerMode ? '' : ' workspace-shell__body--inspector-hidden'
+        }${
+          sidebarVisible && !isOutlinerMode ? '' : ' workspace-shell__body--sidebar-hidden'
         }${isOutlinerMode ? ' workspace-shell__body--outliner' : ''}`}
       >
         {isOutlinerMode ? (
@@ -160,19 +181,24 @@ export function WorkspaceScreen({
           />
         ) : (
           <>
-            <Sidebar
-              session={session}
-              selectedTopicIds={selectedTopicIds}
-              onSelectedTopicIdsChange={setSelectedTopicIds}
-            />
-            <CanvasHost
-              session={session}
-              selectedTopicIds={selectedTopicIds}
-              onSelectedTopicIdsChange={setSelectedTopicIds}
-              onNotify={onNotify}
-              searchOpen={searchOpen}
-              onSearchOpenChange={setSearchOpen}
-            />
+            {sidebarVisible ? (
+              <Sidebar
+                session={session}
+                selectedTopicIds={selectedTopicIds}
+                onSelectedTopicIdsChange={setSelectedTopicIds}
+              />
+            ) : null}
+            <div className="canvas-column">
+              {isZenMode ? null : <SheetTabBar session={session} />}
+              <CanvasHost
+                session={session}
+                selectedTopicIds={selectedTopicIds}
+                onSelectedTopicIdsChange={setSelectedTopicIds}
+                onNotify={onNotify}
+                searchOpen={searchOpen}
+                onSearchOpenChange={setSearchOpen}
+              />
+            </div>
             {inspectorVisible ? (
               <Inspector
                 session={session}
@@ -184,7 +210,6 @@ export function WorkspaceScreen({
           </>
         )}
       </div>
-      {isZenMode ? null : <SheetTabBar session={session} />}
       {isPresenting && session.document ? (
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />
       ) : null}

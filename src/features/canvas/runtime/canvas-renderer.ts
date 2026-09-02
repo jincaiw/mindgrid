@@ -30,9 +30,15 @@ import {
   SELECTION_RADIUS,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
+  getNodePadding,
   getNodeRadiusForShape,
   wrapText,
 } from './style-constants'
+import {
+  TOPIC_IMAGE_RADIUS,
+  TOPIC_IMAGE_TITLE_OFFSET,
+  computeTopicImageRect,
+} from './topic-image-constants'
 
 export interface RenderDPR {
   dpr: number
@@ -53,6 +59,14 @@ export interface RenderOptions {
   drawDecorations?: boolean
   /** 文档主题 ID（用于背景色与连线色解析）。缺省使用 classic-blue。 */
   themeId?: string
+  /**
+   * 已解码的主题图片：topicId → HTMLImageElement。
+   *
+   * `renderScene` 是同步的，无法在绘制过程中等待图片解码，因此由调用方
+   * （PNG Exporter）提前预加载后传入。未提供或缺失某项时静默跳过该图，
+   * 不抛错、不中断导出。
+   */
+  topicImages?: Map<string, HTMLImageElement>
 }
 
 /**
@@ -127,7 +141,7 @@ export function renderScene(
   if (drawTopics) {
     const topics = scene.nodes.filter((n): n is TopicRenderNode => n.type === 'topic')
     for (const topic of topics) {
-      drawTopic(ctx, topic)
+      drawTopic(ctx, topic, options.topicImages)
     }
   }
 
@@ -211,7 +225,11 @@ function drawEdge(ctx: CanvasRenderingContext2D, edge: EdgeRenderNode): void {
 
 // ---- 主题节点 ----
 
-function drawTopic(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+function drawTopic(
+  ctx: CanvasRenderingContext2D,
+  node: TopicRenderNode,
+  topicImages?: Map<string, HTMLImageElement>,
+): void {
   const { bounds, state } = node
 
   // 拖拽时降低透明度
@@ -230,6 +248,9 @@ function drawTopic(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
 
   // 边框
   drawNodeBorder(ctx, node)
+
+  // 主题图片（位于标题上方）
+  drawNodeImage(ctx, node, topicImages)
 
   // 文字
   drawNodeText(ctx, node)
@@ -356,7 +377,10 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
 
 function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
   const { bounds, text, depth, style } = node
-  const padding = depth === 0 ? 20 : depth === 1 ? 14 : 12
+  const padding = getNodePadding(depth)
+  // 与 SVG 端保持一致：只要 rich.image 存在就下移标题，即使图片解码失败，
+  // 这样 SVG 与 PNG 的版面不会因为个别坏图而错位。
+  const titleOffsetY = node.rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0
 
   // 标题：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
   ctx.font = `${style.fontWeight} ${style.fontSize}px ${FONT_FAMILY}`
@@ -366,12 +390,54 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): voi
 
   const lines = wrapText(text, bounds.width - padding * 2, ctx.font)
   const lineHeight = style.fontSize * 1.35
-  const titleY = bounds.y + padding
+  const titleY = bounds.y + padding + titleOffsetY
   for (let i = 0; i < lines.length; i++) {
     ctx.fillText(lines[i], bounds.x + padding, titleY + i * lineHeight)
   }
 
   // 元信息已移除（参考 XMind：折叠状态由节点角的 +/− 按钮表达，不再显示文字元信息）
+}
+
+/**
+ * 绘制主题图片（位于标题上方）。
+ *
+ * 几何与 SVG 端共用 computeTopicImageRect，缩放语义等价于 `object-fit: contain`
+ * （对应 SVG 的 `preserveAspectRatio="xMidYMid meet"`）：等比缩放至完全放入图片区并居中。
+ *
+ * 图片未预解码、解码失败或尚未完成解码时**静默跳过**：导出的首要目标是拿到图纸，
+ * 个别坏图不应让整次导出失败。标题下移与否由 rich.image 决定（见 drawNodeText），
+ * 与图片是否成功解码无关，保证 PNG 与 SVG 版面一致。
+ */
+function drawNodeImage(
+  ctx: CanvasRenderingContext2D,
+  node: TopicRenderNode,
+  topicImages: Map<string, HTMLImageElement> | undefined,
+): void {
+  if (!node.rich?.image) return
+
+  const image = topicImages?.get(node.id)
+  if (!image) return
+
+  const naturalWidth = image.naturalWidth
+  const naturalHeight = image.naturalHeight
+  // 解码未完成（宽高为 0）时跳过，否则 drawImage 会抛 InvalidStateError
+  if (!naturalWidth || !naturalHeight) return
+
+  const rect = computeTopicImageRect(node.bounds, getNodePadding(node.depth))
+  const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight)
+  const drawWidth = naturalWidth * scale
+  const drawHeight = naturalHeight * scale
+  const drawX = rect.x + (rect.width - drawWidth) / 2
+  const drawY = rect.y + (rect.height - drawHeight) / 2
+
+  // 圆角裁剪：DOM 的 .mindmap-node__image 只设 max-width/max-height（未固定宽高），
+  // 元素盒会贴合图片自身比例，因此 border-radius 实际圆化的是可见图像本身。
+  // 这里裁剪**实际绘制区域**而非整个图片区，才能与 DOM 视觉一致。
+  ctx.save()
+  roundRect(ctx, drawX, drawY, drawWidth, drawHeight, TOPIC_IMAGE_RADIUS)
+  ctx.clip()
+  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+  ctx.restore()
 }
 
 function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {

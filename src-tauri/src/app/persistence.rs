@@ -124,9 +124,12 @@ enum LoadMode {
     Repair,
 }
 
+/// 写入恢复快照（含资源区）。崩溃恢复必须连同图片字节一起落盘，
+/// 否则恢复出的文档只剩 asset_id 引用而没有字节流。
 pub fn persist_recovery_snapshot<R: Runtime>(
     app: &AppHandle<R>,
     session: &mut DocumentSession,
+    assets: &AssetStore,
 ) -> Result<(), String> {
     let document = session
         .document
@@ -135,38 +138,51 @@ pub fn persist_recovery_snapshot<R: Runtime>(
     let recovery_path = recovery_snapshot_path(app)?;
     let timestamp_ms = current_timestamp_ms();
 
-    write_document_archive(document, &recovery_path, timestamp_ms)?;
+    write_document_archive_with_assets(document, assets, &recovery_path, timestamp_ms)?;
     session.mark_autosaved(timestamp_ms);
 
     Ok(())
 }
 
-pub fn try_restore_recovery_snapshot<R: Runtime>(
+/// 读取恢复快照，连同资源区一起返回。
+pub fn try_restore_recovery_snapshot_with_assets<R: Runtime>(
     app: &AppHandle<R>,
-) -> Result<Option<DocumentSnapshot>, String> {
+) -> Result<Option<(DocumentSnapshot, AssetStore)>, String> {
     let recovery_path = recovery_snapshot_path(app)?;
 
     if !recovery_path.exists() {
         return Ok(None);
     }
 
-    read_document_archive(&recovery_path).map(Some)
+    let document = read_document_archive(&recovery_path)?;
+    let assets = load_assets_from_archive(&recovery_path)?;
+
+    Ok(Some((document, assets)))
 }
 
-pub fn open_document_file(path: &Path) -> Result<DocumentSnapshot, String> {
+/// 打开 .mgd 文件，返回文档与其中的资源存储。
+/// 资源区缺失（旧文档）时返回空存储，不阻塞打开。
+pub fn open_document_file_with_assets(path: &Path) -> Result<(DocumentSnapshot, AssetStore), String> {
     let mut repair_stats = RepairStats::default();
 
-    read_document_archive_with_mode(path, LoadMode::Strict, &mut repair_stats)
+    let document = read_document_archive_with_mode(path, LoadMode::Strict, &mut repair_stats)?;
+    let assets = load_assets_from_archive(path)?;
+
+    Ok((document, assets))
 }
 
-pub fn save_document_file(session: &mut DocumentSession, path: &Path) -> Result<(), String> {
+pub fn save_document_file(
+    session: &mut DocumentSession,
+    assets: &AssetStore,
+    path: &Path,
+) -> Result<(), String> {
     let document = session
         .document
         .as_ref()
         .ok_or_else(|| "当前没有打开的文档".to_string())?;
     let timestamp_ms = current_timestamp_ms();
 
-    write_document_archive(document, path, timestamp_ms)?;
+    write_document_archive_with_assets(document, assets, path, timestamp_ms)?;
     session.mark_saved(path.to_string_lossy().to_string(), timestamp_ms);
 
     Ok(())
@@ -175,18 +191,26 @@ pub fn save_document_file(session: &mut DocumentSession, path: &Path) -> Result<
 pub fn export_recovery_copy<R: Runtime>(
     app: &AppHandle<R>,
     session: &DocumentSession,
+    assets: &AssetStore,
     path: &Path,
 ) -> Result<(), String> {
-    let document = if recovery_snapshot_path(app)?.exists() {
-        read_document_archive(&recovery_snapshot_path(app)?)?
-    } else {
-        session
-            .document
-            .clone()
-            .ok_or_else(|| "当前没有可导出的恢复内容".to_string())?
-    };
+    if recovery_snapshot_path(app)?.exists() {
+        let recovery_path = recovery_snapshot_path(app)?;
+        let (document, recovery_assets) = open_document_file_with_assets(&recovery_path)?;
+        return write_document_archive_with_assets(
+            &document,
+            &recovery_assets,
+            path,
+            current_timestamp_ms(),
+        );
+    }
 
-    write_document_archive(&document, path, current_timestamp_ms())
+    let document = session
+        .document
+        .clone()
+        .ok_or_else(|| "当前没有可导出的恢复内容".to_string())?;
+
+    write_document_archive_with_assets(&document, assets, path, current_timestamp_ms())
 }
 
 fn recovery_snapshot_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -203,10 +227,26 @@ pub fn write_document_archive(
     path: &Path,
     timestamp_ms: u64,
 ) -> Result<(), String> {
-    let contents = MgdContents::from_document(document.clone(), timestamp_ms);
+    write_document_archive_with_assets(document, &AssetStore::default(), path, timestamp_ms)
+}
+
+/// 带资源区的保存（生产保存与恢复快照均走此路径）。
+/// 与 `write_document_archive` 一样不做 Level 4 校验：写入前已由
+/// `write_archive_to_temp` 执行 GC + Hash 自检，缺失/越界的引用不会进入归档。
+pub fn write_document_archive_with_assets(
+    document: &DocumentSnapshot,
+    assets: &AssetStore,
+    path: &Path,
+    timestamp_ms: u64,
+) -> Result<(), String> {
+    let contents = MgdContents {
+        document: document.clone(),
+        assets: assets.clone(),
+        metadata: DocumentMetadata::from_document(document, timestamp_ms),
+        styles: None,
+    };
     let temp_path = path.with_extension("tmp");
     write_archive_to_temp(&contents, &temp_path, timestamp_ms)?;
-    // 简单保存不做 Level 4 校验（资源引用 + Hash），用于恢复快照与无资源场景。
     atomic_replace(&temp_path, path)
 }
 
@@ -408,7 +448,14 @@ pub fn repair_document_file_with_report(
         read_document_archive_with_mode(source_path, LoadMode::Repair, &mut repair_stats)?;
     let timestamp_ms = current_timestamp_ms();
 
-    write_document_archive(&repaired_document, destination_path, timestamp_ms)?;
+    // 保留原文档的资源区，避免修复后图片丢失
+    let assets = load_assets_from_archive(source_path)?;
+    write_document_archive_with_assets(
+        &repaired_document,
+        &assets,
+        destination_path,
+        timestamp_ms,
+    )?;
 
     Ok(RepairOutcome {
         document: repaired_document,
@@ -425,56 +472,7 @@ fn read_document_archive_with_mode(
     let file = File::open(path).map_err(|error| format!("无法打开文档: {error}"))?;
     let mut archive = ZipArchive::new(file).map_err(|error| format!("文档容器无效: {error}"))?;
 
-    // Zip Bomb 防护：条目数量上限
-    if archive.len() > ZIP_BOMB_MAX_ENTRIES {
-        return Err(format!(
-            "文档条目数 {} 超过上限 {}，疑似 Zip Bomb",
-            archive.len(),
-            ZIP_BOMB_MAX_ENTRIES
-        ));
-    }
-
-    let mut entry_names = HashSet::new();
-    let mut total_uncompressed: u64 = 0;
-
-    for index in 0..archive.len() {
-        let entry = archive
-            .by_index(index)
-            .map_err(|error| format!("无法读取文档条目: {error}"))?;
-        let name = entry.name().to_string();
-
-        // Zip Slip 防护
-        if name.starts_with('/') || name.contains("..") {
-            return Err("文档容器包含非法路径".into());
-        }
-
-        if !entry_names.insert(name.clone()) {
-            return Err("文档容器包含重复条目".into());
-        }
-
-        // Zip Bomb 防护：单条目大小 + 累计大小 + 压缩比
-        let uncompressed = entry.size();
-        let compressed = entry.compressed_size();
-        if uncompressed > ZIP_BOMB_MAX_ENTRY_BYTES {
-            return Err(format!(
-                "条目 {name} 解压后 {uncompressed} 字节超过单条目上限 {ZIP_BOMB_MAX_ENTRY_BYTES}"
-            ));
-        }
-        total_uncompressed = total_uncompressed.saturating_add(uncompressed);
-        if total_uncompressed > ZIP_BOMB_MAX_UNCOMPRESSED_BYTES {
-            return Err(format!(
-                "文档解压后总大小超过上限 {ZIP_BOMB_MAX_UNCOMPRESSED_BYTES} 字节，疑似 Zip Bomb"
-            ));
-        }
-        if compressed > 0 && uncompressed / compressed > ZIP_BOMB_MAX_COMPRESSION_RATIO {
-            return Err(format!(
-                "条目 {name} 压缩比 {}:{} 超过上限 {}，疑似 Zip Bomb",
-                uncompressed,
-                compressed,
-                ZIP_BOMB_MAX_COMPRESSION_RATIO
-            ));
-        }
-    }
+    let entry_names = inspect_archive_entries(&mut archive)?;
 
     if !entry_names.contains("mimetype")
         || !entry_names.contains("manifest.json")
@@ -531,6 +529,77 @@ fn read_document_archive_with_mode(
     Ok(document)
 }
 
+/// 遍历归档条目执行 Zip Slip / Zip Bomb 防护，返回条目名集合。
+/// 读取资源区时必须复用同一套防护，避免图片字节成为绕过校验的入口。
+fn inspect_archive_entries(
+    archive: &mut ZipArchive<File>,
+) -> Result<HashSet<String>, String> {
+    // Zip Bomb 防护：条目数量上限
+    if archive.len() > ZIP_BOMB_MAX_ENTRIES {
+        return Err(format!(
+            "文档条目数 {} 超过上限 {}，疑似 Zip Bomb",
+            archive.len(),
+            ZIP_BOMB_MAX_ENTRIES
+        ));
+    }
+
+    let mut entry_names = HashSet::new();
+    let mut total_uncompressed: u64 = 0;
+
+    for index in 0..archive.len() {
+        let entry = archive
+            .by_index(index)
+            .map_err(|error| format!("无法读取文档条目: {error}"))?;
+        let name = entry.name().to_string();
+
+        // Zip Slip 防护
+        if name.starts_with('/') || name.contains("..") {
+            return Err("文档容器包含非法路径".into());
+        }
+
+        if !entry_names.insert(name.clone()) {
+            return Err("文档容器包含重复条目".into());
+        }
+
+        // Zip Bomb 防护：单条目大小 + 累计大小 + 压缩比
+        let uncompressed = entry.size();
+        let compressed = entry.compressed_size();
+        if uncompressed > ZIP_BOMB_MAX_ENTRY_BYTES {
+            return Err(format!(
+                "条目 {name} 解压后 {uncompressed} 字节超过单条目上限 {ZIP_BOMB_MAX_ENTRY_BYTES}"
+            ));
+        }
+        total_uncompressed = total_uncompressed.saturating_add(uncompressed);
+        if total_uncompressed > ZIP_BOMB_MAX_UNCOMPRESSED_BYTES {
+            return Err(format!(
+                "文档解压后总大小超过上限 {ZIP_BOMB_MAX_UNCOMPRESSED_BYTES} 字节，疑似 Zip Bomb"
+            ));
+        }
+        if compressed > 0 && uncompressed / compressed > ZIP_BOMB_MAX_COMPRESSION_RATIO {
+            return Err(format!(
+                "条目 {name} 压缩比 {}:{} 超过上限 {}，疑似 Zip Bomb",
+                uncompressed,
+                compressed,
+                ZIP_BOMB_MAX_COMPRESSION_RATIO
+            ));
+        }
+    }
+
+    Ok(entry_names)
+}
+
+/// 读取归档的资源区（assets/index.json + 资源字节）。
+/// 没有资源区的旧文档返回空存储。
+fn load_assets_from_archive(path: &Path) -> Result<AssetStore, String> {
+    let file = File::open(path).map_err(|error| format!("无法打开文档: {error}"))?;
+    let mut archive = ZipArchive::new(file).map_err(|error| format!("文档容器无效: {error}"))?;
+
+    // 与文档读取一致的 Zip Slip / Zip Bomb 防护
+    inspect_archive_entries(&mut archive)?;
+
+    AssetStore::load_from_zip(&mut archive)
+}
+
 /// 读取完整 .mgd 归档内容：文档 + 资源 + 元数据 + 样式。
 /// 在 `read_document_archive` 基础上额外加载可选的 metadata.json / styles.json / assets/。
 pub fn read_document_archive_full(path: &Path) -> Result<MgdContents, String> {
@@ -541,6 +610,8 @@ pub fn read_document_archive_full(path: &Path) -> Result<MgdContents, String> {
     // 重新打开归档读取可选条目
     let file = File::open(path).map_err(|error| format!("无法打开文档: {error}"))?;
     let mut archive = ZipArchive::new(file).map_err(|error| format!("文档容器无效: {error}"))?;
+    // 资源字节属于不可信输入，同样过一遍 Zip Slip / Zip Bomb 防护
+    inspect_archive_entries(&mut archive)?;
 
     // metadata.json（可选：旧文档可能没有）
     let metadata = match archive.by_name("metadata.json") {

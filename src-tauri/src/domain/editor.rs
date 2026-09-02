@@ -11,8 +11,8 @@ use crate::domain::document::{
     clone_topic_branch, contains_topic, create_id, find_parent_id_and_index, find_topic,
     find_topic_mut, normalize_topic_ids_for_batch, normalize_topic_ids_for_delete, Boundary,
     ChartType, DocumentSnapshot, Relationship, SheetBranchStyle, SheetSnapshot,
-    SummaryNode, ThemeRef, TopicLink, TopicLayoutHints, TopicMarker, TopicSnapshot,
-    TopicStyleOverrides, TopicTask,
+    SummaryNode, ThemeRef, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
+    TopicSnapshot, TopicStyleOverrides, TopicTask,
 };
 
 /// 主题字段级变更（正向 old→new，逆操作只需交换 old/new）。
@@ -36,6 +36,11 @@ pub enum TopicFieldChange {
     StyleOverrides {
         old: Option<TopicStyleOverrides>,
         new: Option<TopicStyleOverrides>,
+    },
+    /// 主题图片（引用 assets/ 下的资源，None 表示移除图片）。
+    Image {
+        old: Option<TopicImage>,
+        new: Option<TopicImage>,
     },
 }
 
@@ -184,6 +189,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     old: new.clone(),
                     new: old.clone(),
                 },
+                TopicFieldChange::Image { old, new } => TopicFieldChange::Image {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
             };
             Operation::SetTopicField {
                 sheet_id: sheet_id.clone(),
@@ -329,6 +338,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::Task { new, .. } => topic.task = new.clone(),
         TopicFieldChange::StyleRef { new, .. } => topic.style_ref = new.clone(),
         TopicFieldChange::StyleOverrides { new, .. } => topic.style_overrides = new.clone(),
+        TopicFieldChange::Image { new, .. } => topic.image = new.clone(),
     }
 }
 
@@ -732,6 +742,17 @@ impl<'a> DocumentEditor<'a> {
             |t| t.style_ref.clone(),
             |new, old| TopicFieldChange::StyleRef { old, new },
             |t, v| t.style_ref = v,
+        );
+    }
+
+    fn set_topic_image_raw(&mut self, sheet_id: &str, topic_id: &str, new_image: Option<TopicImage>) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_image,
+            |t| t.image.clone(),
+            |new, old| TopicFieldChange::Image { old, new },
+            |t, v| t.image = v,
         );
     }
 
@@ -1294,6 +1315,13 @@ impl<'a> DocumentEditor<'a> {
     ) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑样式的")?;
         self.set_topic_style_overrides_raw(&sheet_id, topic_id, style_overrides);
+        Ok(())
+    }
+
+    /// 设置/移除主题图片。`image` 为 None 时移除（XMind 图片主题的对标行为）。
+    pub fn set_topic_image(&mut self, topic_id: &str, image: Option<TopicImage>) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑图片")?;
+        self.set_topic_image_raw(&sheet_id, topic_id, image);
         Ok(())
     }
 
@@ -2429,6 +2457,191 @@ mod tests {
         };
         assert!(editor
             .set_topic_style_overrides("missing-topic", Some(overrides))
+            .is_err());
+        assert!(editor.into_ops().is_empty());
+    }
+
+    #[test]
+    fn set_topic_image_round_trips_and_inverts() {
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let new_image = Some(TopicImage {
+            asset_id: "sha256-abc.png".into(),
+            width: None,
+            height: None,
+        });
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_image(&child_a, new_image.clone()).unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Operation::SetTopicField {
+                change: TopicFieldChange::Image { old, new },
+                ..
+            } => {
+                assert!(old.is_none());
+                assert_eq!(new, &new_image);
+            }
+            other => panic!("expected SetTopicField/Image, got {:?}", other),
+        }
+
+        // 正向应用后主题携带图片引用
+        let topic = find_topic(document.root_topic(), &child_a).unwrap();
+        assert_eq!(topic.image, new_image);
+
+        // 逆操作回到 None（撤销插入图片）
+        apply_inverse(&mut document, &ops);
+        let topic = find_topic(document.root_topic(), &child_a).unwrap();
+        assert!(topic.image.is_none());
+    }
+
+    #[test]
+    fn image_field_change_invert_is_an_involution() {
+        // invert_operation 是自己的逆：连续两次应用必须回到原值
+        let original = Operation::SetTopicField {
+            sheet_id: "sheet-1".into(),
+            topic_id: "topic-1".into(),
+            change: TopicFieldChange::Image {
+                old: None,
+                new: Some(TopicImage {
+                    asset_id: "sha256-abc.png".into(),
+                    width: Some(320),
+                    height: Some(240),
+                }),
+            },
+        };
+
+        let once = invert_operation(&original);
+        let twice = invert_operation(&once);
+
+        assert_ne!(once, original, "一次 invert 必须交换 old/new");
+        assert_eq!(twice, original, "两次 invert 必须回到原值");
+
+        // 交换语义：一次 invert 后 old/new 对调
+        match &once {
+            Operation::SetTopicField {
+                sheet_id,
+                topic_id,
+                change: TopicFieldChange::Image { old, new },
+            } => {
+                assert_eq!(sheet_id, "sheet-1");
+                assert_eq!(topic_id, "topic-1", "invert 不得丢失定位信息");
+                assert!(new.is_none());
+                assert_eq!(old.as_ref().unwrap().asset_id, "sha256-abc.png");
+                assert_eq!((old.as_ref().unwrap().width, old.as_ref().unwrap().height), (Some(320), Some(240)));
+            }
+            other => panic!("expected SetTopicField/Image, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn set_topic_image_replaces_existing_and_inverts() {
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let first = Some(TopicImage {
+            asset_id: "sha256-first.png".into(),
+            width: None,
+            height: None,
+        });
+        let second = Some(TopicImage {
+            asset_id: "sha256-second.png".into(),
+            width: Some(320),
+            height: Some(180),
+        });
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_image(&child_a, first.clone()).unwrap();
+        let _ = editor.into_ops();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_image(&child_a, second.clone()).unwrap();
+        let ops = editor.into_ops();
+
+        // 替换图片时旧值必须被捕获，撤销才能回到第一张
+        match &ops[0] {
+            Operation::SetTopicField {
+                change: TopicFieldChange::Image { old, new },
+                ..
+            } => {
+                assert_eq!(old, &first);
+                assert_eq!(new, &second);
+            }
+            other => panic!("expected SetTopicField/Image, got {:?}", other),
+        }
+
+        apply_inverse(&mut document, &ops);
+        let topic = find_topic(document.root_topic(), &child_a).unwrap();
+        assert_eq!(topic.image, first);
+    }
+
+    #[test]
+    fn set_topic_image_noop_when_same() {
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let image = Some(TopicImage {
+            asset_id: "sha256-abc.png".into(),
+            width: None,
+            height: None,
+        });
+
+        {
+            let mut editor = DocumentEditor::new(&mut document);
+            editor.set_topic_image(&child_a, image.clone()).unwrap();
+            let _ = editor.into_ops();
+        }
+
+        // 再次写入相同值，不应记录任何操作
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_image(&child_a, image).unwrap();
+        assert!(editor.into_ops().is_empty());
+    }
+
+    #[test]
+    fn set_topic_image_none_removes_image() {
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let image = Some(TopicImage {
+            asset_id: "sha256-abc.png".into(),
+            width: None,
+            height: None,
+        });
+        {
+            let mut editor = DocumentEditor::new(&mut document);
+            editor.set_topic_image(&child_a, image).unwrap();
+            let _ = editor.into_ops();
+        }
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_image(&child_a, None).unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        let topic = find_topic(document.root_topic(), &child_a).unwrap();
+        assert!(topic.image.is_none());
+
+        // 撤销移除 → 图片引用恢复
+        apply_inverse(&mut document, &ops);
+        let topic = find_topic(document.root_topic(), &child_a).unwrap();
+        assert_eq!(topic.image.as_ref().unwrap().asset_id, "sha256-abc.png");
+    }
+
+    #[test]
+    fn set_topic_image_rejects_missing_topic() {
+        let mut document = DocumentSnapshot::new_default();
+        let mut editor = DocumentEditor::new(&mut document);
+        let image = TopicImage {
+            asset_id: "sha256-abc.png".into(),
+            width: None,
+            height: None,
+        };
+        assert!(editor
+            .set_topic_image("missing-topic", Some(image))
             .is_err());
         assert!(editor.into_ops().is_empty());
     }

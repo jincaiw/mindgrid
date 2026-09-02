@@ -1,4 +1,5 @@
 import type { TopicSnapshot } from '../../lib/document/types'
+import { TOPIC_IMAGE_BLOCK, TOPIC_IMAGE_MIN_WIDTH } from './runtime/topic-image-constants'
 
 type LayoutSide = 'left' | 'right' | 'center'
 
@@ -39,12 +40,14 @@ export interface MindMapLayoutResult {
   offsetY: number
 }
 
-const ROOT_HORIZONTAL_GAP = 220
-const DEPTH_HORIZONTAL_GAP = 178
-const VERTICAL_GAP = 26
-const LEAF_BLOCK = 92
+const ROOT_HORIZONTAL_GAP = 160
+const DEPTH_HORIZONTAL_GAP = 120
+const VERTICAL_GAP = 18
+const LEAF_BLOCK = 80
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
+// 主题图片尺寸常量统一来自 runtime/topic-image-constants.ts：
+// 布局估算、DOM 样式、三端导出必须引用同一组值，否则图片位置会漂移。
 
 export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
@@ -52,6 +55,13 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const width = Math.min(widthBase + textLength * 12, depth === 0 ? 300 : 250)
   const lineCount = Math.max(1, Math.ceil(textLength / (depth === 0 ? 14 : 16)))
   const height = 44 + (lineCount - 1) * 18
+
+  if (topic.image) {
+    return {
+      width: Math.max(width, TOPIC_IMAGE_MIN_WIDTH),
+      height: height + TOPIC_IMAGE_BLOCK,
+    }
+  }
 
   return { width, height }
 }

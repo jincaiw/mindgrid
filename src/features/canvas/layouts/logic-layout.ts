@@ -15,9 +15,9 @@ import {
   measureSubtree,
 } from './layout-utils'
 
-const COL_GAP = 220
-const LEAF_BLOCK = 92
-const ROW_GAP = 26
+const COL_GAP = 150
+const LEAF_BLOCK = 80
+const ROW_GAP = 18
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
 

@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import type { DocumentSession } from '../document/use-document-session'
 
 /**
- * 画布底部标签栏（批次 19）。
+ * 画布顶部标签栏（批次 19 初版，Round 4 批次 26 移至画布顶部）。
  *
- * 对标 XMind 画布底部的 Sheet 标签栏：横向列出当前文档的全部画布，
- * 单击切换、双击重命名、右键菜单管理（删除/左右移动）、末尾「+」新建。
- * 侧栏的画布管理面板保留不变，此处仅作为画布下方的快速入口。
+ * 对标 XMind 画布顶部的 Sheet 标签栏：横向列出当前文档的全部画布，
+ * 单击切换、双击重命名、hover 显示关闭 ×、右键菜单管理（删除/左右移动）、末尾「+」新建。
+ * 侧栏的画布管理面板保留不变，此处仅作为画布上方的快速入口。
  */
 interface SheetTabBarProps {
   session: DocumentSession
@@ -117,6 +117,20 @@ export function SheetTabBar({ session }: SheetTabBarProps) {
                   <span className="sheet-tab-bar__label">{sheet.title}</span>
                 </button>
               )}
+              {!isRenaming && sheets.length > 1 ? (
+                <button
+                  type="button"
+                  className="sheet-tab-bar__close"
+                  aria-label={`关闭画布 ${sheet.title}`}
+                  title="关闭画布"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void session.deleteSheet(sheet.id)
+                  }}
+                >
+                  ×
+                </button>
+              ) : null}
               {menuId === sheet.id ? (
                 <div className="sheet-tab-bar__menu" data-sheet-menu role="menu" aria-label="画布操作">
                   <button

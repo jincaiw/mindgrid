@@ -38,6 +38,53 @@ let hasUnsavedChanges = false
 let recoveredFromAutosave = false
 let repairReport: DocumentSessionSnapshot['repairReport'] = null
 let recoveryStorageFallback: string | null = null
+/**
+ * 浏览器开发态的资源表：assetId → data URL。
+ *
+ * 浏览器环境无法读取本地绝对路径，因此 set_topic_image 在此只接受 data: URL 或
+ * 可 fetch 的 http(s) 地址，读入内存后登记到本表，read_asset_data_url 再按 id 取回。
+ * 与 Rust 侧的 assets/ 资源表行为对齐（仅生命周期为进程内）。
+ */
+const browserAssetDataUrls = new Map<string, string>()
+
+/** 将图片内容登记进浏览器资源表并返回 assetId（同内容复用已有 id，避免重复膨胀）。 */
+function registerBrowserAssetDataUrl(dataUrl: string): string {
+  for (const [assetId, existing] of browserAssetDataUrls) {
+    if (existing === dataUrl) {
+      return assetId
+    }
+  }
+
+  const assetId = createId('asset')
+  browserAssetDataUrls.set(assetId, dataUrl)
+  return assetId
+}
+
+/** 把 sourcePath 解析为 data URL：data: 原样返回，http(s) 走 fetch，其余不支持。 */
+async function resolveBrowserImageDataUrl(sourcePath: string): Promise<string> {
+  if (sourcePath.startsWith('data:')) {
+    return sourcePath
+  }
+
+  if (sourcePath.startsWith('http://') || sourcePath.startsWith('https://')) {
+    const response = await fetch(sourcePath)
+
+    if (!response.ok) {
+      throw new Error(`图片下载失败（HTTP ${response.status}）`)
+    }
+
+    const blob = await response.blob()
+
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+      reader.onerror = () => reject(new Error('图片读取失败'))
+      reader.readAsDataURL(blob)
+    })
+  }
+
+  throw new Error('浏览器开发态暂不支持读取本地图片路径，请使用桌面版运行')
+}
 
 function getRecoveryStorageItem() {
   try {
@@ -364,6 +411,7 @@ export function resetBrowserSessionForTests(preserveRecovery = false) {
   hasUnsavedChanges = false
   recoveredFromAutosave = false
   repairReport = null
+  browserAssetDataUrls.clear()
 
   if (!preserveRecovery) {
     removeRecoveryStorageItem()
@@ -852,6 +900,37 @@ export async function invokeBrowserCommand<TResult>(
         topic.notes = nextNotes
         return activeTopicId ?? topicId
       }) as TResult
+    }
+    case 'set_topic_image': {
+      const topicId = String(payload.topic_id)
+      const sourcePath = String(payload.source_path ?? '')
+      const dataUrl = await resolveBrowserImageDataUrl(sourcePath)
+      const assetId = registerBrowserAssetDataUrl(dataUrl)
+
+      return applyMutation('插入图片', (draft) => {
+        const topic = findTopicById(getActiveRootTopic(draft), topicId)
+        if (!topic) {
+          throw new Error('找不到需要插入图片的主题')
+        }
+        topic.image = { assetId }
+        return activeTopicId ?? topicId
+      }) as TResult
+    }
+    case 'remove_topic_image': {
+      const topicId = String(payload.topic_id)
+
+      return applyMutation('移除图片', (draft) => {
+        const topic = findTopicById(getActiveRootTopic(draft), topicId)
+        if (!topic) {
+          throw new Error('找不到需要移除图片的主题')
+        }
+        topic.image = undefined
+        return activeTopicId ?? topicId
+      }) as TResult
+    }
+    case 'read_asset_data_url': {
+      // 资源缺失时返回空串，渲染层静默降级（不显示图片）
+      return (browserAssetDataUrls.get(String(payload.asset_id)) ?? '') as TResult
     }
     case 'set_topic_link': {
       const topicId = String(payload.topic_id)

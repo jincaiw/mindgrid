@@ -85,6 +85,13 @@ export interface BuildSceneOptions {
   branchStyle?: SheetBranchStyle
   /** 是否启用视口剔除（虚拟化）。测试或全量导出时可关闭。 */
   enableCulling?: boolean
+  /**
+   * 主题图片解析结果：topicId → data URL。
+   *
+   * 只有导出路径需要携带它（DOM 渲染走 React 侧的 useTopicImageUrls Hook，
+   * 不经过 Scene）。缺省时主题不携带 image 字段，渲染端行为与改动前完全一致。
+   */
+  topicImageUrls?: Record<string, string>
 }
 
 /**
@@ -175,7 +182,9 @@ export function buildScene(options: BuildSceneOptions): Scene {
     if (cullRect && !rectsIntersect(bounds, cullRect)) {
       continue
     }
-    nodes.push(topicToRenderNode(layoutNode, bounds, visualStates, options.themeId))
+    nodes.push(
+      topicToRenderNode(layoutNode, bounds, visualStates, options.themeId, options.topicImageUrls),
+    )
   }
 
   // 关系线（在主题之后，z-order 更高）
@@ -255,6 +264,7 @@ function topicToRenderNode(
   bounds: WorldRect,
   states: TopicVisualStates,
   themeId: string | undefined,
+  topicImageUrls: Record<string, string> | undefined,
 ): TopicRenderNode {
   const id = layoutNode.id
   const visualState: TopicVisualState = {
@@ -277,12 +287,14 @@ function topicToRenderNode(
 
   // 富内容投影：仅当存在任意 meta 字段时携带，避免空对象污染渲染端判断
   const topic = layoutNode.topic
+  const imageUrl = topicImageUrls?.[id]
   const hasRichContent =
     (topic.markers && topic.markers.length > 0) ||
     (topic.labels && topic.labels.length > 0) ||
     (topic.notes && topic.notes.length > 0) ||
     topic.link ||
-    topic.task
+    topic.task ||
+    !!imageUrl
   const rich = hasRichContent
     ? {
         markers: topic.markers?.slice(),
@@ -290,6 +302,7 @@ function topicToRenderNode(
         notes: topic.notes,
         link: topic.link,
         task: topic.task,
+        image: imageUrl,
       }
     : undefined
 

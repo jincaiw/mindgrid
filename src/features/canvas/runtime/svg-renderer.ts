@@ -17,10 +17,12 @@ import {
   FONT_FAMILY,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
+  getNodePadding,
   getNodeRadiusForShape,
   measureTextWidth,
   wrapText,
 } from './style-constants'
+import { TOPIC_IMAGE_TITLE_OFFSET, computeTopicImageRect } from './topic-image-constants'
 import { resolveThemeBackground } from './style-resolver'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
@@ -112,6 +114,8 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg"`,
+    // xlink 命名空间：主题图片同时输出 href 与 xlink:href，兼容旧渲染器与 svg2pdf.js
+    `     xmlns:xlink="http://www.w3.org/1999/xlink"`,
     `     viewBox="${viewBox}"`,
     `     width="${fmt(bounds.width)}" height="${fmt(bounds.height)}"`,
     `     font-family="${escapeXml(FONT_FAMILY)}">`,
@@ -142,7 +146,11 @@ function topicToSvg(node: TopicRenderNode): string {
   const isRoot = depth === 0
   const isUnderline = style.shape === 'underline'
   const radius = isUnderline ? 0 : getNodeRadiusForShape(style.shape, depth, bounds.height)
-  const padding = depth === 0 ? 20 : depth === 1 ? 14 : 12
+  // 与 DOM / Canvas Renderer 共用同一套内边距，避免 SVG 导出与屏幕显示错位
+  const padding = getNodePadding(depth)
+  const rich = node.rich
+  /** 有图时标题下移，给图片区让位。 */
+  const titleOffsetY = rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0
 
   const elements: string[] = []
 
@@ -174,7 +182,7 @@ function topicToSvg(node: TopicRenderNode): string {
   const maxTextWidth = bounds.width - padding * 2
   const lines = wrapText(text, maxTextWidth, titleFont)
   const lineHeight = style.fontSize * 1.35
-  const titleY = bounds.y + padding
+  const titleY = bounds.y + padding + titleOffsetY
 
   const tspans = lines
     .map(
@@ -183,6 +191,14 @@ function topicToSvg(node: TopicRenderNode): string {
     )
     .join('\n')
 
+  // 主题图片：位于标题上方，几何与 DOM 的 .mindmap-node__image 完全对齐
+  if (rich?.image) {
+    const rect = computeTopicImageRect(bounds, padding)
+    elements.push(
+      `  <image x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" preserveAspectRatio="xMidYMid meet" href="${escapeXml(rich.image)}" xlink:href="${escapeXml(rich.image)}"/>`,
+    )
+  }
+
   elements.push(
     `  <text x="${fmt(bounds.x + padding)}" y="${fmt(titleY)}" font-size="${fmt(style.fontSize)}" font-weight="${style.fontWeight}" fill="${style.textColor}" dominant-baseline="hanging">`,
     tspans,
@@ -190,7 +206,6 @@ function topicToSvg(node: TopicRenderNode): string {
   )
 
   // —— 富内容投影：task / markers / notes / link / labels（与 DOM 渲染对齐）——
-  const rich = node.rich
   if (rich) {
     // 任务状态图标：节点左侧垂直居中
     if (rich.task) {

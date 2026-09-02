@@ -27,6 +27,7 @@ import {
   ShareIcon,
   SiblingTopicIcon,
   StructureIcon,
+  PanelLeftIcon,
   SubTopicIcon,
   SunIcon,
   ThemeIcon,
@@ -48,6 +49,9 @@ interface ToolbarProps {
   /** 检查器显隐（与 Cmd/Ctrl + I 同一行为） */
   inspectorVisible?: boolean
   onToggleInspector?: () => void
+  /** 批次 26：侧栏显隐（与 Cmd/Ctrl + B 同一行为） */
+  sidebarVisible?: boolean
+  onToggleSidebar?: () => void
   /** 大纲全屏视图显隐（批次 19）：隐藏画布，全宽编辑主题树 */
   isOutlinerMode?: boolean
   onToggleOutliner?: () => void
@@ -348,6 +352,8 @@ export function Toolbar({
   onOpenSearch,
   inspectorVisible = true,
   onToggleInspector,
+  sidebarVisible = true,
+  onToggleSidebar,
   isOutlinerMode = false,
   onToggleOutliner,
   onFocusInspectorTopicTab,
@@ -618,6 +624,18 @@ export function Toolbar({
         >
           <SearchIcon />
         </IconButton>
+        {onToggleSidebar ? (
+          <button
+            className="toolbar__icon-btn toolbar__icon-btn--ghost"
+            type="button"
+            onClick={onToggleSidebar}
+            title="侧栏（Cmd/Ctrl + B）"
+            aria-label="侧栏"
+            aria-pressed={sidebarVisible}
+          >
+            <PanelLeftIcon />
+          </button>
+        ) : null}
         {onToggleInspector ? (
           <button
             className="toolbar__icon-btn toolbar__icon-btn--ghost"

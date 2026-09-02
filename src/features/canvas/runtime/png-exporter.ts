@@ -75,11 +75,14 @@ export async function renderSceneToPngBytes(
     y: -exportBounds.y,
     zoom: 1,
   }
+  const topicImages = await preloadTopicImages(scene)
+
   const renderOptions: RenderOptions = {
     drawBackground,
     drawTopics: true,
     drawOverlays: false,
     drawDecorations: true,
+    topicImages,
   }
 
   renderScene(ctx, scene, viewport, camera, scale, renderOptions)
@@ -89,6 +92,79 @@ export async function renderSceneToPngBytes(
   const arrayBuffer = await blob.arrayBuffer()
 
   return new Uint8Array(arrayBuffer)
+}
+
+// ---- 主题图片预加载 ----
+
+/**
+ * 单张图片解码的超时上限。
+ *
+ * 必要性：jsdom 等环境里 `Image` 构造器存在但没有真实解码能力，
+ * `onload` 与 `onerror` **都不会触发**，若不设超时会让导出永久挂起。
+ */
+const IMAGE_DECODE_TIMEOUT_MS = 1000
+
+/**
+ * 预加载场景内所有主题图片，返回「已成功解码」的子集。
+ *
+ * `renderScene` 是同步的，无法在绘制过程中等待图片解码，因此导出流程必须提前完成。
+ * 本函数独立导出，便于直接测试容错行为。
+ *
+ * @returns topicId → 已解码图像；仅包含解码成功的项
+ */
+export async function preloadTopicImages(
+  scene: Scene,
+  timeoutMs: number = IMAGE_DECODE_TIMEOUT_MS,
+): Promise<Map<string, HTMLImageElement>> {
+  const decoded = new Map<string, HTMLImageElement>()
+  const pending: Array<Promise<void>> = []
+
+  for (const node of scene.nodes) {
+    if (node.type !== 'topic') continue
+    const dataUrl = node.rich?.image
+    if (!dataUrl) continue
+
+    const topicId = node.id
+    pending.push(
+      decodeImage(dataUrl, timeoutMs).then((image) => {
+        if (image) {
+          decoded.set(topicId, image)
+        }
+      }),
+    )
+  }
+
+  await Promise.all(pending)
+  return decoded
+}
+
+/** 解码单个 data URL。环境不支持 / 解码失败 / 超时均返回 null，绝不抛错。 */
+export function decodeImage(
+  dataUrl: string,
+  timeoutMs: number = IMAGE_DECODE_TIMEOUT_MS,
+): Promise<HTMLImageElement | null> {
+  // 无 DOM 环境（Node 侧单测）直接降级
+  if (typeof Image === 'undefined') {
+    return Promise.resolve(null)
+  }
+
+  return new Promise((resolve) => {
+    let settled = false
+    const settle = (value: HTMLImageElement | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(value)
+    }
+
+    // 超时兜底：无真实解码能力的环境下事件不会触发，避免导出挂起
+    const timer: ReturnType<typeof setTimeout> = setTimeout(() => settle(null), timeoutMs)
+
+    const image = new Image()
+    image.onload = () => settle(image)
+    image.onerror = () => settle(null)
+    image.src = dataUrl
+  })
 }
 
 // ---- 离屏 canvas 创建 ----

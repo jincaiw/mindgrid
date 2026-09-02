@@ -309,6 +309,47 @@ impl AssetStore {
     }
 }
 
+/// 标准 Base64 字母表（RFC 4648 §4），仅用于 data URL 的单向编码。
+const BASE64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// 将字节流编码为标准 Base64 字符串（RFC 4648 标准字母表，带 `=` 填充）。
+///
+/// 不引入 `base64` crate：离线构建环境无法保证依赖可拉取，而 data URL
+/// 只需要单向编码，实现成本可控且已有单测覆盖。
+pub fn encode_base64(bytes: &[u8]) -> String {
+    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
+    for chunk in bytes.chunks(3) {
+        // 不足 3 字节的尾块，缺失位补 0，对应输出位用 `=` 填充。
+        let b0 = chunk[0] as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let group = (b0 << 16) | (b1 << 8) | b2;
+
+        encoded.push(BASE64_ALPHABET[((group >> 18) & 0x3f) as usize] as char);
+        encoded.push(BASE64_ALPHABET[((group >> 12) & 0x3f) as usize] as char);
+        encoded.push(if chunk.len() > 1 {
+            BASE64_ALPHABET[((group >> 6) & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+        encoded.push(if chunk.len() > 2 {
+            BASE64_ALPHABET[(group & 0x3f) as usize] as char
+        } else {
+            '='
+        });
+    }
+
+    encoded
+}
+
+/// 将资源字节流编码为可直接用于 `<img src>` 的 data URL。
+/// 形如 `data:image/png;base64,iVBORw0...`。
+pub fn encode_asset_data_url(mime_type: &str, bytes: &[u8]) -> String {
+    format!("data:{mime_type};base64,{}", encode_base64(bytes))
+}
+
 /// 递归收集主题树中所有 image.asset_id 引用。
 fn collect_topic_asset_ids(topic: &TopicSnapshot, ids: &mut HashSet<String>) {
     if let Some(image) = &topic.image {
@@ -492,6 +533,63 @@ mod tests {
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| e.contains("SHA-256 校验失败")));
+    }
+
+    #[test]
+    fn encode_base64_handles_known_vectors() {
+        // RFC 4648 §10 测试向量
+        assert_eq!(encode_base64(b""), "");
+        assert_eq!(encode_base64(b"f"), "Zg==");
+        assert_eq!(encode_base64(b"fo"), "Zm8=");
+        assert_eq!(encode_base64(b"foo"), "Zm9v");
+        assert_eq!(encode_base64(b"foob"), "Zm9vYg==");
+        assert_eq!(encode_base64(b"fooba"), "Zm9vYmE=");
+        assert_eq!(encode_base64(b"foobar"), "Zm9vYmFy");
+    }
+
+    #[test]
+    fn encode_base64_handles_project_name_vector() {
+        // "MindGrid" -> TWluZEdyaWQ=（8 字节，非 3 倍数，尾部 1 个 '='）
+        assert_eq!(encode_base64(b"MindGrid"), "TWluZEdyaWQ=");
+    }
+
+    #[test]
+    fn encode_base64_pads_partial_trailing_chunks() {
+        // 长度 mod 3 == 1 -> 两个 '='；== 2 -> 一个 '='
+        let single = encode_base64(&[0x00]);
+        assert_eq!(single, "AA==");
+        assert_eq!(single.len() % 4, 0);
+
+        let double = encode_base64(&[0x00, 0xff]);
+        assert_eq!(double, "AP8=");
+        assert!(double.ends_with('='));
+
+        let triple = encode_base64(&[0x00, 0xff, 0x10]);
+        assert_eq!(triple, "AP8Q");
+        assert!(!triple.contains('='));
+    }
+
+    #[test]
+    fn encode_base64_covers_all_byte_values() {
+        // 0..=255 全字节值，验证无 panic 且输出符合 Base64 字符集与长度规则
+        let all: Vec<u8> = (0..=255u8).collect();
+        let encoded = encode_base64(&all);
+        assert_eq!(encoded.len(), all.len().div_ceil(3) * 4);
+        assert!(encoded
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='));
+        assert_eq!(encoded, encode_base64(&all), "编码必须是纯函数");
+    }
+
+    #[test]
+    fn encode_asset_data_url_uses_mime_and_base64_payload() {
+        let bytes = b"\x89PNG\r\n\x1a\nfake".to_vec();
+        let url = encode_asset_data_url("image/png", &bytes);
+        assert!(url.starts_with("data:image/png;base64,"));
+        assert_eq!(url, format!("data:image/png;base64,{}", encode_base64(&bytes)));
+
+        let svg_url = encode_asset_data_url("image/svg+xml", b"<svg/>");
+        assert_eq!(svg_url, "data:image/svg+xml;base64,PHN2Zy8+");
     }
 
     #[test]

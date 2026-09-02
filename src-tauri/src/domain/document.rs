@@ -968,6 +968,24 @@ impl DocumentSession {
         })
     }
 
+    /// 设置主题图片（`image` 为 Some）或移除主题图片（`image` 为 None）。
+    /// 撤销标签据操作方向自动取「设置主题图片」/「移除主题图片」。
+    pub fn set_topic_image(
+        &mut self,
+        topic_id: &str,
+        image: Option<TopicImage>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        let label = if image.is_some() {
+            "设置主题图片"
+        } else {
+            "移除主题图片"
+        };
+        self.apply_change_set(label, |editor| {
+            editor.set_topic_image(topic_id, image)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     /// 切换文档主题。`theme_id` 为空或 None 表示清除主题（回退到默认 classic-blue）。
     pub fn set_document_theme(
         &mut self,

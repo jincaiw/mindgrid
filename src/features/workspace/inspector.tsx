@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { findTopicById, flattenTopicTree, normalizeTopicIdsForBatch } from '../../lib/document/tree'
 import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
 import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
@@ -14,6 +15,8 @@ import type {
   TopicTaskStatus,
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
+import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
+import { hasTauriRuntime } from '../../lib/ipc/transport'
 import { MarkerSelector } from '../canvas/marker-selector'
 import { GridIcon, GroupIcon, LinkIcon, TypeIcon } from './icons'
 
@@ -153,6 +156,11 @@ const BRANCH_PALETTE_PRESETS: { id: string; label: string; colors: string[] }[] 
     id: 'default',
     label: '默认 8 色',
     colors: ['#5B8DEF', '#FF8B3D', '#4CB050', '#E5484D', '#9B6BFF', '#00A6A6', '#F6BE00', '#EC6CB0'],
+  },
+  {
+    id: 'xmind-classic',
+    label: 'XMind 经典 6 色',
+    colors: ['#4C92D9', '#6FBF73', '#F6C344', '#E8764F', '#C65D5D', '#8E7CC3'],
   },
   {
     id: 'cool',
@@ -332,6 +340,47 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
   // —— 边界 / 概要创建表单本地态 ——
   const [boundaryLabel, setBoundaryLabel] = useState('')
   const [summaryLabel, setSummaryLabel] = useState('')
+
+  // —— 主题图片：Tauri 走原生文件对话框，浏览器开发态降级为隐藏 file input ——
+  const imageFileInputRef = useRef<HTMLInputElement | null>(null)
+  const topicImageUrls = useTopicImageUrls([activeTopic?.image])
+  const topicImageUrl = activeTopic
+    ? pickTopicImageUrl(activeTopic.image, topicImageUrls)
+    : null
+
+  const insertTopicImage = async (sourcePath: string) => {
+    if (!activeTopic) {
+      return
+    }
+
+    await session.setTopicImage(activeTopic.id, sourcePath)
+  }
+
+  const handlePickTopicImage = async () => {
+    if (!activeTopic) {
+      return
+    }
+
+    if (hasTauriRuntime()) {
+      const selected = await openFileDialog({
+        multiple: false,
+        directory: false,
+        filters: [
+          { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] },
+        ],
+      })
+      const selectedPath = typeof selected === 'string' ? selected : null
+
+      if (selectedPath) {
+        await insertTopicImage(selectedPath)
+      }
+
+      return
+    }
+
+    // 非 Tauri 环境（pnpm dev / 测试）：点击隐藏 input，由 onChange 读成 data URL 再提交
+    imageFileInputRef.current?.click()
+  }
 
   // 活动主题切换时，若起点未设置或失效则回填为活动主题
   useEffect(() => {
@@ -849,6 +898,75 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                   : '在画布或左侧大纲中选中一个主题，即可编辑其备注、链接、标签、任务与样式。'}
               </p>
             )}
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <div className="panel__section">
+                <p className="panel__eyebrow">Image</p>
+                <h3 className="panel__title">主题图片</h3>
+                <p className="panel__muted">
+                  为选中主题插入一张本地图片，图片显示在节点标题上方并参与节点尺寸计算；插入与移除均可撤销。
+                </p>
+
+                <div className="panel__field">
+                  <span>图片</span>
+                  {topicImageUrl ? (
+                    <img
+                      className="panel__image-preview"
+                      src={topicImageUrl}
+                      alt={`${activeTopic.text} 的主题图片`}
+                    />
+                  ) : (
+                    <p className="panel__muted">
+                      {activeTopic.image ? '图片加载中…' : '当前主题没有图片。'}
+                    </p>
+                  )}
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="panel__hidden-file-input"
+                    aria-label="选择主题图片文件"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null
+                      // 清空 value，保证连续选择同一文件也能触发 change
+                      event.target.value = ''
+
+                      if (!file) {
+                        return
+                      }
+
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+
+                        if (dataUrl) {
+                          void insertTopicImage(dataUrl)
+                        }
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <div className="panel__field-row">
+                    <button
+                      className="panel__action"
+                      type="button"
+                      onClick={() => void handlePickTopicImage()}
+                    >
+                      {activeTopic.image ? '更换图片' : '插入图片'}
+                    </button>
+                    {activeTopic.image ? (
+                      <button
+                        className="panel__action panel__action--ghost"
+                        type="button"
+                        onClick={() => void session.removeTopicImage(activeTopic.id)}
+                      >
+                        移除图片
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             <div className="panel__section">
               <p className="panel__eyebrow">Move</p>

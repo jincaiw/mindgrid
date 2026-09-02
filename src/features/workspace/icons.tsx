@@ -275,6 +275,16 @@ export function PanelRightIcon(props: IconProps) {
   )
 }
 
+/** 侧栏显隐（左侧面板） */
+export function PanelLeftIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M9 3v18" />
+    </Svg>
+  )
+}
+
 /** 结构（分支） */
 export function StructureIcon(props: IconProps) {
   return (

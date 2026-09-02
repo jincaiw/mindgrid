@@ -177,6 +177,27 @@ export function setTopicLink(topicId: string, link: TopicLink | null) {
   })
 }
 
+/**
+ * 给主题插入图片。
+ * @param topicId 目标主题
+ * @param sourcePath 本地图片绝对路径（Tauri）；浏览器开发态可传 data: URL 兜底
+ */
+export function setTopicImage(topicId: string, sourcePath: string) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_image', {
+    topic_id: topicId,
+    source_path: sourcePath,
+  })
+}
+
+export function removeTopicImage(topicId: string) {
+  return invokeCommand<DocumentSessionSnapshot>('remove_topic_image', { topic_id: topicId })
+}
+
+/** 读取资源内容为 data URL（形如 data:image/png;base64,...），供画布渲染使用。 */
+export function readAssetDataUrl(assetId: string) {
+  return invokeCommand<string>('read_asset_data_url', { asset_id: assetId })
+}
+
 export function setTopicMarkers(topicId: string, markers: TopicMarker[]) {
   return invokeCommand<DocumentSessionSnapshot>('set_topic_markers', {
     topic_id: topicId,

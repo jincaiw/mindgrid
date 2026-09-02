@@ -71,8 +71,15 @@ export interface ResolvedTopicStyle {
   borderWidth: number
 }
 
-/** 主题上的富内容投影（marker / label / note / link / task），全部可选。 */
+  /** 主题上的富内容投影（image / marker / label / note / link / task），全部可选。 */
 export interface TopicRichContent {
+  /**
+   * 主题图片的 data URL（形如 `data:image/png;base64,...`）。
+   *
+   * 渲染端需要的是**字节本身**而非 assetId，所以这里直接携带 data URL；
+   * 由 buildScene 的 topicImageUrls 注入。为空表示无图或资源解析失败。
+   */
+  image?: string
   markers?: TopicMarker[]
   labels?: string[]
   /** 非空字符串表示有备注。 */

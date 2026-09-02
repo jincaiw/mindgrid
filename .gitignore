@@ -3,6 +3,9 @@ node_modules
 .pnp
 .pnp.js
 
+# Agent 运行态数据（记忆 / 团队会话）
+.workbuddy/
+
 # Build output
 dist
 dist-ssr
