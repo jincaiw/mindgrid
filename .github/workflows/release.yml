@@ -136,11 +136,12 @@ jobs:
 
       # macOS 代码签名（可选，需配置 APPLE_* Secrets）
       - name: Setup macOS signing
-        if: matrix.platform == 'macos-aarch64' || matrix.platform == 'macos-x86_64'
+        # 注意：单个 step 只能有一个 if。此前此处存在两个 if 键（重复键），
+        # 会导致 workflow 被判非法、推 tag 后不触发构建。
+        if: ${{ (matrix.platform == 'macos-aarch64' || matrix.platform == 'macos-x86_64') && env.APPLE_CERTIFICATE != '' }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-        if: ${{ env.APPLE_CERTIFICATE != '' }}
         run: |
           echo "APPLE_CERTIFICATE is configured, signing will be enabled"
           # Tauri 自动读取环境变量完成签名 + 公证
