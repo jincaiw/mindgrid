@@ -26,6 +26,9 @@ on:
         required: true
         default: 'v0.2.0'
 
+permissions:
+  contents: write
+
 env:
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
@@ -146,15 +149,9 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # macOS 签名（可选，配置 Secrets 后自动启用）
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows 签名（可选）
-          TAURI_SIGNING_CERTIFICATE: ${{ secrets.TAURI_SIGNING_CERTIFICATE }}
-          TAURI_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.TAURI_SIGNING_CERTIFICATE_PASSWORD }}
+          # 代码签名（可选）：配置对应 Secrets 后，在此添加相应 env 即可启用。
+          # 注意：未配置证书时不要传入空值 env（如 APPLE_CERTIFICATE=''），
+          # 否则 bundler 会误入签名路径并因 keychain 导入失败而中断构建。
         with:
           tagName: ${{ env.TAG }}
           releaseName: 'MindGrid ${{ env.TAG }}'
