@@ -70,3 +70,12 @@
 - 提交前门禁全绿：Vitest 461/461（39 文件）· cargo test 95/95 · tsc -b && vite build 通过 · oxlint 0 错误（16 条既有警告为基线）
 - `.workbuddy/` 加入 .gitignore，未入库
 - 注：仓库无配置远程（git remote 为空），发布为本地 tag；如需推送 GitHub/Gitee，添加 remote 后 `git push origin main --tags` 即可
+
+## 三平台 CI 构建发布（2026-09-02）
+- Release 工作流修复后全绿：Test 门禁 + macOS(ARM64/x64) + Linux + Windows 四平台并行构建
+- v0.2.0 Release 产物 9 件：Windows NSIS `x64-setup.exe` + portable `x64-portable.zip`；
+  macOS `aarch64.dmg` / `x64.dmg`（未签名）；Linux `deb` / `AppImage` / `rpm`
+- 排障记录：①test job 缺 Linux 系统依赖 → 补 apt 安装；②GITHUB_TOKEN 无写权限 → 加 permissions: contents: write；
+  ③空 APPLE_* env 触发签名路径 → 移除；④WiX MSI 不稳定 → Windows 限定 NSIS；
+  ⑤NSIS languages 误用 IETF 区域码（en-US/zh-CN）→ 改为 NSIS 语言名（English/SimpChinese）
+- Release: https://github.com/jincaiw/mindgrid/releases/tag/v0.2.0
