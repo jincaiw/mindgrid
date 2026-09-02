@@ -47,6 +47,9 @@ button {
 .workspace-shell__body {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr) 280px;
+  /* 显式约束行高：隐式 auto 行会被画布/大纲的 max-content 撑爆，
+     导致页面整体滚动、画布相机把内容居中到视口之外（表现为画布空白） */
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
   min-height: 0;
   border-top: 1px solid var(--color-border-default);
@@ -1218,6 +1221,9 @@ button {
   background: var(--color-surface-panel);
   border-radius: 0;
   padding: var(--space-3);
+  /* 侧栏/检查器作为网格项时必须能收缩并内部滚动，否则长内容外溢撑高页面 */
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* XMind 式贴合侧栏：白底、发丝线分隔，无圆角与投影 */
@@ -2137,7 +2143,6 @@ button {
 .canvas-host {
   position: relative;
   overflow: hidden;
-  min-height: 640px;
   background: var(--color-background-canvas);
 }
 /* 线网格默认隐藏（XMind 默认无网格），可通过 canvas-host--grid-on 开启 */
