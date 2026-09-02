@@ -17,6 +17,39 @@ import type { DocumentSession } from '../document/use-document-session'
 import { MarkerSelector } from '../canvas/marker-selector'
 import { GridIcon, GroupIcon, LinkIcon, TypeIcon } from './icons'
 
+/**
+ * XMind 格式面板式分区：可折叠（默认展开），标题行点击切换。
+ * 与 panel__section 视觉一致，增加 chevron 与折叠行为。
+ */
+function PanelSection({
+  eyebrow,
+  title,
+  children,
+}: {
+  eyebrow: string
+  title: string
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(true)
+  return (
+    <div className={`panel__section${open ? ' panel__section--open' : ' panel__section--collapsed'}`}>
+      <button
+        type="button"
+        className="panel__section-header"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="panel__section-chevron" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="panel__eyebrow">{eyebrow}</span>
+        <span className="panel__title">{title}</span>
+      </button>
+      {open ? children : null}
+    </div>
+  )
+}
+
 interface DocumentTopicEntry {
   topicId: string
   text: string
@@ -289,6 +322,11 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
       ? new Date(activeTopic.task.dueDateMs).toISOString().slice(0, 10)
       : '',
   )
+  const [taskStartDateDraft, setTaskStartDateDraft] = useState(
+    activeTopic?.task?.startDateMs != null
+      ? new Date(activeTopic.task.startDateMs).toISOString().slice(0, 10)
+      : '',
+  )
 
   // —— 画布级分支样式：连线类型 / 粗细 / 色板，写入 activeSheet.branchStyle ——
   // edgeType 与 colorPalette 点击即提交（无 draft）；thickness 走 slider draft，失焦提交。
@@ -319,6 +357,11 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
     setTaskDueDateDraft(
       activeTopic?.task?.dueDateMs != null
         ? new Date(activeTopic.task.dueDateMs).toISOString().slice(0, 10)
+        : '',
+    )
+    setTaskStartDateDraft(
+      activeTopic?.task?.startDateMs != null
+        ? new Date(activeTopic.task.startDateMs).toISOString().slice(0, 10)
         : '',
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -487,9 +530,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
             aria-labelledby="inspector-tab-topic"
             className="panel__tab-panel"
           >
-            <div className="panel__section">
-              <p className="panel__eyebrow">Topic</p>
-              <h3 className="panel__title">主题属性</h3>
+            <PanelSection eyebrow="Topic" title="主题属性">
               <div className="accordion-card">
                 <span>{hasMultipleSelectedTopics ? '当前选择' : '当前主题'}</span>
                 <span>
@@ -502,12 +543,10 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                 <span>子主题数</span>
                 <span>{activeTopic?.children.length ?? 0}</span>
               </div>
-            </div>
+            </PanelSection>
 
             {activeTopic && !hasMultipleSelectedTopics ? (
-              <div className="panel__section">
-                <p className="panel__eyebrow">Rich Content</p>
-                <h3 className="panel__title">富内容编辑</h3>
+              <PanelSection eyebrow="Rich Content" title="富内容编辑">
                 <p className="panel__muted">
                   编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
                 </p>
@@ -776,10 +815,13 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                         const dueDateMs = taskDueDateDraft
                           ? new Date(taskDueDateDraft).getTime()
                           : undefined
+                        const startDateMs = taskStartDateDraft
+                          ? new Date(taskStartDateDraft).getTime()
+                          : undefined
                         const nextTask: TopicTask | null =
                           nextStatus === 'none'
                             ? null
-                            : { status: nextStatus, ...(priority != null ? { priority } : {}), ...(dueDateMs != null ? { dueDateMs } : {}) }
+                            : { status: nextStatus, ...(priority != null ? { priority } : {}), ...(dueDateMs != null ? { dueDateMs } : {}), ...(startDateMs != null ? { startDateMs } : {}) }
                         void session.setTopicTask(activeTopic.id, nextTask)
                       }}
                     >
@@ -803,12 +845,16 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                         const dueDateMs = taskDueDateDraft
                           ? new Date(taskDueDateDraft).getTime()
                           : undefined
+                        const startDateMs = taskStartDateDraft
+                          ? new Date(taskStartDateDraft).getTime()
+                          : undefined
                         const currentPriority = activeTopic.task?.priority
                         if (currentPriority !== priority) {
                           const nextTask: TopicTask = {
                             status: taskStatusDraft,
                             ...(priority != null ? { priority } : {}),
                             ...(dueDateMs != null ? { dueDateMs } : {}),
+                            ...(startDateMs != null ? { startDateMs } : {}),
                           }
                           void session.setTopicTask(activeTopic.id, nextTask)
                         }
@@ -829,19 +875,51 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                       const dueDateMs = taskDueDateDraft
                         ? new Date(taskDueDateDraft).getTime()
                         : undefined
+                      const startDateMs = taskStartDateDraft
+                        ? new Date(taskStartDateDraft).getTime()
+                        : undefined
                       const currentDue = activeTopic.task?.dueDateMs
                       if (currentDue !== dueDateMs) {
                         const nextTask: TopicTask = {
                           status: taskStatusDraft,
                           ...(priority != null ? { priority } : {}),
                           ...(dueDateMs != null ? { dueDateMs } : {}),
+                          ...(startDateMs != null ? { startDateMs } : {}),
+                        }
+                        void session.setTopicTask(activeTopic.id, nextTask)
+                      }
+                    }}
+                  />
+                  <input
+                    type="date"
+                    aria-label="任务开始日期"
+                    value={taskStartDateDraft}
+                    onChange={(e) => setTaskStartDateDraft(e.target.value)}
+                    onBlur={() => {
+                      if (taskStatusDraft === 'none') return
+                      const priority = taskPriorityDraft
+                        ? Number.parseInt(taskPriorityDraft, 10)
+                        : undefined
+                      const dueDateMs = taskDueDateDraft
+                        ? new Date(taskDueDateDraft).getTime()
+                        : undefined
+                      const startDateMs = taskStartDateDraft
+                        ? new Date(taskStartDateDraft).getTime()
+                        : undefined
+                      const currentStart = activeTopic.task?.startDateMs
+                      if (currentStart !== startDateMs) {
+                        const nextTask: TopicTask = {
+                          status: taskStatusDraft,
+                          ...(priority != null ? { priority } : {}),
+                          ...(dueDateMs != null ? { dueDateMs } : {}),
+                          ...(startDateMs != null ? { startDateMs } : {}),
                         }
                         void session.setTopicTask(activeTopic.id, nextTask)
                       }
                     }}
                   />
                 </div>
-              </div>
+              </PanelSection>
             ) : (
               <p className="panel__muted">
                 {hasMultipleSelectedTopics
@@ -850,9 +928,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
               </p>
             )}
 
-            <div className="panel__section">
-              <p className="panel__eyebrow">Move</p>
-              <h3 className="panel__title">跨画布移动</h3>
+            <PanelSection eyebrow="Move" title="跨画布移动">
               <p className="panel__muted">
                 把当前主题分支移动或复制到另一张画布，并可指定目标父主题；完成后会自动切换过去。
               </p>
@@ -980,7 +1056,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
               >
                 {hasMultipleSelectedTopics ? '批量复制到目标画布' : '复制到目标画布'}
               </button>
-            </div>
+            </PanelSection>
           </div>
         ) : null}
 
@@ -991,9 +1067,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
             aria-labelledby="inspector-tab-canvas"
             className="panel__tab-panel"
           >
-            <div className="panel__section">
-              <p className="panel__eyebrow">Canvas</p>
-              <h3 className="panel__title">画布信息</h3>
+            <PanelSection eyebrow="Canvas" title="画布信息">
               <div className="accordion-card">
                 <span>当前画布</span>
                 <span>{activeSheet?.title ?? '未命名画布'}</span>
@@ -1006,11 +1080,25 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                   {session.canRedo ? '可重做' : '无重做'}
                 </span>
               </div>
-            </div>
+            </PanelSection>
 
-            <div className="panel__section">
-              <p className="panel__eyebrow">Theme</p>
-              <h3 className="panel__title">文档主题</h3>
+            <PanelSection eyebrow="Canvas Settings" title="画布设置">
+              <p className="panel__muted">视图偏好随文档保存，不影响画布内容。</p>
+              <label className="accordion-card">
+                <input
+                  type="checkbox"
+                  checked={session.document?.settings?.['canvas.showGrid'] === true}
+                  onChange={(event) => {
+                    const checked = event.target.checked
+                    void session.setDocumentSetting('canvas.showGrid', checked ? true : null)
+                  }}
+                  aria-label="显示画布网格"
+                />
+                <span>显示网格</span>
+              </label>
+            </PanelSection>
+
+            <PanelSection eyebrow="Theme" title="文档主题">
               <p className="panel__muted">
                 一键切换整篇文档的配色方案。节点级颜色覆盖会优先生效。
               </p>
@@ -1049,11 +1137,9 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                   恢复默认主题
                 </button>
               ) : null}
-            </div>
+            </PanelSection>
 
-            <div className="panel__section">
-              <p className="panel__eyebrow">Branch Style</p>
-              <h3 className="panel__title">分支样式</h3>
+            <PanelSection eyebrow="Branch Style" title="分支样式">
               <p className="panel__muted">
                 调整当前画布所有连线的形状、粗细与分支配色（写入画布级覆盖，节点级颜色优先）。
               </p>
@@ -1160,7 +1246,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                   清除分支样式覆盖
                 </button>
               ) : null}
-            </div>
+            </PanelSection>
           </div>
         ) : null}
 
@@ -1171,9 +1257,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
             aria-labelledby="inspector-tab-relationships"
             className="panel__tab-panel"
           >
-            <div className="panel__section">
-              <p className="panel__eyebrow">Relationships</p>
-              <h3 className="panel__title">关系线</h3>
+            <PanelSection eyebrow="Relationships" title="关系线">
               <p className="panel__muted">
                 在任意两个主题之间建立非父子连接，用于表达跨分支或跨画布的关联。关系线保存在文档级别。
               </p>
@@ -1254,7 +1338,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
               >
                 创建关系线
               </button>
-            </div>
+            </PanelSection>
           </div>
         ) : null}
 
@@ -1265,9 +1349,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
             aria-labelledby="inspector-tab-grouping"
             className="panel__tab-panel"
           >
-            <div className="panel__section">
-              <p className="panel__eyebrow">Grouping</p>
-              <h3 className="panel__title">边界与概要</h3>
+            <PanelSection eyebrow="Grouping" title="边界与概要">
               <p className="panel__muted">
                 为当前画布中的若干主题添加视觉分组（边界）或归纳说明（概要）。先在画布上选中至少 2 个主题，再创建。
               </p>
@@ -1370,7 +1452,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                   ? `为选中的 ${normalizedSelectedTopicIds.length} 个主题创建概要`
                   : '请先选中至少 2 个主题'}
               </button>
-            </div>
+            </PanelSection>
           </div>
         ) : null}
       </div>

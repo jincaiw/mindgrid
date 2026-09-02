@@ -8,6 +8,7 @@ import type { ChartType } from '../../lib/document/types'
 import { getDeletableTopicIds } from '../canvas/interaction-state'
 import { TemplatePicker } from './template-picker'
 import {
+  CalendarIcon,
   ChevronDownIcon,
   DownloadIcon,
   FilePlusIcon,
@@ -51,6 +52,9 @@ interface ToolbarProps {
   /** 大纲全屏视图显隐（批次 19）：隐藏画布，全宽编辑主题树 */
   isOutlinerMode?: boolean
   onToggleOutliner?: () => void
+  /** 甘特图全屏视图显隐（批次 23）：汇总全文档任务时间轴 */
+  isGanttMode?: boolean
+  onToggleGantt?: () => void
   /** 插入 备注/标签/链接/标记：确保 Inspector 可见并切到“主题”tab */
   onFocusInspectorTopicTab?: () => void
   /** 瞬态通知（如插入条件不满足时的引导提示） */
@@ -73,6 +77,9 @@ const CHART_TYPE_OPTIONS: ReadonlyArray<{ value: ChartType; label: string }> = [
   { value: 'org', label: '组织结构图（Org）' },
   { value: 'fishbone', label: '鱼骨图（Fishbone）' },
   { value: 'timeline', label: '时间线（Timeline）' },
+  { value: 'brace', label: '括号图（Brace）' },
+  { value: 'matrix', label: '矩阵图（Matrix）' },
+  { value: 'bubble', label: '气泡图（Bubble）' },
 ]
 
 function formatClockTime(timestampMs: number, withSeconds = false) {
@@ -298,6 +305,7 @@ function ImportMenu({ session }: { session: DocumentSession }) {
   const items = [
     { label: '从 Markdown 导入', action: () => void session.importMarkdownOutline() },
     { label: '从 OPML 导入', action: () => void session.importOpmlOutline() },
+    { label: '从 Word 导入', action: () => void session.importDocxOutline() },
   ]
 
   return (
@@ -350,6 +358,8 @@ export function Toolbar({
   onToggleInspector,
   isOutlinerMode = false,
   onToggleOutliner,
+  isGanttMode = false,
+  onToggleGantt,
   onFocusInspectorTopicTab,
   onNotify,
   themeMode = 'system',
@@ -640,6 +650,18 @@ export function Toolbar({
             aria-pressed={isOutlinerMode}
           >
             <LayoutIcon />
+          </button>
+        ) : null}
+        {onToggleGantt ? (
+          <button
+            className="toolbar__icon-btn toolbar__icon-btn--ghost"
+            type="button"
+            onClick={onToggleGantt}
+            title={isGanttMode ? '返回画布（Esc）' : '甘特图全屏视图'}
+            aria-label={isGanttMode ? '返回画布' : '甘特图视图'}
+            aria-pressed={isGanttMode}
+          >
+            <CalendarIcon />
           </button>
         ) : null}
         {onToggleZenMode ? (

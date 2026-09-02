@@ -84,6 +84,8 @@ interface CanvasHostProps {
   // 搜索框开关：可选受控（工具栏搜索按钮与 Cmd/Ctrl + F 共用），缺省内部自管理
   searchOpen?: boolean
   onSearchOpenChange?: (open: boolean) => void
+  // 画布线网格显示开关（XMind 默认无网格），由检查器「画布设置」驱动
+  showGrid?: boolean
 }
 
 const HISTORY_FOCUS_HIGHLIGHT_MS = 1600
@@ -2516,9 +2518,13 @@ export function CanvasHost({
   onNotify,
   searchOpen,
   onSearchOpenChange,
+  showGrid = false,
 }: CanvasHostProps) {
   return (
-    <main className="canvas-host" aria-label="画布区域">
+    <main
+      className={`canvas-host${showGrid ? ' canvas-host--grid-on' : ''}`}
+      aria-label="画布区域"
+    >
       <div className="canvas-host__texture" />
       {renderContent({
         session,

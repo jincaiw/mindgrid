@@ -31,19 +31,22 @@ button {
   grid-template-rows: 1fr auto;
 }
 
+/* XMind 式贴合布局：通栏相接、无间隙、无圆角，仅以 1px 发丝线分隔 */
 .workspace-shell {
   display: grid;
-  grid-template-rows: 52px minmax(0, 1fr) auto;
-  padding: var(--space-2);
-  gap: var(--space-2);
+  grid-template-rows: 44px 36px minmax(0, 1fr);
+  padding: 0;
+  gap: 0;
   height: 100vh;
+  background: var(--color-background-app);
 }
 
 .workspace-shell__body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 320px;
-  gap: var(--space-2);
+  grid-template-columns: 264px minmax(0, 1fr) 300px;
+  gap: 0;
   min-height: 0;
+  border-top: 1px solid var(--color-border-default);
 }
 
 /* 检查器隐藏（Cmd/Ctrl + I）：两列布局，画布占满剩余空间 */
@@ -95,29 +98,27 @@ button {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* ZEN 模式下隐藏底部画布标签栏 */
+/* ZEN 模式下隐藏顶部画布标签栏 */
 .workspace-shell--zen .sheet-tab-bar {
   display: none;
 }
 
-/* 画布底部标签栏（批次 19，对标 XMind） */
+/* 画布顶部标签栏（对标 XMind：工具栏正下方一行胶囊标签） */
 .sheet-tab-bar {
   display: flex;
   align-items: stretch;
   gap: var(--space-2);
   padding: 0 var(--space-2);
   min-height: 36px;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-medium);
-  background: var(--color-surface-glass);
-  box-shadow: var(--shadow-level-1);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-glass-strong);
   backdrop-filter: blur(20px);
 }
 
 .sheet-tab-bar__scroll {
   display: flex;
-  align-items: stretch;
-  gap: 2px;
+  align-items: center;
+  gap: 4px;
   overflow-x: auto;
   flex: 1 1 auto;
   scrollbar-width: thin;
@@ -138,15 +139,14 @@ button {
   display: inline-flex;
   align-items: center;
   max-width: 200px;
-  padding: 6px 14px;
-  border: none;
-  border-bottom: 2px solid transparent;
+  padding: 4px 12px;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--color-text-muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  border-radius: 6px 6px 0 0;
+  border-radius: 6px;
   transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
@@ -157,7 +157,8 @@ button {
 
 .sheet-tab-bar__tab--active .sheet-tab-bar__button {
   color: var(--color-text-primary);
-  border-bottom-color: var(--color-accent);
+  background: var(--color-surface-subtle);
+  border-color: var(--color-border-default);
   font-weight: 600;
 }
 
@@ -175,12 +176,12 @@ button {
   border-radius: 6px;
   font-size: 13px;
   color: var(--color-text-primary);
-  background: var(--color-surface-panel-strong, #fff);
+  background: var(--color-surface, #fff);
 }
 
 .sheet-tab-bar__menu {
   position: absolute;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   left: 0;
   z-index: 20;
   display: flex;
@@ -189,7 +190,7 @@ button {
   padding: 4px;
   border: 1px solid var(--color-border-default);
   border-radius: 8px;
-  background: var(--color-surface-panel-strong, #fff);
+  background: var(--color-surface);
   box-shadow: var(--shadow-level-2, 0 8px 24px rgba(0, 0, 0, 0.12));
 }
 
@@ -238,10 +239,10 @@ button {
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-medium);
-  background: var(--color-surface-canvas, #f7f7f8);
-  box-shadow: var(--shadow-level-1);
+  border: none;
+  border-radius: 0;
+  background: var(--color-background-canvas, #f7f7f8);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -412,6 +413,366 @@ button {
   }
 }
 
+/* 甘特图全屏视图（批次 23） */
+.gantt-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--color-background-canvas, #f7f7f8);
+  overflow: hidden;
+}
+
+.gantt-view__header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-glass);
+  backdrop-filter: blur(20px);
+  flex: 0 0 auto;
+}
+
+.gantt-view__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.gantt-view__badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.gantt-view__heading strong {
+  font-size: 15px;
+  color: var(--color-text-primary);
+}
+
+.gantt-view__count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  flex: 0 0 auto;
+}
+
+.gantt-view__legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.gantt-view__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gantt-view__legend-item .gantt-view__bar {
+  display: inline-block;
+  width: 18px;
+  height: 8px;
+  border-radius: 4px;
+  position: static;
+}
+
+.gantt-view__zoom {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface-panel-strong, #fff);
+  flex: 0 0 auto;
+}
+
+.gantt-view__zoom-btn {
+  padding: 3px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.gantt-view__zoom-btn:hover {
+  color: var(--color-text-primary);
+}
+
+.gantt-view__zoom-btn--active {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.gantt-view__export {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface-panel-strong, #fff);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.gantt-view__export:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-accent);
+}
+
+.gantt-view__exit {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: filter 120ms ease;
+}
+
+.gantt-view__exit:hover {
+  filter: brightness(0.94);
+}
+
+.gantt-view__empty {
+  padding: var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.gantt-view--empty {
+  align-items: center;
+  justify-content: center;
+}
+
+.gantt-view__body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.gantt-view__names {
+  flex: 0 0 auto;
+  border-right: 1px solid var(--color-border-default);
+  background: var(--color-surface-panel);
+  overflow: hidden;
+}
+
+.gantt-view__names-header {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-glass);
+}
+
+.gantt-view__sheet-title {
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-panel-strong, #fff);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-view__task-name {
+  display: block;
+  width: 100%;
+  padding: 0 var(--space-2) 0 calc(var(--space-2) + 12px);
+  border: none;
+  border-bottom: 1px solid var(--color-border-default);
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.gantt-view__task-name:hover {
+  background: var(--color-surface-hover);
+}
+
+.gantt-view__task-name--selected {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.gantt-view__timeline-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: auto;
+}
+
+.gantt-view__timeline {
+  position: relative;
+}
+
+.gantt-view__days {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-glass);
+}
+
+.gantt-view__day {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: var(--color-text-muted);
+  border-right: 1px solid var(--color-border-default);
+}
+
+.gantt-view__day--weekend {
+  background: color-mix(in srgb, var(--color-text-muted) 6%, transparent);
+}
+
+.gantt-view__day--today {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.gantt-view__sheet-track {
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-panel-strong, #fff);
+}
+
+.gantt-view__row {
+  position: relative;
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+.gantt-view__row--selected {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.gantt-view__bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 9px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #fff;
+  cursor: grab;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: filter 120ms ease;
+}
+
+.gantt-view__bar:hover {
+  filter: brightness(1.08);
+}
+
+.gantt-view__bar--none {
+  background: var(--color-text-muted, #8a8f98);
+}
+
+.gantt-view__bar--pending {
+  background: #d97706;
+}
+
+.gantt-view__bar--started {
+  background: var(--color-accent, #2563eb);
+}
+
+.gantt-view__bar--completed {
+  background: #16a34a;
+}
+
+/* 逾期：未完成且截止早于今天（批次 24） */
+.gantt-view__bar--overdue {
+  box-shadow: 0 0 0 2px var(--color-danger, #dc2626);
+}
+
+.gantt-view__timeline--dragging .gantt-view__bar {
+  cursor: grabbing;
+}
+
+/* 条形两端缩放手柄（批次 25）：悬停行时显形 */
+.gantt-view__handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 18px;
+  border-radius: 4px;
+  background: transparent;
+  cursor: ew-resize;
+  z-index: 2;
+}
+
+.gantt-view__handle:hover {
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+/* 依赖箭头（批次 25） */
+.gantt-view__deps {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.gantt-view__dep-path {
+  fill: none;
+  stroke: var(--color-text-muted, #8a8f98);
+  stroke-width: 1.5;
+}
+
+.gantt-view__dep-arrow-head {
+  fill: var(--color-text-muted, #8a8f98);
+}
+
+.gantt-view__today-marker {
+  position: absolute;
+  width: 2px;
+  bottom: 0;
+  background: var(--color-accent, #2563eb);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* 快捷键帮助浮层（批次 20） */
 .shortcuts-help-overlay {
   position: fixed;
@@ -556,20 +917,21 @@ button {
 .panel,
 .canvas-host,
 .status-bar {
-  border: 1px solid var(--color-border-default);
-  box-shadow: var(--shadow-level-1);
-  backdrop-filter: blur(20px);
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-medium);
-  background: var(--color-surface-glass);
+  padding: 0 12px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-border-default);
+  background: var(--color-surface-glass-strong);
   color: var(--color-text-primary);
-  min-height: 52px;
+  min-height: 44px;
 }
 
 .toolbar__left {
@@ -648,22 +1010,22 @@ button {
 }
 
 .toolbar__selection-action:hover {
-  background: rgba(59, 130, 246, 0.2);
+  background: rgba(45, 127, 249, 0.2);
 }
 
-/* 图标按钮：32×32 方形，参考 XMind / macOS 工具栏 */
+/* 图标按钮：28×28 方形，参考 XMind 桌面端工具栏 */
 .toolbar__icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  height: 32px;
-  min-width: 32px;
-  padding: 0 8px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0 6px;
   border: none;
   background: transparent;
   color: var(--color-text-muted);
-  border-radius: 8px;
+  border-radius: 6px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
   font-size: 12px;
@@ -684,12 +1046,12 @@ button {
 }
 
 .toolbar__icon-btn--primary {
-  background: linear-gradient(135deg, #7da7ff 0%, #5b8cff 100%);
+  background: var(--color-accent);
   color: #fff;
 }
 
 .toolbar__icon-btn--primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #6b96f0 0%, #4a7cf0 100%);
+  background: #1f6ceb;
 }
 
 .toolbar__icon-btn--ghost {
@@ -735,7 +1097,7 @@ button {
 }
 
 .toolbar__button--primary:hover:not(:disabled) {
-  background: #4a7cf0;
+  background: #1f6ceb;
 }
 
 .toolbar__divider {
@@ -771,11 +1133,10 @@ button {
   list-style: none;
   margin: 0;
   padding: 4px;
-  background: var(--color-surface-glass-strong);
+  background: var(--color-surface);
   border: 1px solid var(--color-border-default);
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-level-2);
 }
 
 .toolbar__menu-item {
@@ -793,17 +1154,57 @@ button {
 }
 
 .toolbar__menu-item:hover {
-  background: rgba(91, 140, 255, 0.1);
+  background: rgba(45, 127, 249, 0.1);
 }
 
 .panel {
   background: var(--color-surface-panel);
-  border-radius: var(--radius-medium);
+  border-radius: 0;
   padding: var(--space-3);
+}
+
+/* XMind 式贴合侧栏：白底、发丝线分隔，无圆角与投影 */
+.workspace-shell__body > .panel--sidebar {
+  border-right: 1px solid var(--color-border-default);
+  background: var(--color-surface);
+}
+
+.workspace-shell__body > .panel--inspector {
+  border-left: 1px solid var(--color-border-default);
+  background: var(--color-surface);
 }
 
 .panel__section + .panel__section {
   margin-top: var(--space-4);
+}
+
+/* XMind 格式面板式折叠分区标题 */
+.panel__section-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  border-radius: 6px;
+}
+
+.panel__section-header:hover .panel__title {
+  color: var(--color-accent);
+}
+
+.panel__section-chevron {
+  color: var(--color-text-secondary);
+  font-size: 10px;
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.panel__section--collapsed {
+  padding-bottom: 6px;
 }
 
 .panel__eyebrow {
@@ -917,13 +1318,13 @@ button {
 }
 
 .panel__action--primary {
-  background: linear-gradient(135deg, #7da7ff 0%, #5b8cff 100%);
+  background: var(--color-accent);
   color: #fff;
   border-color: transparent;
 }
 
 .panel__action--primary:not(:disabled):hover {
-  background: linear-gradient(135deg, #8bb4ff 0%, #6b98ff 100%);
+  background: #1f6ceb;
 }
 
 .panel__entries {
@@ -1056,8 +1457,8 @@ button {
 }
 
 .template-card:hover {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.12);
+  border-color: rgba(45, 127, 249, 0.4);
+  box-shadow: 0 4px 16px rgba(45, 127, 249, 0.12);
   transform: translateY(-1px);
 }
 
@@ -1070,7 +1471,7 @@ button {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: rgba(59, 130, 246, 0.72);
+  color: rgba(45, 127, 249, 0.72);
 }
 
 .template-card__name {
@@ -1272,7 +1673,7 @@ button {
 
 .marker-selector__trigger:hover {
   color: var(--color-accent);
-  background: rgba(91, 140, 255, 0.08);
+  background: rgba(45, 127, 249, 0.08);
 }
 
 .marker-selector__trigger[aria-expanded='true'] {
@@ -1350,12 +1751,12 @@ button {
 }
 
 .marker-popover__option:hover {
-  background: rgba(91, 140, 255, 0.1);
+  background: rgba(45, 127, 249, 0.1);
 }
 
 .marker-popover__option--selected {
   background: var(--color-accent-tint-strong);
-  border-color: rgba(91, 140, 255, 0.4);
+  border-color: rgba(45, 127, 249, 0.4);
 }
 
 .marker-popover__option-label {
@@ -1395,11 +1796,11 @@ button {
 }
 
 .panel__theme-swatch:hover {
-  border-color: rgba(91, 140, 255, 0.28);
+  border-color: rgba(45, 127, 249, 0.28);
 }
 
 .panel__theme-swatch--active {
-  border-color: rgba(59, 130, 246, 0.56);
+  border-color: rgba(45, 127, 249, 0.56);
   background: var(--color-accent-tint);
 }
 
@@ -1440,11 +1841,11 @@ button {
 }
 
 .panel__palette-swatch:hover {
-  border-color: rgba(91, 140, 255, 0.28);
+  border-color: rgba(45, 127, 249, 0.28);
 }
 
 .panel__palette-swatch--active {
-  border-color: rgba(59, 130, 246, 0.56);
+  border-color: rgba(45, 127, 249, 0.56);
   background: var(--color-accent-tint);
 }
 
@@ -1516,8 +1917,8 @@ button {
   padding: 0 8px;
   border-bottom: 1px solid var(--color-border-default);
   flex-shrink: 0;
-  background: var(--color-surface-panel);
-  border-radius: var(--radius-medium) var(--radius-medium) 0 0;
+  background: var(--color-surface);
+  border-radius: 0;
 }
 
 .panel__tab {
@@ -1589,8 +1990,8 @@ button {
   margin-top: 10px;
   padding: 12px;
   border-radius: 14px;
-  border: 1px solid rgba(91, 140, 255, 0.16);
-  background: rgba(91, 140, 255, 0.06);
+  border: 1px solid rgba(45, 127, 249, 0.16);
+  background: rgba(45, 127, 249, 0.06);
 }
 
 .sheet-drop-targets__label {
@@ -1614,7 +2015,7 @@ button {
 }
 
 .sheet-drop-target--active {
-  border-color: rgba(91, 140, 255, 0.32);
+  border-color: rgba(45, 127, 249, 0.32);
   background: var(--color-accent-tint);
 }
 
@@ -1629,8 +2030,8 @@ button {
 .outline-card,
 .accordion-card {
   border: 1px solid var(--color-border-default);
-  background: rgba(0, 0, 0, 0.02);
-  border-radius: var(--radius-medium);
+  background: var(--color-surface-subtle);
+  border-radius: 8px;
 }
 
 .outline-card {
@@ -1848,15 +2249,15 @@ button {
 }
 
 .topic-tree__button--active {
-  border-color: rgba(91, 140, 255, 0.36);
-  background: rgba(91, 140, 255, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.08);
+  border-color: rgba(45, 127, 249, 0.36);
+  background: rgba(45, 127, 249, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(45, 127, 249, 0.08);
 }
 
 .topic-tree__button--selected {
-  border-color: rgba(91, 140, 255, 0.22);
-  background: rgba(91, 140, 255, 0.09);
-  box-shadow: inset 0 0 0 1px rgba(91, 140, 255, 0.04);
+  border-color: rgba(45, 127, 249, 0.22);
+  background: rgba(45, 127, 249, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(45, 127, 249, 0.04);
 }
 
 .topic-tree__button--matched {
@@ -1872,11 +2273,11 @@ button {
 }
 
 .topic-tree__button--drop-target {
-  border-color: rgba(91, 140, 255, 0.42);
-  background: rgba(91, 140, 255, 0.18);
+  border-color: rgba(45, 127, 249, 0.42);
+  background: rgba(45, 127, 249, 0.18);
   box-shadow:
-    inset 0 0 0 1px rgba(91, 140, 255, 0.14),
-    0 0 0 3px rgba(91, 140, 255, 0.08);
+    inset 0 0 0 1px rgba(45, 127, 249, 0.14),
+    0 0 0 3px rgba(45, 127, 249, 0.08);
 }
 
 .topic-tree__button--drop-invalid {
@@ -1896,11 +2297,11 @@ button {
 }
 
 .topic-tree__button--history-focus {
-  border-color: rgba(59, 130, 246, 0.3);
+  border-color: rgba(45, 127, 249, 0.3);
   background: var(--color-accent-tint);
   box-shadow:
-    inset 0 0 0 1px rgba(59, 130, 246, 0.06),
-    0 0 0 3px rgba(59, 130, 246, 0.08);
+    inset 0 0 0 1px rgba(45, 127, 249, 0.06),
+    0 0 0 3px rgba(45, 127, 249, 0.08);
 }
 
 .topic-tree__button--dragging {
@@ -1909,7 +2310,7 @@ button {
 }
 
 .panel__action--drop-target {
-  outline: 2px solid rgba(91, 140, 255, 0.3);
+  outline: 2px solid rgba(45, 127, 249, 0.3);
   background: var(--color-accent-tint);
 }
 
@@ -1929,8 +2330,8 @@ button {
   margin-top: 12px;
   padding: 14px 16px;
   border-radius: 16px;
-  border: 1px solid rgba(91, 140, 255, 0.22);
-  background: rgba(91, 140, 255, 0.1);
+  border: 1px solid rgba(45, 127, 249, 0.22);
+  background: rgba(45, 127, 249, 0.1);
 }
 
 .drag-hint__badge {
@@ -2002,8 +2403,8 @@ button {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(91, 140, 255, 0.06) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(91, 140, 255, 0.06) 1px, transparent 1px);
+    linear-gradient(rgba(45, 127, 249, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(45, 127, 249, 0.06) 1px, transparent 1px);
   background-size: 48px 48px;
   pointer-events: none;
 }
@@ -2014,7 +2415,7 @@ button {
 
 .mindmap-selection-box {
   position: absolute;
-  border: 1px solid rgba(59, 130, 246, 0.48);
+  border: 1px solid rgba(45, 127, 249, 0.48);
   background: var(--color-accent-tint);
   border-radius: 16px;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
@@ -2185,13 +2586,13 @@ button {
 }
 
 .mindmap-node--depth-3:hover {
-  background: rgba(91, 140, 255, 0.06);
+  background: rgba(45, 127, 249, 0.06);
   box-shadow: none;
 }
 
 .mindmap-node--center {
   background:
-    linear-gradient(135deg, rgba(91, 140, 255, 0.96), rgba(111, 176, 255, 0.92));
+    linear-gradient(135deg, rgba(45, 127, 249, 0.96), rgba(111, 176, 255, 0.92));
   color: white;
   border-color: transparent;
 }
@@ -2232,7 +2633,7 @@ button {
 }
 
 .mindmap-node--history-focus {
-  border-color: rgba(59, 130, 246, 0.4);
+  border-color: rgba(45, 127, 249, 0.4);
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
@@ -2446,16 +2847,19 @@ button {
   text-align: center;
 }
 
+/* XMind 式状态栏：底部通栏细条，发丝线上边框 */
 .status-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin: 0 var(--space-3) var(--space-3);
-  padding: 10px var(--space-3);
-  border-radius: var(--radius-medium);
-  background: var(--color-surface-panel-strong);
+  margin: 0;
+  padding: 0 12px;
+  min-height: 28px;
+  border-top: 1px solid var(--color-border-default);
+  border-radius: 0;
+  background: var(--color-surface-glass-strong);
   color: var(--color-text-secondary);
   font-size: 12px;
 }
@@ -2584,7 +2988,7 @@ button {
 .presentation__button {
   appearance: none;
   border: 1px solid var(--color-border-strong);
-  background: rgba(91, 140, 255, 0.18);
+  background: rgba(45, 127, 249, 0.18);
   color: #e6ecff;
   font-size: 13px;
   font-weight: 500;
@@ -2595,8 +2999,8 @@ button {
 }
 
 .presentation__button:hover:not(:disabled) {
-  background: rgba(91, 140, 255, 0.32);
-  border-color: rgba(91, 140, 255, 0.5);
+  background: rgba(45, 127, 249, 0.32);
+  border-color: rgba(45, 127, 249, 0.5);
 }
 
 .presentation__button:disabled {
@@ -2778,18 +3182,17 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---- 右键上下文菜单（参考 XMind）---- */
+/* ---- 右键上下文菜单（参考 XMind：纯白面板 + 发丝线 + 轻投影）---- */
 .context-menu {
   position: fixed;
   z-index: 10000;
   min-width: 200px;
   max-width: 280px;
   padding: 4px;
-  background: var(--color-surface-glass-strong);
+  background: var(--color-surface);
   border: 1px solid var(--color-border-default);
   border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.08);
-  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-level-2);
   user-select: none;
   animation: context-menu--appear 120ms ease-out;
 }

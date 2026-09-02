@@ -52,6 +52,7 @@ const commandMocks = vi.hoisted(() => ({
   setTopicStyleRef: vi.fn(),
   setTopicStyleOverrides: vi.fn(),
   setDocumentTheme: vi.fn(),
+  setDocumentSetting: vi.fn(),
   undoDocumentCommand: vi.fn(),
 }))
 

@@ -68,9 +68,12 @@ const sessionStub: DocumentSession = {
   exportMarkdownOutline: async () => {},
   importMarkdownOutline: async () => {},
   exportOpmlOutline: async () => {},
-  importOpmlOutline: async () => {},
+importOpmlOutline: async () => {},
+importDocxOutline: async () => {},
   exportPngImage: async () => {},
   exportSvgImage: async () => {},
+  exportGanttImage: async () => {},
+  exportGanttPng: async () => {},
   exportPdfDocument: async () => {},
   exportRecoveryCopy: async () => {},
   selectSheet: async () => {},
@@ -97,6 +100,7 @@ const sessionStub: DocumentSession = {
   setTopicStyleRef: async () => {},
   setTopicStyleOverrides: async () => {},
   setDocumentTheme: async () => {},
+  setDocumentSetting: async () => {},
   createRelationship: async () => {},
   deleteRelationship: async () => {},
   createBoundary: async () => {},
@@ -2378,7 +2382,8 @@ it('switches the sheet chart type from the structure menu', () => {
   fireEvent.click(structureButton)
 
   const options = screen.getAllByRole('menuitemradio')
-  expect(options).toHaveLength(6)
+  // 9 种结构：思维导图/逻辑图/树形图/组织结构图/鱼骨图/时间轴/括号图/矩阵图/气泡图
+  expect(options).toHaveLength(9)
   expect(options[0]).toHaveAttribute('aria-checked', 'true')
 
   fireEvent.click(screen.getByRole('menuitemradio', { name: /鱼骨图/ }))

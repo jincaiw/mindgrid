@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { TopicSnapshot } from '../../../lib/document/types'
 import { computeLayout } from './index'
+import { computeBraceLayout } from './brace-layout'
+import { computeBubbleLayout } from './bubble-layout'
 import { computeFishboneLayout } from './fishbone-layout'
 import { computeLogicLayout } from './logic-layout'
+import { computeMatrixLayout } from './matrix-layout'
 import { computeOrgLayout } from './org-layout'
 import { computeTimelineLayout } from './timeline-layout'
 import { computeTreeLayout } from './tree-layout'
@@ -81,7 +84,7 @@ describe('computeLayout dispatcher', () => {
 
   it('routes to each chart type', () => {
     const root = makeRoot()
-    const types = ['logic', 'tree', 'org', 'fishbone', 'timeline'] as const
+    const types = ['logic', 'tree', 'org', 'fishbone', 'timeline', 'brace', 'matrix', 'bubble'] as const
     for (const chartType of types) {
       const layout = computeLayout(root, chartType)
       expect(layout.nodes.length).toBe(7)
@@ -276,6 +279,76 @@ describe('computeTimelineLayout', () => {
   })
 })
 
+describe('computeBraceLayout', () => {
+  it('expands columns to the right with brace elbow edges', () => {
+    const layout = computeBraceLayout(makeRoot())
+    assertCommonInvariants(layout, 'root', 7, 6)
+
+    const root = layout.nodes.find((n) => n.id === 'root')!
+    const childA = layout.nodes.find((n) => n.id === 'a')!
+    const grandChild = layout.nodes.find((n) => n.id === 'a1')!
+
+    // 子节点在根右侧，孙辈更靠右（逐列展开）
+    expect(childA.x).toBeGreaterThan(root.x)
+    expect(grandChild.x).toBeGreaterThan(childA.x)
+
+    // 括号式边：起点在父节点右缘，终点在子节点左缘
+    const edge = layout.edges.find((e) => e.parentId === 'root' && e.childId === 'a')!
+    expect(edge).toBeDefined()
+    expect(edge.start.x).toBeGreaterThan(root.x)
+    expect(edge.end.x).toBeLessThan(childA.x)
+  })
+})
+
+describe('computeMatrixLayout', () => {
+  it('arranges level-1 topics as column headers with cells below', () => {
+    const layout = computeMatrixLayout(makeRoot())
+    assertCommonInvariants(layout, 'root', 7, 6)
+
+    const headers = layout.nodes.filter((n) => n.depth === 1)
+    expect(headers.length).toBe(3)
+
+    // 列表头在同一行（y 相同），列 x 递增
+    const ys = new Set(headers.map((h) => h.y))
+    expect(ys.size).toBe(1)
+
+    // 单元格（depth=2）在表头下方
+    const cells = layout.nodes.filter((n) => n.depth === 2)
+    expect(cells.length).toBe(3)
+    for (const cell of cells) {
+      const header = headers.find((h) => h.x === cell.x)
+      expect(header).toBeDefined()
+      expect(cell.y).toBeGreaterThan(header!.y)
+    }
+  })
+})
+
+describe('computeBubbleLayout', () => {
+  it('places level-1 topics on a ring around centered root', () => {
+    const layout = computeBubbleLayout(makeRoot())
+    assertCommonInvariants(layout, 'root', 7, 6)
+
+    const root = layout.nodes.find((n) => n.id === 'root')!
+    expect(root.x).toBe(0)
+    expect(root.y).toBe(0)
+
+    // 所有 depth=1 节点到根的距离相等（同一环）
+    const ring = layout.nodes.filter((n) => n.depth === 1)
+    expect(ring.length).toBe(3)
+    const distances = ring.map((n) => Math.hypot(n.x - root.x, n.y - root.y))
+    for (const distance of distances) {
+      expect(Math.abs(distance - distances[0])).toBeLessThan(0.001)
+    }
+
+    // depth=2 在更外层环上
+    const outer = layout.nodes.filter((n) => n.depth === 2)
+    expect(outer.length).toBe(3)
+    for (const node of outer) {
+      expect(Math.hypot(node.x, node.y)).toBeGreaterThan(distances[0])
+    }
+  })
+})
+
 describe('all layouts handle edge cases', () => {
   const layouts = [
     { name: 'logic', fn: computeLogicLayout },
@@ -283,6 +356,9 @@ describe('all layouts handle edge cases', () => {
     { name: 'org', fn: computeOrgLayout },
     { name: 'fishbone', fn: computeFishboneLayout },
     { name: 'timeline', fn: computeTimelineLayout },
+    { name: 'brace', fn: computeBraceLayout },
+    { name: 'matrix', fn: computeMatrixLayout },
+    { name: 'bubble', fn: computeBubbleLayout },
   ]
 
   for (const { name, fn } of layouts) {
