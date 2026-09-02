@@ -158,7 +158,9 @@ jobs:
           releaseBody: 'MindGrid ${{ env.TAG }} — 请查看 Assets 下载对应平台安装包。'
           releaseDraft: false
           prerelease: false
-          args: --target ${{ matrix.target }}
+          # Windows 限定 NSIS（WiX MSI 打包的 light.exe 在 CI 上不稳定），
+          # portable zip 由后续步骤从 release exe 打包
+          args: --target ${{ matrix.target }} ${{ matrix.platform == 'windows' && '--bundles nsis' || '' }}
 
       # ─── Windows portable（免安装版）───
       - name: Package Windows portable zip
