@@ -130,6 +130,92 @@ const meetingNotesTemplate: DocumentTemplate = {
   ),
 }
 
+const brainstormTemplate: DocumentTemplate = {
+  id: 'brainstorm',
+  name: '头脑风暴',
+  description: '发散想法、快速归类与筛选的创意收集框架',
+  category: 'business',
+  document: makeTemplateDocument(
+    '头脑风暴',
+    topic('中心议题', [
+      topic('想法发散', leaves(['想法 1', '想法 2', '想法 3', '想法 4'])),
+      topic('归类整理', leaves(['类别 A', '类别 B', '类别 C'])),
+      topic('可行性评估', leaves(['投入产出', '技术难度', '时间成本'])),
+      topic('优先级排序', leaves(['立刻做', '计划做', '暂缓'])),
+    ]),
+  ),
+}
+
+const weeklyReportTemplate: DocumentTemplate = {
+  id: 'weekly-report',
+  name: '周报',
+  description: '本周进展、问题与下周计划的固定汇报结构',
+  category: 'business',
+  document: makeTemplateDocument(
+    '周报',
+    topic('本周周报', [
+      topic('本周进展', leaves(['完成事项 1', '完成事项 2'])),
+      topic('问题与风险', leaves(['阻塞点', '需要的支持'])),
+      topic('下周计划', leaves(['计划 1', '计划 2'])),
+      topic('数据指标', leaves(['关键指标变化'])),
+    ]),
+  ),
+}
+
+const okrTemplate: DocumentTemplate = {
+  id: 'okr-plan',
+  name: 'OKR 规划',
+  description: '目标（O）与关键结果（KR）对齐的季度规划',
+  category: 'business',
+  document: makeTemplateDocument(
+    'OKR 规划',
+    topic('季度 OKR', [
+      topic('O1：目标一', [
+        topic('KR1：关键结果'),
+        topic('KR2：关键结果'),
+        topic('KR3：关键结果'),
+      ]),
+      topic('O2：目标二', [
+        topic('KR1：关键结果'),
+        topic('KR2：关键结果'),
+      ]),
+      topic('复盘与风险', leaves(['达成度评估', '调整策略'])),
+    ]),
+  ),
+}
+
+const studyPlanTemplate: DocumentTemplate = {
+  id: 'study-plan',
+  name: '学习计划',
+  description: '按阶段拆解的学习路径与检验标准',
+  category: 'education',
+  document: makeTemplateDocument(
+    '学习计划',
+    topic('学习主题', [
+      topic('基础阶段', leaves(['知识点 1', '知识点 2', '练习'])),
+      topic('进阶阶段', leaves(['专题深入', '实战项目'])),
+      topic('检验标准', leaves(['自测题', '输出笔记'])),
+      topic('时间安排', leaves(['每日 1 小时', '周末复盘'])),
+    ]),
+  ),
+}
+
+const travelPlanTemplate: DocumentTemplate = {
+  id: 'travel-plan',
+  name: '旅行计划',
+  description: '行程、预算、装备与注意事项一页规划',
+  category: 'personal',
+  document: makeTemplateDocument(
+    '旅行计划',
+    topic('目的地', [
+      topic('行程安排', leaves(['Day 1', 'Day 2', 'Day 3'])),
+      topic('预算', leaves(['交通', '住宿', '餐饮', '门票'])),
+      topic('装备清单', leaves(['证件', '衣物', '电子设备'])),
+      topic('注意事项', leaves(['天气预报', '当地风俗', '紧急联系'])),
+    ]),
+  ),
+}
+
 /** 所有内置模板，按分类排列。 */
 export const BUILT_IN_TEMPLATES: DocumentTemplate[] = [
   blankTemplate,
@@ -138,4 +224,9 @@ export const BUILT_IN_TEMPLATES: DocumentTemplate[] = [
   readingNotesTemplate,
   projectPlanTemplate,
   meetingNotesTemplate,
+  brainstormTemplate,
+  weeklyReportTemplate,
+  okrTemplate,
+  studyPlanTemplate,
+  travelPlanTemplate,
 ]

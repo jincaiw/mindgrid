@@ -55,6 +55,8 @@ pub enum TopicTaskStatus {
 pub struct TopicTask {
     pub status: TopicTaskStatus,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_date_ms: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub due_date_ms: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub priority: Option<u32>,
@@ -160,6 +162,9 @@ pub enum ChartType {
     Org,
     Fishbone,
     Timeline,
+    Brace,
+    Matrix,
+    Bubble,
 }
 
 impl Default for ChartType {
@@ -998,6 +1003,43 @@ impl DocumentSession {
         })
     }
 
+    /// 写入文档级设置键值（如 `canvas.showGrid`）。
+    ///
+    /// 视图偏好类设置不走撤销栈：`value` 为 `None` 表示删除该键。
+    pub fn set_document_setting(
+        &mut self,
+        key: &str,
+        value: Option<serde_json::Value>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        let key = key.trim();
+        if key.is_empty() {
+            return Err("设置键不能为空".into());
+        }
+
+        let document = self
+            .document
+            .as_mut()
+            .ok_or_else(|| "当前没有打开的文档".to_string())?;
+
+        // settings 是自由键值对象；非对象的历史数据视为损坏并重置。
+        let mut settings = match document.settings.take() {
+            Some(serde_json::Value::Object(map)) => map,
+            _ => serde_json::Map::new(),
+        };
+
+        match value {
+            Some(value) => settings.insert(key.to_string(), value),
+            None => settings.remove(key),
+        };
+        document.settings = Some(serde_json::Value::Object(settings));
+        document.revision += 1;
+        self.has_unsaved_changes = true;
+        self.recovered_from_autosave = false;
+
+        self.snapshot()
+            .ok_or_else(|| "当前没有可用的文档状态".to_string())
+    }
+
     // ---- 关系线 / 边界 / 概要 ----
 
     pub fn create_relationship(
@@ -1465,6 +1507,45 @@ mod tests {
             snapshot.active_topic_id,
             snapshot.document.root_topic().children[3].id
         );
+    }
+
+    #[test]
+    fn set_document_setting_writes_and_removes_keys_without_undo() {
+        let mut session = DocumentSession::create_default();
+
+        let snapshot = session
+            .set_document_setting("canvas.showGrid", Some(serde_json::json!(true)))
+            .expect("setting should be written");
+        assert_eq!(
+            snapshot.document.settings.as_ref().and_then(|s| s.get("canvas.showGrid")),
+            Some(&serde_json::json!(true))
+        );
+
+        // 视图偏好不入撤销栈：can_undo 仍为 false。
+        assert!(!snapshot.can_undo);
+        let before_revision = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .revision;
+        assert!(before_revision >= 2);
+
+        // value=None 删除键。
+        let snapshot = session
+            .set_document_setting("canvas.showGrid", None)
+            .expect("setting should be removed");
+        assert!(snapshot
+            .document
+            .settings
+            .as_ref()
+            .and_then(|s| s.get("canvas.showGrid"))
+            .is_none());
+
+        // 空键报错。
+        let error = session
+            .set_document_setting("   ", Some(serde_json::json!(1)))
+            .expect_err("empty key should fail");
+        assert!(error.contains("设置键不能为空"));
     }
 
     #[test]

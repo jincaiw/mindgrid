@@ -363,6 +363,46 @@ pub fn import_opml_file(
 }
 
 #[tauri::command]
+pub fn import_docx_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<DocumentSessionSnapshot, String> {
+    let document =
+        crate::app::import_export::import_docx_file(std::path::Path::new(&path))?;
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    *guard = DocumentSession::from_document_with_file_path(
+        document,
+        None,
+        Some(crate::app::persistence::current_timestamp_ms()),
+    );
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 写入文档级设置键值（视图偏好，如 `canvas.showGrid`）；value 为 null 表示删除该键。
+#[tauri::command]
+pub fn set_document_setting(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    key: String,
+    value: Option<serde_json::Value>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_document_setting(&key, value)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
 pub fn repair_document_file(
     app: AppHandle,
     state: State<'_, AppState>,

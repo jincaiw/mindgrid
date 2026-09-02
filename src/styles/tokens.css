@@ -6,9 +6,9 @@
     "Segoe UI Variable",
     "Noto Sans",
     sans-serif;
-  /* XMind 式浅色主题：macOS 风格浅灰底色 */
-  --color-background-app: #f5f5f7;
-  --color-background-canvas: #f5f5f7;
+  /* XMind 式浅色主题：macOS 风格浅灰底色（画布与背景同底，贴合式扁平布局） */
+  --color-background-app: #f7f7f8;
+  --color-background-canvas: #f7f7f8;
   --color-surface-panel: rgba(255, 255, 255, 0.82);
   --color-surface-panel-strong: rgba(255, 255, 255, 0.96);
   /* 不透明表面：用于 toast / 弹层 / 浮窗等需要纯色底的面板 */
@@ -33,13 +33,14 @@
   --color-text: #1a1a2e;
   --color-border-default: rgba(0, 0, 0, 0.08);
   --color-border-strong: rgba(0, 0, 0, 0.14);
-  --color-accent: #5b8cff;
-  /* accent 浅底（12% 蓝）：用于选中态底纹 / chip 选中背景 */
-  --color-accent-tint: rgba(91, 140, 255, 0.12);
+  /* XMind 品牌蓝（浅色） */
+  --color-accent: #2d7ff9;
+  /* accent 浅底（10% 蓝）：用于选中态底纹 / chip 选中背景 */
+  --color-accent-tint: rgba(45, 127, 249, 0.1);
   /* accent 较深底（16% 蓝）：用于 active / pressed 选中态 */
-  --color-accent-tint-strong: rgba(91, 140, 255, 0.16);
-  --color-selection: rgba(91, 140, 255, 0.24);
-  --color-focus-ring: rgba(91, 140, 255, 0.45);
+  --color-accent-tint-strong: rgba(45, 127, 249, 0.16);
+  --color-selection: rgba(45, 127, 249, 0.22);
+  --color-focus-ring: rgba(45, 127, 249, 0.45);
   --color-success: #34c759;
   --color-warning: #ff9f0a;
   --color-error: #ff3b30;
@@ -92,12 +93,12 @@
   --color-text: #f0f0f4;
   --color-border-default: rgba(255, 255, 255, 0.1);
   --color-border-strong: rgba(255, 255, 255, 0.18);
-  /* accent 在暗色背景上略调亮（提高对比度） */
-  --color-accent: #7aa6ff;
-  --color-accent-tint: rgba(122, 166, 255, 0.16);
-  --color-accent-tint-strong: rgba(122, 166, 255, 0.24);
-  --color-selection: rgba(122, 166, 255, 0.32);
-  --color-focus-ring: rgba(122, 166, 255, 0.5);
+  /* accent 在暗色背景上略调亮（XMind 品牌蓝暗色变体） */
+  --color-accent: #6f9dff;
+  --color-accent-tint: rgba(111, 157, 255, 0.16);
+  --color-accent-tint-strong: rgba(111, 157, 255, 0.24);
+  --color-selection: rgba(111, 157, 255, 0.32);
+  --color-focus-ring: rgba(111, 157, 255, 0.5);
   --color-success: #30d158;
   --color-warning: #ffb340;
   --color-error: #ff453a;
@@ -133,11 +134,11 @@
     --color-text: #f0f0f4;
     --color-border-default: rgba(255, 255, 255, 0.1);
     --color-border-strong: rgba(255, 255, 255, 0.18);
-    --color-accent: #7aa6ff;
-    --color-accent-tint: rgba(122, 166, 255, 0.16);
-    --color-accent-tint-strong: rgba(122, 166, 255, 0.24);
-    --color-selection: rgba(122, 166, 255, 0.32);
-    --color-focus-ring: rgba(122, 166, 255, 0.5);
+  --color-accent: #6f9dff;
+  --color-accent-tint: rgba(111, 157, 255, 0.16);
+  --color-accent-tint-strong: rgba(111, 157, 255, 0.24);
+  --color-selection: rgba(111, 157, 255, 0.32);
+  --color-focus-ring: rgba(111, 157, 255, 0.5);
     --color-success: #30d158;
     --color-warning: #ffb340;
     --color-error: #ff453a;

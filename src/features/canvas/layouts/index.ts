@@ -10,8 +10,11 @@ import type { ChartType } from '../../../lib/document/types'
 import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import { computeMindMapLayout, estimateNodeSize } from '../mindmap-layout'
 import { computeLayoutBounds } from './layout-utils'
+import { computeBraceLayout } from './brace-layout'
+import { computeBubbleLayout } from './bubble-layout'
 import { computeFishboneLayout } from './fishbone-layout'
 import { computeLogicLayout } from './logic-layout'
+import { computeMatrixLayout } from './matrix-layout'
 import { computeOrgLayout } from './org-layout'
 import { computeTimelineLayout } from './timeline-layout'
 import { computeTreeLayout } from './tree-layout'
@@ -41,6 +44,12 @@ export function computeLayout(
         return computeFishboneLayout(rootTopic)
       case 'timeline':
         return computeTimelineLayout(rootTopic)
+      case 'brace':
+        return computeBraceLayout(rootTopic)
+      case 'matrix':
+        return computeMatrixLayout(rootTopic)
+      case 'bubble':
+        return computeBubbleLayout(rootTopic)
       case 'mindmap':
       default:
         return computeMindMapLayout(rootTopic)
@@ -103,4 +112,4 @@ function mergeFloatingTopics(
   }
 }
 
-export { computeFishboneLayout, computeLogicLayout, computeOrgLayout, computeTimelineLayout, computeTreeLayout }
+export { computeBraceLayout, computeBubbleLayout, computeFishboneLayout, computeLogicLayout, computeMatrixLayout, computeOrgLayout, computeTimelineLayout, computeTreeLayout }

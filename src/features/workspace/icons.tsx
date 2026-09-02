@@ -128,6 +128,20 @@ export function LayoutIcon(props: IconProps) {
   )
 }
 
+/** 甘特图（日历 + 时间条） */
+export function CalendarIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="M3 10h18" />
+      <path d="M7 14h6" />
+      <path d="M13 17h4" />
+    </Svg>
+  )
+}
+
 /** 演示 */
 export function PlayIcon(props: IconProps) {
   return (

@@ -474,6 +474,31 @@ export async function invokeBrowserCommand<TResult>(
     case 'import_opml_file': {
       throw new Error('浏览器开发态暂不支持 OPML 导入，请使用桌面版运行')
     }
+    case 'import_docx_file': {
+      throw new Error('浏览器开发态暂不支持 Word 导入，请使用桌面版运行')
+    }
+    case 'set_document_setting': {
+      const key = String(payload.key ?? '').trim()
+      if (!key) {
+        throw new Error('设置键不能为空')
+      }
+
+      // 视图偏好不走历史栈：直接改内存文档并返回快照（与 Rust 行为一致）。
+      const document = ensureDocument()
+      const settings = { ...(document.settings ?? {}) }
+      if (payload.value === null || payload.value === undefined) {
+        delete settings[key]
+      } else {
+        settings[key] = payload.value
+      }
+      document.settings = settings
+      document.revision += 1
+      hasUnsavedChanges = true
+      recoveredFromAutosave = false
+      persistRecoverySnapshot(document)
+
+      return createSnapshot(document) as TResult
+    }
     case 'export_png_file': {
       throw new Error('浏览器开发态暂不支持 PNG 导出，请使用桌面版运行')
     }
@@ -582,11 +607,21 @@ export async function invokeBrowserCommand<TResult>(
       return applyMutation('切换图表类型', (draft) => {
         const sheetId = String(payload.sheet_id)
         const rawChartType = String(payload.chart_type ?? '').trim().toLowerCase()
-        const allowedChartTypes = ['mindmap', 'logic', 'tree', 'org', 'fishbone', 'timeline'] as const
+        const allowedChartTypes = [
+          'mindmap',
+          'logic',
+          'tree',
+          'org',
+          'fishbone',
+          'timeline',
+          'brace',
+          'matrix',
+          'bubble',
+        ] as const
 
         if (!allowedChartTypes.includes(rawChartType as (typeof allowedChartTypes)[number])) {
           throw new Error(
-            `不支持的图表类型“${rawChartType}”，支持 mindmap / logic / tree / org / fishbone / timeline`,
+            `不支持的图表类型“${rawChartType}”，支持 mindmap / logic / tree / org / fishbone / timeline / brace / matrix / bubble`,
           )
         }
 

@@ -11,7 +11,16 @@
  * 不丢失。此处不为未知字段声明 index signature，以保持编译期类型安全。
  */
 
-export type ChartType = 'mindmap' | 'logic' | 'tree' | 'org' | 'fishbone' | 'timeline'
+export type ChartType =
+  | 'mindmap'
+  | 'logic'
+  | 'tree'
+  | 'org'
+  | 'fishbone'
+  | 'timeline'
+  | 'brace'
+  | 'matrix'
+  | 'bubble'
 
 /** 主题标记（图标库引用），例如优先级、进度、旗帜等。 */
 export interface TopicMarker {
@@ -37,6 +46,8 @@ export type TopicTaskStatus = 'none' | 'started' | 'completed' | 'pending'
 /** 轻量任务属性，用于在思维导图中跟踪行动项。 */
 export interface TopicTask {
   status: TopicTaskStatus
+  /** 开始日期（毫秒时间戳，当日 00:00 本地时间），甘特图条形起点。 */
+  startDateMs?: number
   dueDateMs?: number
   priority?: number
 }

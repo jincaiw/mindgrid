@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getActiveSheet } from '../../lib/document/sheets'
 import { syncSelectionWithActiveTopic } from '../canvas/interaction-state'
 import { CanvasHost } from '../canvas/canvas-host'
+import { GanttView } from '../gantt/gantt-view'
 import type { DocumentSession } from '../document/use-document-session'
 import { PresentationView } from '../presentation/presentation-view'
 import { ShortcutsHelp } from '../shortcuts/shortcuts-help'
@@ -54,6 +55,8 @@ export function WorkspaceScreen({
   })
   // 批次 19：大纲全屏视图（隐藏画布，全宽编辑主题树，Esc 返回）
   const [isOutlinerMode, setIsOutlinerMode] = useState(false)
+  // 批次 23：甘特图全屏视图（汇总全文档任务时间轴，Esc 返回）
+  const [isGanttMode, setIsGanttMode] = useState(false)
   // 批次 20：快捷键帮助浮层显隐
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
   // 工具栏“插入→备注/标签/链接/标记”：请求 Inspector 切到主题 tab
@@ -117,6 +120,8 @@ export function WorkspaceScreen({
         if (isOutlinerMode) {
           // 大纲视图自身已处理 Esc 退出；此处仅作兜底，避免与画布交互冲突
           setIsOutlinerMode(false)
+        } else if (isGanttMode) {
+          setIsGanttMode(false)
         } else if (isZenMode) {
           setIsZenMode(false)
         }
@@ -124,13 +129,13 @@ export function WorkspaceScreen({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isZenMode, isOutlinerMode, session.document])
+  }, [isZenMode, isOutlinerMode, isGanttMode, session.document])
 
   return (
     <div
       className={`workspace-shell${isZenMode ? ' workspace-shell--zen' : ''}${
         isOutlinerMode ? ' workspace-shell--outliner' : ''
-      }`}
+      }${isGanttMode ? ' workspace-shell--gantt' : ''}`}
     >
       <Toolbar
         session={session}
@@ -147,6 +152,8 @@ export function WorkspaceScreen({
         onToggleSidebar={() => setSidebarVisible((v) => !v)}
         isOutlinerMode={isOutlinerMode}
         onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
+        isGanttMode={isGanttMode}
+        onToggleGantt={() => setIsGanttMode((v) => !v)}
         onFocusInspectorTopicTab={focusInspectorTopicTab}
         onNotify={onNotify}
         themeMode={themeMode}
@@ -154,6 +161,7 @@ export function WorkspaceScreen({
         onCycleTheme={onCycleTheme}
         onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
       />
+      {/* Sheet 标签栏渲染在画布列顶部（canvas-column 内），与画布对齐 */}
       {isZenMode ? (
         <button
           className="zen-exit-btn"
@@ -167,10 +175,16 @@ export function WorkspaceScreen({
       ) : null}
       <div
         className={`workspace-shell__body${
-          inspectorVisible && !isOutlinerMode ? '' : ' workspace-shell__body--inspector-hidden'
+          inspectorVisible && !isOutlinerMode && !isGanttMode
+            ? ''
+            : ' workspace-shell__body--inspector-hidden'
         }${
-          sidebarVisible && !isOutlinerMode ? '' : ' workspace-shell__body--sidebar-hidden'
-        }${isOutlinerMode ? ' workspace-shell__body--outliner' : ''}`}
+          sidebarVisible && !isOutlinerMode && !isGanttMode
+            ? ''
+            : ' workspace-shell__body--sidebar-hidden'
+        }${isOutlinerMode ? ' workspace-shell__body--outliner' : ''}${
+          isGanttMode ? ' workspace-shell__body--outliner' : ''
+        }`}
       >
         {isOutlinerMode ? (
           <OutlinerView
@@ -178,6 +192,13 @@ export function WorkspaceScreen({
             selectedTopicIds={selectedTopicIds}
             onSelectedTopicIdsChange={setSelectedTopicIds}
             onExit={() => setIsOutlinerMode(false)}
+          />
+        ) : isGanttMode ? (
+          <GanttView
+            session={session}
+            selectedTopicIds={selectedTopicIds}
+            onSelectedTopicIdsChange={setSelectedTopicIds}
+            onExit={() => setIsGanttMode(false)}
           />
         ) : (
           <>
@@ -197,6 +218,7 @@ export function WorkspaceScreen({
                 onNotify={onNotify}
                 searchOpen={searchOpen}
                 onSearchOpenChange={setSearchOpen}
+                showGrid={session.document?.settings?.['canvas.showGrid'] === true}
               />
             </div>
             {inspectorVisible ? (

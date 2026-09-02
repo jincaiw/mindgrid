@@ -11,7 +11,7 @@ use quick_xml::escape::unescape as unescape_xml;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::{Reader, Writer};
 use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 
 const OPML_SHEET_ROLE: &str = "mgd_role";
@@ -257,6 +257,208 @@ fn build_sheet_from_markdown(title: String, topics: &[(usize, String)]) -> Sheet
         extensions: None,
         extra: serde_json::Map::new(),
     }
+}
+
+// ============================================================================
+// Word (.docx) 导入
+// ============================================================================
+
+const DOCX_DOCUMENT_ENTRY: &str = "word/document.xml";
+const DOCX_MAX_HEADING_DEPTH: usize = 6;
+const DOCX_MAX_TOPIC_DEPTH: usize = 8;
+
+/// 导入 Word (.docx) 文件：解压后解析 `word/document.xml` 的段落大纲。
+///
+/// 映射规则：
+/// - `Heading1` 段落 → 画布标题（开启新画布）；
+/// - `Heading2`~`Heading6` → 主题，深度 = 标题级别 - 1；
+/// - 正文段落 → 挂在上一个标题主题之下（同标题下的多个正文段落互为兄弟）；
+/// - 整个文档没有 `Heading1` 时，全部内容落入以文件名命名的单个画布。
+pub fn import_docx_file(path: &Path) -> Result<DocumentSnapshot, String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("无法读取 Word 文件: {error}"))?;
+    let fallback_title = path
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+        .filter(|stem| !stem.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_SHEET_TITLE.to_string());
+
+    parse_docx_to_document(&bytes, &fallback_title)
+}
+
+fn parse_docx_to_document(bytes: &[u8], fallback_title: &str) -> Result<DocumentSnapshot, String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|error| format!("无法打开 Word 文件（ZIP 解析失败）: {error}"))?;
+
+    let mut document_xml = String::new();
+    {
+        let mut entry = archive
+            .by_name(DOCX_DOCUMENT_ENTRY)
+            .map_err(|_| "Word 文件缺少 word/document.xml，可能不是有效的 .docx 文档".to_string())?;
+        entry
+            .read_to_string(&mut document_xml)
+            .map_err(|error| format!("无法读取 word/document.xml: {error}"))?;
+    }
+
+    parse_docx_xml_to_document(&document_xml, fallback_title)
+}
+
+fn parse_docx_xml_to_document(xml: &str, fallback_title: &str) -> Result<DocumentSnapshot, String> {
+    let mut reader = Reader::from_str(xml);
+    reader.config_mut().trim_text(false);
+
+    let mut sheets: Vec<(String, Vec<(usize, String)>)> = Vec::new();
+    let mut current_title: Option<String> = None;
+    let mut current_topics: Vec<(usize, String)> = Vec::new();
+
+    // 段落级解析状态
+    let mut in_paragraph = false;
+    let mut in_text_run = false;
+    let mut heading_level: Option<usize> = None;
+    let mut paragraph_text = String::new();
+    // 最近一个标题主题的深度（正文段落挂在它下面）；0 表示该画布还没有标题主题。
+    let mut last_heading_depth = 0usize;
+    let mut buf = Vec::new();
+
+    loop {
+        let event = reader
+            .read_event_into(&mut buf)
+            .map_err(|error| format!("Word 文档解析失败: {error}"))?;
+
+        match event {
+            Event::Eof => break,
+            Event::Start(ref start) => match start.name().as_ref() {
+                b"w:p" => {
+                    in_paragraph = true;
+                    in_text_run = false;
+                    heading_level = None;
+                    paragraph_text.clear();
+                }
+                b"w:t" => in_text_run = true,
+                b"w:tab" | b"w:br" if in_paragraph => paragraph_text.push(' '),
+                _ => {}
+            },
+            Event::Empty(ref start) => match start.name().as_ref() {
+                b"w:pStyle" => {
+                    if let Some(value) = read_xml_attribute(start, b"w:val") {
+                        heading_level = heading_level_from_style(&value);
+                    }
+                }
+                b"w:tab" | b"w:br" if in_paragraph => paragraph_text.push(' '),
+                _ => {}
+            },
+            Event::Text(ref text) if in_text_run => {
+                let decoded = text
+                    .decode()
+                    .map_err(|error| format!("Word 文本解码失败: {error}"))?;
+                if let Ok(unescaped) = unescape_xml(&decoded) {
+                    paragraph_text.push_str(unescaped.as_ref());
+                }
+            }
+            Event::End(ref end) => match end.name().as_ref() {
+                b"w:t" => in_text_run = false,
+                b"w:p" => {
+                    in_paragraph = false;
+                    in_text_run = false;
+                    let text = paragraph_text.trim().to_string();
+                    if text.is_empty() {
+                        continue;
+                    }
+
+                    match heading_level {
+                        Some(1) => {
+                            // Heading1 开启新画布：先终结上一段。
+                            if let Some(title) = current_title.take() {
+                                if !current_topics.is_empty() {
+                                    sheets.push((title, std::mem::take(&mut current_topics)));
+                                }
+                            }
+                            current_title = Some(text);
+                            last_heading_depth = 0;
+                        }
+                        Some(level) => {
+                            if current_title.is_none() {
+                                current_title = Some(fallback_title.to_string());
+                            }
+                            let depth = (level - 1).min(DOCX_MAX_TOPIC_DEPTH);
+                            current_topics.push((depth, text));
+                            last_heading_depth = depth;
+                        }
+                        None => {
+                            if current_title.is_none() {
+                                current_title = Some(fallback_title.to_string());
+                            }
+                            let depth = (last_heading_depth + 1).min(DOCX_MAX_TOPIC_DEPTH);
+                            current_topics.push((depth, text));
+                        }
+                    }
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        buf.clear();
+    }
+
+    if let Some(title) = current_title.take() {
+        if !current_topics.is_empty() {
+            sheets.push((title, current_topics));
+        }
+    }
+
+    if sheets.is_empty() {
+        return Err("Word 文档没有可导入的主题（缺少标题或正文段落）".into());
+    }
+
+    let sheets: Vec<SheetSnapshot> = sheets
+        .into_iter()
+        .map(|(title, topics)| build_sheet_from_markdown(title, &topics))
+        .collect();
+
+    let active_sheet_id = sheets[0].id.clone();
+
+    Ok(DocumentSnapshot {
+        schema_version: CURRENT_SCHEMA_VERSION.into(),
+        document_id: create_id("doc"),
+        revision: 1,
+        active_sheet_id,
+        sheets,
+        relationships: Vec::new(),
+        settings: None,
+        theme: None,
+        extensions: None,
+        extra: serde_json::Map::new(),
+    })
+}
+
+/// 从 `<w:pStyle w:val="..."/>` 提取标题级别（1~6）。
+///
+/// 兼容 `Heading1` / `heading 1`（英文样式）与 `1`（中文 Word 的样式 ID）。
+fn heading_level_from_style(value: &str) -> Option<usize> {
+    let normalized = value.trim().to_ascii_lowercase();
+    let digits = normalized
+        .strip_prefix("heading")
+        .map(str::trim)
+        .unwrap_or(&normalized);
+
+    if digits.len() == 1 {
+        let level = digits.chars().next()?.to_digit(10)? as usize;
+        if (1..=DOCX_MAX_HEADING_DEPTH).contains(&level) {
+            return Some(level);
+        }
+    }
+
+    None
+}
+
+fn read_xml_attribute(start: &BytesStart, key: &[u8]) -> Option<String> {
+    for attr in start.attributes() {
+        let attr = attr.ok()?;
+        if attr.key.as_ref() == key {
+            let raw = std::str::from_utf8(&attr.value).ok()?;
+            return unescape_xml(raw).ok().map(|value| value.into_owned());
+        }
+    }
+    None
 }
 
 // ============================================================================
@@ -907,5 +1109,140 @@ mod tests {
         assert_eq!(read_back, data);
 
         let _ = std::fs::remove_file(temp_path);
+    }
+
+    // ------------------------------------------------------------------
+    // Word (.docx) 导入
+    // ------------------------------------------------------------------
+
+    fn build_test_docx(document_xml: &str) -> Vec<u8> {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::FileOptions::default();
+            writer
+                .start_file("word/document.xml", options)
+                .expect("docx entry should start");
+            std::io::Write::write_all(&mut writer, document_xml.as_bytes())
+                .expect("docx xml should write");
+            writer.finish().expect("docx zip should finish");
+        }
+        cursor.into_inner()
+    }
+
+    #[test]
+    fn docx_import_maps_heading_levels_to_topic_depth() {
+        let docx = build_test_docx(concat!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n",
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:body>",
+            "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>项目规划</w:t></w:r></w:p>",
+            "<w:p><w:pPr><w:pStyle w:val=\"Heading2\"/></w:pPr><w:r><w:t>目标</w:t></w:r></w:p>",
+            "<w:p><w:r><w:t>提升留存率</w:t></w:r></w:p>",
+            "<w:p><w:pPr><w:pStyle w:val=\"Heading3\"/></w:pPr><w:r><w:t>衡量指标</w:t></w:r></w:p>",
+            "</w:body></w:document>",
+        ));
+        let document = parse_docx_to_document(&docx, "项目规划").expect("docx should parse");
+
+        assert_eq!(document.sheets.len(), 1);
+        assert_eq!(document.sheets[0].title, "项目规划");
+        // Heading1 后的第一个条目（Heading2「目标」）成为根主题。
+        assert_eq!(document.sheets[0].root_topic.text, "目标");
+        // 正文段落与 Heading3 都挂在「目标」之下。
+        assert_eq!(document.sheets[0].root_topic.children.len(), 2);
+        assert_eq!(document.sheets[0].root_topic.children[0].text, "提升留存率");
+        assert_eq!(document.sheets[0].root_topic.children[1].text, "衡量指标");
+    }
+
+    #[test]
+    fn docx_import_splits_sheets_on_heading1() {
+        let docx = build_test_docx(concat!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:body>",
+            "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>画布一</w:t></w:r></w:p>",
+            "<w:p><w:r><w:t>主题 A</w:t></w:r></w:p>",
+            "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr><w:r><w:t>画布二</w:t></w:r></w:p>",
+            "<w:p><w:r><w:t>主题 B</w:t></w:r></w:p>",
+            "</w:body></w:document>",
+        ));
+        let document = parse_docx_to_document(&docx, "大纲").expect("docx should parse");
+
+        assert_eq!(document.sheets.len(), 2);
+        assert_eq!(document.sheets[0].title, "画布一");
+        assert_eq!(document.sheets[0].root_topic.text, "主题 A");
+        assert_eq!(document.sheets[1].title, "画布二");
+        assert_eq!(document.sheets[1].root_topic.text, "主题 B");
+    }
+
+    #[test]
+    fn docx_import_falls_back_to_file_stem_without_heading1() {
+        let docx = build_test_docx(concat!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:body>",
+            "<w:p><w:r><w:t>中心主题</w:t></w:r></w:p>",
+            "<w:p><w:r><w:t>子主题</w:t></w:r></w:p>",
+            "</w:body></w:document>",
+        ));
+        let document = parse_docx_to_document(&docx, "会议纪要").expect("docx should parse");
+
+        assert_eq!(document.sheets.len(), 1);
+        assert_eq!(document.sheets[0].title, "会议纪要");
+        assert_eq!(document.sheets[0].root_topic.text, "中心主题");
+        assert_eq!(document.sheets[0].root_topic.children.len(), 1);
+        assert_eq!(document.sheets[0].root_topic.children[0].text, "子主题");
+    }
+
+    #[test]
+    fn docx_import_supports_lowercase_and_numeric_heading_styles() {
+        let docx = build_test_docx(concat!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:body>",
+            "<w:p><w:pPr><w:pStyle w:val=\"heading 1\"/></w:pPr><w:r><w:t>根</w:t></w:r></w:p>",
+            "<w:p><w:pPr><w:pStyle w:val=\"2\"/></w:pPr><w:r><w:t>子</w:t></w:r></w:p>",
+            "</w:body></w:document>",
+        ));
+        let document = parse_docx_to_document(&docx, "大纲").expect("docx should parse");
+
+        // "heading 1"（小写带空格）识别为 Heading1 → 画布标题；
+        // "2"（中文 Word 样式 ID）识别为 Heading2 → 根主题。
+        assert_eq!(document.sheets[0].title, "根");
+        assert_eq!(document.sheets[0].root_topic.text, "子");
+        assert!(document.sheets[0].root_topic.children.is_empty());
+    }
+
+    #[test]
+    fn docx_import_joins_text_runs_and_skips_empty_paragraphs() {
+        let docx = build_test_docx(concat!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:body>",
+            "<w:p><w:pPr><w:pStyle w:val=\"Heading1\"/></w:pPr>",
+            "<w:r><w:t>关</w:t></w:r><w:r><w:t>键</w:t><w:tab/><w:t>词</w:t></w:r></w:p>",
+            "<w:p><w:r><w:t>   </w:t></w:r></w:p>",
+            "<w:p><w:r><w:t>正文主题</w:t></w:r></w:p>",
+            "</w:body></w:document>",
+        ));
+        let document = parse_docx_to_document(&docx, "大纲").expect("docx should parse");
+
+        // 多个 w:t run 与 w:tab 合并为单段文本；纯空白段落被跳过。
+        assert_eq!(document.sheets[0].title, "关键 词");
+        assert_eq!(document.sheets[0].root_topic.text, "正文主题");
+    }
+
+    #[test]
+    fn docx_import_rejects_document_without_topics() {
+        let docx = build_test_docx(concat!(
+            "<w:document xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\">",
+            "<w:body><w:p><w:r><w:t>   </w:t></w:r></w:p></w:body></w:document>",
+        ));
+        let error = parse_docx_to_document(&docx, "空文档").expect_err("empty docx should fail");
+        assert!(error.contains("没有可导入的主题"));
+    }
+
+    #[test]
+    fn docx_import_rejects_non_docx_zip() {
+        let bytes = b"not a zip archive";
+        let error =
+            parse_docx_to_document(bytes, "大纲").expect_err("non-zip content should fail");
+        assert!(error.contains("ZIP 解析失败") || error.contains("word/document.xml"));
     }
 }

@@ -1139,6 +1139,7 @@ mod tests {
         });
         root.task = Some(TopicTask {
             status: TopicTaskStatus::Started,
+            start_date_ms: Some(1_690_000_000_000),
             due_date_ms: Some(1_700_000_000_000),
             priority: Some(2),
         });

@@ -54,6 +54,14 @@ export function importOpmlFile(path: string) {
   return invokeCommand<DocumentSessionSnapshot>('import_opml_file', { path })
 }
 
+export function importDocxFile(path: string) {
+  return invokeCommand<DocumentSessionSnapshot>('import_docx_file', { path })
+}
+
+export function setDocumentSetting(key: string, value: unknown | null) {
+  return invokeCommand<DocumentSessionSnapshot>('set_document_setting', { key, value })
+}
+
 export function exportPngFile(path: string, data: Uint8Array) {
   return invokeCommand<void>('export_png_file', { path, data: Array.from(data) })
 }

@@ -27,6 +27,7 @@ import {
   exportRecoveryCopy,
   exportSvgFile,
   getDocumentState,
+  importDocxFile,
   importMarkdownFile,
   importOpmlFile,
   moveSheet,
@@ -47,6 +48,7 @@ import {
   saveDocumentToCurrentFile,
   selectSheet,
   selectTopic,
+  setDocumentSetting,
   setDocumentTheme,
   setSheetChartType,
   setSheetBranchStyle,
@@ -82,6 +84,8 @@ import { buildScene, type InteractionOverlays, type TopicVisualStates } from '..
 import { renderSceneToSvg } from '../canvas/runtime/svg-renderer'
 import { renderSceneToPngBytes } from '../canvas/runtime/png-exporter'
 import { renderSceneToPdfBytes } from '../canvas/runtime/pdf-exporter'
+import { buildGanttSvg, renderGanttSvgToPngBytes } from '../gantt/export-gantt-svg'
+import type { GanttZoom } from '../gantt/collect-gantt-tasks'
 import {
   fromSnapshot,
   initialDocumentSessionState,
@@ -101,8 +105,13 @@ export interface DocumentSession extends DocumentSessionState {
   importMarkdownOutline: () => Promise<void>
   exportOpmlOutline: () => Promise<void>
   importOpmlOutline: () => Promise<void>
+  importDocxOutline: () => Promise<void>
+  setDocumentSetting: (key: string, value: unknown) => Promise<void>
   exportPngImage: () => Promise<void>
   exportSvgImage: () => Promise<void>
+  /** 甘特图导出（批次 26/27）：全文档任务时间轴另存为矢量/位图，粒度跟随视图（日/周/月） */
+  exportGanttImage: (zoom?: 'day' | 'week' | 'month') => Promise<void>
+  exportGanttPng: (zoom?: 'day' | 'week' | 'month') => Promise<void>
   exportPdfDocument: () => Promise<void>
   exportRecoveryCopy: () => Promise<void>
   selectSheet: (sheetId: string) => Promise<void>
@@ -807,6 +816,48 @@ export function useDocumentSession(): DocumentSession {
     }
   }, [applySnapshot, handleError, state.hasUnsavedChanges])
 
+  const importDocxOutline = useCallback(async () => {
+    if (!hasTauriRuntime()) {
+      throw new Error('浏览器开发态暂不支持 Word 导入，请使用桌面版运行')
+    }
+
+    if (
+      state.hasUnsavedChanges &&
+      typeof window !== 'undefined' &&
+      typeof window.confirm === 'function' &&
+      !window.confirm('当前文档还有未保存更改。确定要导入 Word 吗？未保存内容仍可从恢复区继续找回。')
+    ) {
+      return
+    }
+
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Word 文档', extensions: ['docx'] }],
+    })
+
+    if (!selected || typeof selected !== 'string') {
+      return
+    }
+
+    setState((current) => ({
+      ...current,
+      status: 'loading',
+      error: null,
+      canRepairLastFailedOpen: false,
+      recentAction: '正在导入 Word 大纲',
+    }))
+
+    try {
+      const snapshot = await importDocxFile(selected)
+      applySnapshot(fromSnapshot(snapshot, '已导入 Word 大纲'), {
+        resetRecentActions: true,
+      })
+    } catch (error) {
+      handleError(error)
+    }
+  }, [applySnapshot, handleError, state.hasUnsavedChanges])
+
   const exportCurrentPngImage = useCallback(async () => {
     if (!hasTauriRuntime()) {
       throw new Error('浏览器开发态暂不支持 PNG 导出，请使用桌面版运行')
@@ -889,6 +940,94 @@ export function useDocumentSession(): DocumentSession {
         status: 'ready',
         error: null,
         recentAction: '已导出 SVG 矢量图',
+      }))
+    } catch (error) {
+      handleError(error)
+    }
+  }, [handleError, state.document, state.filePath, state.summary?.rootTopicText])
+
+  // 批次 26/27：甘特图导出（全文档任务时间轴，粒度跟随视图）
+  const exportCurrentGanttSvg = useCallback(async (zoom: GanttZoom = 'day') => {
+    if (!hasTauriRuntime()) {
+      throw new Error('浏览器开发态暂不支持甘特图导出，请使用桌面版运行')
+    }
+
+    if (!state.document) {
+      return
+    }
+
+    const selected = await save({
+      defaultPath: state.filePath
+        ? state.filePath.replace(/\.mgd$/i, '-甘特图.svg')
+        : `${state.summary?.rootTopicText ?? 'MindGrid'}-甘特图.svg`,
+      filters: [{ name: 'SVG 矢量图', extensions: ['svg'] }],
+    })
+
+    if (!selected) {
+      return
+    }
+
+    const selectedPath = selected.toLowerCase().endsWith('.svg') ? selected : `${selected}.svg`
+
+    setState((current) => ({
+      ...current,
+      error: null,
+      recentAction: '正在导出甘特图',
+    }))
+
+    try {
+      const svgContent = buildGanttSvg(state.document, Date.now(), zoom)
+      await exportSvgFile(selectedPath, svgContent)
+
+      setState((current) => ({
+        ...current,
+        status: 'ready',
+        error: null,
+        recentAction: '已导出甘特图',
+      }))
+    } catch (error) {
+      handleError(error)
+    }
+  }, [handleError, state.document, state.filePath, state.summary?.rootTopicText])
+
+  const exportCurrentGanttPng = useCallback(async (zoom: GanttZoom = 'day') => {
+    if (!hasTauriRuntime()) {
+      throw new Error('浏览器开发态暂不支持甘特图导出，请使用桌面版运行')
+    }
+
+    if (!state.document) {
+      return
+    }
+
+    const selected = await save({
+      defaultPath: state.filePath
+        ? state.filePath.replace(/\.mgd$/i, '-甘特图.png')
+        : `${state.summary?.rootTopicText ?? 'MindGrid'}-甘特图.png`,
+      filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+    })
+
+    if (!selected) {
+      return
+    }
+
+    const selectedPath = selected.toLowerCase().endsWith('.png') ? selected : `${selected}.png`
+
+    setState((current) => ({
+      ...current,
+      error: null,
+      recentAction: '正在导出甘特图',
+    }))
+
+    try {
+      const svgContent = buildGanttSvg(state.document, Date.now(), zoom)
+      const bytes = await renderGanttSvgToPngBytes(svgContent, 2)
+      await exportPngFile(selectedPath, bytes)
+
+      setState((current) => ({
+        ...current,
+        status: 'ready',
+        error: null,
+        recentAction: '已导出甘特图',
       }))
     } catch (error) {
       handleError(error)
@@ -1121,6 +1260,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateDocumentSetting = useCallback(
+    async (key: string, value: unknown) => {
+      await runCommand('更新画布设置', () => setDocumentSetting(key, value))
+    },
+    [runCommand],
+  )
+
   const createDocumentRelationship = useCallback(
     async (fromTopicId: string, toTopicId: string, label: string | null) => {
       await runCommand('创建关系线', () => createRelationship(fromTopicId, toTopicId, label))
@@ -1323,8 +1469,11 @@ export function useDocumentSession(): DocumentSession {
       importMarkdownOutline,
       exportOpmlOutline: exportCurrentOpmlOutline,
       importOpmlOutline,
+      importDocxOutline,
       exportPngImage: exportCurrentPngImage,
       exportSvgImage: exportCurrentSvgImage,
+      exportGanttImage: exportCurrentGanttSvg,
+      exportGanttPng: exportCurrentGanttPng,
       exportPdfDocument: exportCurrentPdfDocument,
       exportRecoveryCopy: exportCurrentRecoveryCopy,
       selectSheet: selectActiveSheet,
@@ -1354,6 +1503,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicStyleRef: updateTopicStyleRef,
       setTopicStyleOverrides: updateTopicStyleOverrides,
       setDocumentTheme: updateDocumentTheme,
+      setDocumentSetting: updateDocumentSetting,
       createRelationship: createDocumentRelationship,
       deleteRelationship: deleteDocumentRelationship,
       createBoundary: createDocumentBoundary,
@@ -1394,6 +1544,7 @@ export function useDocumentSession(): DocumentSession {
       updateTopicStyleRef,
       updateTopicStyleOverrides,
       updateDocumentTheme,
+      updateDocumentSetting,
       createDocumentRelationship,
       deleteDocumentRelationship,
       createDocumentBoundary,
@@ -1414,8 +1565,11 @@ export function useDocumentSession(): DocumentSession {
       importMarkdownOutline,
       exportCurrentOpmlOutline,
       importOpmlOutline,
+      importDocxOutline,
       exportCurrentPngImage,
       exportCurrentSvgImage,
+      exportCurrentGanttSvg,
+      exportCurrentGanttPng,
       exportCurrentRecoveryCopy,
       saveCurrentDocument,
       saveCurrentDocumentAs,

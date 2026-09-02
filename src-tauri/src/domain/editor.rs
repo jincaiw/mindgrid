@@ -1960,8 +1960,11 @@ fn parse_chart_type(value: &str) -> Result<Option<ChartType>, String> {
         "org" => Ok(Some(ChartType::Org)),
         "fishbone" => Ok(Some(ChartType::Fishbone)),
         "timeline" => Ok(Some(ChartType::Timeline)),
+        "brace" => Ok(Some(ChartType::Brace)),
+        "matrix" => Ok(Some(ChartType::Matrix)),
+        "bubble" => Ok(Some(ChartType::Bubble)),
         other => Err(format!(
-            "不支持的图表类型“{}”，支持 mindmap / logic / tree / org / fishbone / timeline",
+            "不支持的图表类型“{}”，支持 mindmap / logic / tree / org / fishbone / timeline / brace / matrix / bubble",
             other
         )),
     }
