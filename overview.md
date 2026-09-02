@@ -63,3 +63,10 @@
 
 ## 结论
 对标优化主线与全部可实施遗留项已收尾：P0/P1 UI、检查器 IA、三种新结构、Word 导入、模板扩充、画布设置、甘特图五批次（视图/增强/深度交互/SVG 导出/PNG 导出与粒度）。后续无待办。
+
+## v0.2.0 发布记录（2026-09-02）
+- 提交：`3e9e16c` feat(xmind-parity): 甘特图视图+括号/矩阵/气泡图+Word导入+模板库（批次 21-27），43 文件 +3781/−175
+- 标签：`v0.2.0`（附注标签，含发布说明）；版本号统一 0.1.0 → 0.2.0（package.json / tauri.conf.json / Cargo.toml / Cargo.lock）
+- 提交前门禁全绿：Vitest 461/461（39 文件）· cargo test 95/95 · tsc -b && vite build 通过 · oxlint 0 错误（16 条既有警告为基线）
+- `.workbuddy/` 加入 .gitignore，未入库
+- 注：仓库无配置远程（git remote 为空），发布为本地 tag；如需推送 GitHub/Gitee，添加 remote 后 `git push origin main --tags` 即可
