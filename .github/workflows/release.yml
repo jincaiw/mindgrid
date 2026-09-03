@@ -9,6 +9,12 @@
 #   Windows — .exe (NSIS 安装包) + portable .zip（免安装版）
 #   Linux   — .deb + .AppImage + .rpm
 #
+# 更新器签名（应用内更新必需）：
+#   TAURI_SIGNING_PRIVATE_KEY（minisign 私钥内容）+ TAURI_SIGNING_PRIVATE_KEY_PASSWORD（本仓库私钥无密码，留空）
+#   公钥已内嵌在 src-tauri/tauri.conf.json 的 plugins.updater.pubkey。
+#   私钥丢失则无法再签发更新，务必备份（本机：~/.tauri/mindgrid.key）。
+#   build job 会在私钥缺失时自动关闭更新器产物，保证仍能出包（仅失去更新能力）。
+#
 # 可选 Secrets（获取证书后启用代码签名）：
 #   APPLE_CERTIFICATE / APPLE_CERTIFICATE_PASSWORD / APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID
 #   TAURI_SIGNING_CERTIFICATE / TAURI_SIGNING_CERTIFICATE_PASSWORD
@@ -36,6 +42,47 @@ env:
   TAG: ${{ inputs.version || github.ref_name }}
 
 jobs:
+  # 预先创建唯一的 draft release，让 4 个平台构建都上传到同一个 release。
+  #
+  # 必要性：更新器的 latest.json 由 tauri-action 生成并覆盖同名资产，
+  # 若各平台 job 各自创建 release，后完成的会覆盖前一个平台的 latest.json，
+  # 最终只剩一个平台的更新信息。统一 releaseId 后 tauri-action 会合并各平台条目。
+  # 复用已存在的 draft（重跑 workflow 时保持幂等）。
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.create-release.outputs.result }}
+    steps:
+      - name: Create or reuse the draft release
+        id: create-release
+        uses: actions/github-script@v8
+        env:
+          TAG: ${{ env.TAG }}
+        with:
+          script: |
+            const tag = process.env.TAG || process.env.GITHUB_REF_NAME;
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const existing = releases.find((r) => r.tag_name === tag && r.draft);
+            if (existing) {
+              core.info(`Reusing existing draft release ${existing.id} for ${tag}`);
+              return existing.id;
+            }
+            const { data } = await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tag,
+              name: `MindGrid ${tag}`,
+              body: 'MindGrid ' + tag + ' — 请查看 Assets 下载对应平台安装包。',
+              draft: true,
+              prerelease: false,
+            });
+            core.info(`Created draft release ${data.id} for ${tag}`);
+            return data.id;
+
   # ─── 单元测试门禁 ───
   test:
     name: Test (三绿门禁)
@@ -89,7 +136,7 @@ jobs:
   # ─── 跨平台构建 ───
   build:
     name: Build ${{ matrix.platform }}
-    needs: test
+    needs: [test, create-release]
     strategy:
       fail-fast: false
       matrix:
@@ -145,6 +192,37 @@ jobs:
             librsvg2-dev \
             patchelf
 
+      # 更新器签名：仅在 Secret 有值时导出。GitHub 会把缺失的 Secret 渲染成空字符串，
+      # 直接写进 env 会让 bundler 误判为「已配置签名」而在空密钥上失败。
+      - name: Configure updater signing environment
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          for var in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            val="${!var:-}"
+            [ -z "$val" ] && continue
+            {
+              echo "$var<<SIGNING_ENV_EOF"
+              printf '%s\n' "$val"
+              echo "SIGNING_ENV_EOF"
+            } >> "$GITHUB_ENV"
+            echo "Exported $var for updater signing"
+          done
+
+      # 没有私钥时关闭更新器产物：否则 bundler 会因已配置 pubkey 却无法签名而硬失败
+      # （fork 自行构建、或私钥轮换期间仍需能出包）。
+      - name: Disable updater artifacts when signing key is missing
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "未配置 TAURI_SIGNING_PRIVATE_KEY — 本次构建不产出更新器产物"
+            jq '.bundle.createUpdaterArtifacts = false' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          fi
+
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
@@ -153,11 +231,8 @@ jobs:
           # 注意：未配置证书时不要传入空值 env（如 APPLE_CERTIFICATE=''），
           # 否则 bundler 会误入签名路径并因 keychain 导入失败而中断构建。
         with:
-          tagName: ${{ env.TAG }}
-          releaseName: 'MindGrid ${{ env.TAG }}'
-          releaseBody: 'MindGrid ${{ env.TAG }} — 请查看 Assets 下载对应平台安装包。'
-          releaseDraft: false
-          prerelease: false
+          # 上传到 create-release 预先建好的同一个 release（各平台合并进同一份 latest.json）
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           # Windows 限定 NSIS（WiX MSI 打包的 light.exe 在 CI 上不稳定），
           # portable zip 由后续步骤从 release exe 打包
           args: --target ${{ matrix.target }} ${{ matrix.platform == 'windows' && '--bundles nsis' || '' }}
@@ -179,3 +254,46 @@ jobs:
           tag_name: ${{ env.TAG }}
           files: MindGrid-${{ env.TAG }}-x64-portable.zip
           fail_on_unmatched_files: true
+
+  # ─── 发布：构建产物齐全后才把 draft 转为正式发布 ───
+  publish-release:
+    name: Publish release
+    needs: build
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+        run: |
+          echo "Publishing ${TAG}"
+          gh release edit "${TAG}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
+
+      - name: Verify updater manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.TAG }}
+        run: |
+          assets=$(gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')
+          echo "${assets}"
+          sig_count=$(echo "${assets}" | grep -c '\.sig$' || true)
+          echo "已生成 ${sig_count} 个签名文件"
+
+          if ! echo "${assets}" | grep -qx 'latest.json'; then
+            echo "::warning::未找到 latest.json —— 应用内更新器将无法工作（通常是未配置 TAURI_SIGNING_PRIVATE_KEY）"
+            exit 0
+          fi
+
+          # 校验更新清单的平台覆盖度：tauri-action 各平台 job 会读取并合并上一份 latest.json，
+          # 只有全部覆盖时应用内更新才对四个平台都可用。
+          gh release download "${TAG}" --repo "${GITHUB_REPOSITORY}" --pattern 'latest.json' --dir updater-check
+          platforms=$(jq -r '.platforms | keys_unsorted[]' updater-check/latest.json)
+          count=$(echo "${platforms}" | grep -c . || true)
+          echo "latest.json 目标平台（${count} 个）："
+          echo "${platforms}"
+          if [ "${count}" -lt 4 ]; then
+            echo "::warning::latest.json 仅覆盖 ${count} 个平台（期望 4），部分平台的应用内更新会拿不到安装包"
+            exit 0
+          fi
+          echo "更新器清单校验通过：${count} 个平台全部覆盖"

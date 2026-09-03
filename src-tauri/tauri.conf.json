@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "MindGrid",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "identifier": "com.mindgrid.app",
   "build": {
     "frontendDist": "../dist",
@@ -52,7 +52,7 @@
         "role": "Editor"
       }
     ],
-    "createUpdaterArtifacts": false,
+    "createUpdaterArtifacts": true,
     "macOS": {
       "bundleName": "MindGrid",
       "minimumSystemVersion": "10.15",
@@ -87,7 +87,7 @@
       "endpoints": [
         "https://github.com/jincaiw/mindgrid/releases/latest/download/latest.json"
       ],
-      "pubkey": "REPLACE_WITH_TAURI_SIGNING_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkzRDk4MjU5MTgyODcxNDMKUldSRGNTZ1lXWUxaazhiSFNSSy9Gbi93Y2xNbFM3TWtueFNtMWRJMWJrUmxua2JiS2lEQWttOHgK",
       "dialog": false
     }
   }
