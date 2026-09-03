@@ -227,6 +227,50 @@ describe('renderSceneToSvg', () => {
     expect(svg).toContain('待办')
   })
 
+  it('centers the label row including the +N overflow pill (>3 labels)', () => {
+    const root = makeTopic('root', '中心', [
+      {
+        id: 'many_labels',
+        text: '多标签节点',
+        collapsed: false,
+        children: [],
+        labels: ['甲', '乙', '丙', '丁', '戊'],
+      },
+    ])
+    const layout = computeMindMapLayout(root)
+    const scene = buildScene({
+      layout,
+      viewport: { width: 800, height: 600 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: emptyVisualStates,
+      overlays: emptyOverlays,
+      enableCulling: false,
+    })
+    const svg = renderSceneToSvg(scene)
+
+    // 节点中心（DOM 基线：标签行整体 translateX(-50%) 居中，含 +N）
+    const topicNode = scene.nodes.find(
+      (n): n is Extract<typeof n, { type: 'topic' }> =>
+        n.type === 'topic' && n.id === 'many_labels',
+    )
+    if (!topicNode) throw new Error('场景里找不到 many_labels')
+    const nodeCenter = topicNode.bounds.x + topicNode.bounds.width / 2
+
+    const pillMatches = [
+      ...svg.matchAll(
+        /<rect x="([\d.-]+)" y="[\d.-]+" width="([\d.-]+)" height="18"[^>]*fill="rgba\(91,140,255,0\.12\)"/g,
+      ),
+    ]
+    // 3 个展示标签 + 1 个 +N
+    expect(pillMatches.length).toBe(4)
+
+    const rowLeft = parseFloat(pillMatches[0][1])
+    const lastPill = pillMatches[pillMatches.length - 1]
+    const rowRight = parseFloat(lastPill[1]) + parseFloat(lastPill[2])
+    // 整行（含 +N）必须以节点中心对称；若 +N 未计入居中宽度会右偏 (28+4)/2 = 16px
+    expect((rowLeft + rowRight) / 2).toBeCloseTo(nodeCenter, 5)
+  })
+
   it('omits rich content elements when topic has none', () => {
     const scene = buildTestScene()
     const svg = renderSceneToSvg(scene)

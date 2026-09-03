@@ -275,7 +275,11 @@ function topicToSvg(node: TopicRenderNode): string {
         const w = measureTextWidth(label, `400 ${labelFontSize}px ${FONT_FAMILY}`)
         return Math.max(RICH_LABEL_MIN_WIDTH, w + RICH_LABEL_PADDING_X * 2)
       })
-      const totalWidth = labelWidths.reduce((sum, w) => sum + w + labelGap, -labelGap)
+      const totalWidth =
+        labelWidths.reduce((sum, w) => sum + w + labelGap, -labelGap) +
+        // +N 胶囊必须计入居中宽度，否则有溢出标签时整行会右偏 (MIN_WIDTH+GAP)/2
+        // （与 DOM 的 translateX(-50%) 和 Canvas 端 drawLabelPills 对齐）
+        (rich.labels.length > RICH_LABEL_MAX_SHOWN ? RICH_LABEL_MIN_WIDTH + labelGap : 0)
       let labelX = bounds.x + bounds.width / 2 - totalWidth / 2
 
       for (let i = 0; i < shownLabels.length; i++) {
