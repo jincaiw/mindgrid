@@ -32,6 +32,7 @@ import {
   TOGGLE_RADIUS,
   getNodePadding,
   getNodeRadiusForShape,
+  measureTextWidth,
   wrapText,
 } from './style-constants'
 import {
@@ -39,6 +40,25 @@ import {
   TOPIC_IMAGE_TITLE_OFFSET,
   computeTopicImageRect,
 } from './topic-image-constants'
+import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
+import {
+  LINK_ICON_SVG_INNER,
+  NOTE_ICON_SVG_INNER,
+  RICH_ICON_SIZE,
+  RICH_LABEL_BACKGROUND,
+  RICH_LABEL_FONT_SIZE,
+  RICH_LABEL_GAP,
+  RICH_LABEL_HEIGHT,
+  RICH_LABEL_MAX_SHOWN,
+  RICH_LABEL_MIN_WIDTH,
+  RICH_LABEL_PADDING_X,
+  RICH_LABEL_TEXT_COLOR,
+  RICH_LABEL_TOP_GAP,
+  RICH_META_GAP,
+  RICH_META_OFFSET,
+  RICH_TASK_GAP,
+} from './rich-content-constants'
+import { drawSvgInner } from './svg-inner-canvas'
 
 export interface RenderDPR {
   dpr: number
@@ -255,6 +275,9 @@ function drawTopic(
   // 文字
   drawNodeText(ctx, node)
 
+  // 富内容：任务状态 / 标记 / 备注 / 链接 / 标签（与 SVG 端同一套几何与图形定义）
+  drawRichContent(ctx, node)
+
   // 折叠/展开按钮
   if (node.childCount > 0) {
     drawToggleButton(ctx, node)
@@ -438,6 +461,110 @@ function drawNodeImage(
   ctx.clip()
   ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
   ctx.restore()
+}
+
+/**
+ * 绘制主题富内容：任务状态 / 标记 / 备注 / 链接 / 标签。
+ *
+ * 与 SVG 端（`svg-renderer.topicToSvg`）同源以保证两端导出一致：
+ *   - 图标图形：复用 `markers.tsx` 的 SVG 字符串，经 svg-inner-canvas 绘制
+ *   - 几何常量：取自 rich-content-constants（基准为 DOM 的 CSS）
+ */
+function drawRichContent(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+  const rich = node.rich
+  if (!rich) return
+
+  const { bounds } = node
+
+  ctx.save()
+
+  // 任务状态图标：节点左侧，垂直居中
+  if (rich.task) {
+    const taskX = bounds.x - RICH_ICON_SIZE - RICH_TASK_GAP
+    const taskY = bounds.y + bounds.height / 2 - RICH_ICON_SIZE / 2
+    drawSvgInner(
+      ctx,
+      taskStatusToSvgInner(rich.task.status, rich.task.priority),
+      taskX,
+      taskY,
+    )
+  }
+
+  // meta 图标行：节点右侧（markers + 备注 + 链接），垂直居中
+  const metaIcons: string[] = []
+  for (const marker of rich.markers ?? []) {
+    metaIcons.push(markerToSvgInner(marker))
+  }
+  if (rich.notes && rich.notes.length > 0) {
+    metaIcons.push(NOTE_ICON_SVG_INNER)
+  }
+  if (rich.link) {
+    metaIcons.push(LINK_ICON_SVG_INNER)
+  }
+
+  if (metaIcons.length > 0) {
+    let cursorX = bounds.x + bounds.width + RICH_META_OFFSET
+    const cursorY = bounds.y + bounds.height / 2 - RICH_ICON_SIZE / 2
+    for (const icon of metaIcons) {
+      drawSvgInner(ctx, icon, cursorX, cursorY)
+      cursorX += RICH_ICON_SIZE + RICH_META_GAP
+    }
+  }
+
+  // 标签胶囊行：节点下方水平居中
+  if (rich.labels && rich.labels.length > 0) {
+    drawLabelPills(ctx, node)
+  }
+
+  ctx.restore()
+}
+
+/** 绘制标签胶囊行（节点下方，最多 RICH_LABEL_MAX_SHOWN 个，其余以 +N 收尾）。 */
+function drawLabelPills(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+  const labels = node.rich?.labels ?? []
+  if (labels.length === 0) return
+
+  const shown = labels.slice(0, RICH_LABEL_MAX_SHOWN)
+  const overflow = labels.length - shown.length
+  const font = `400 ${RICH_LABEL_FONT_SIZE}px ${FONT_FAMILY}`
+
+  // 与 SVG 端同用 measureTextWidth，保证两端胶囊宽度一致
+  const widths = shown.map((label) =>
+    Math.max(RICH_LABEL_MIN_WIDTH, measureTextWidth(label, font) + RICH_LABEL_PADDING_X * 2),
+  )
+  if (overflow > 0) widths.push(RICH_LABEL_MIN_WIDTH)
+  const totalWidth = widths.reduce((sum, w) => sum + w + RICH_LABEL_GAP, -RICH_LABEL_GAP)
+
+  const { bounds, style } = node
+  const labelY = bounds.y + bounds.height + RICH_LABEL_TOP_GAP
+  let labelX = bounds.x + bounds.width / 2 - totalWidth / 2
+
+  const drawPill = (text: string, width: number) => {
+    ctx.fillStyle = RICH_LABEL_BACKGROUND
+    roundRect(ctx, labelX, labelY, width, RICH_LABEL_HEIGHT, RICH_LABEL_HEIGHT / 2)
+    ctx.fill()
+
+    ctx.font = font
+    ctx.fillStyle = style.metaTextColor ?? RICH_LABEL_TEXT_COLOR
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(text, labelX + width / 2, labelY + RICH_LABEL_HEIGHT / 2)
+
+    labelX += width + RICH_LABEL_GAP
+  }
+
+  for (let i = 0; i < shown.length; i++) {
+    drawPill(shown[i], widths[i])
+  }
+  if (overflow > 0) {
+    drawPill(`+${overflow}`, widths[widths.length - 1])
+  }
+
+  // 显式复位文字状态：胶囊用的是 center/middle，与节点标题的 left/top 不同。
+  // 虽然外层有 save/restore，仍按本文件既有约定（drawToggleButton / drawDropIndicator）
+  // 显式复位，避免依赖调用方的上下文栈。
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
 }
 
 function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {

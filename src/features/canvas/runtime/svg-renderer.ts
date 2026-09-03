@@ -26,6 +26,23 @@ import { TOPIC_IMAGE_TITLE_OFFSET, computeTopicImageRect } from './topic-image-c
 import { resolveThemeBackground } from './style-resolver'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
+  LINK_ICON_SVG_INNER,
+  NOTE_ICON_SVG_INNER,
+  RICH_ICON_SIZE,
+  RICH_LABEL_BACKGROUND,
+  RICH_LABEL_FONT_SIZE,
+  RICH_LABEL_GAP,
+  RICH_LABEL_HEIGHT,
+  RICH_LABEL_MAX_SHOWN,
+  RICH_LABEL_MIN_WIDTH,
+  RICH_LABEL_PADDING_X,
+  RICH_LABEL_TEXT_COLOR,
+  RICH_LABEL_TOP_GAP,
+  RICH_META_GAP,
+  RICH_META_OFFSET,
+  RICH_TASK_GAP,
+} from './rich-content-constants'
+import {
   type BoundaryRenderNode,
   type EdgeRenderNode,
   type RelationshipRenderNode,
@@ -209,8 +226,8 @@ function topicToSvg(node: TopicRenderNode): string {
   if (rich) {
     // 任务状态图标：节点左侧垂直居中
     if (rich.task) {
-      const iconSize = 14
-      const tx = bounds.x - iconSize - 4
+      const iconSize = RICH_ICON_SIZE
+      const tx = bounds.x - iconSize - RICH_TASK_GAP
       const ty = bounds.y + bounds.height / 2 - iconSize / 2
       elements.push(
         `  <g transform="translate(${fmt(tx)} ${fmt(ty)})" aria-label="任务状态 ${rich.task.status}">${taskStatusToSvgInner(rich.task.status, rich.task.priority)}</g>`,
@@ -226,20 +243,16 @@ function topicToSvg(node: TopicRenderNode): string {
     }
     if (rich.notes && rich.notes.length > 0) {
       // 便签图标：黄色圆 + 横线
-      metaIcons.push(
-        '<circle cx="7" cy="7" r="6" fill="#f6be00"/><path d="M4 6h6M4 8h6M4 10h4" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>',
-      )
+      metaIcons.push(NOTE_ICON_SVG_INNER)
     }
     if (rich.link) {
       // 链接图标：蓝色圆 + ↗ 箭头
-      metaIcons.push(
-        '<circle cx="7" cy="7" r="6" fill="#5b8cff"/><path d="M4.5 9.5L9 5M9 5H6M9 5v3" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>',
-      )
+      metaIcons.push(LINK_ICON_SVG_INNER)
     }
     if (metaIcons.length > 0) {
-      const iconSize = 14
-      const gap = 4
-      let cursorX = bounds.x + bounds.width + 6
+      const iconSize = RICH_ICON_SIZE
+      const gap = RICH_META_GAP
+      let cursorX = bounds.x + bounds.width + RICH_META_OFFSET
       const cursorY = bounds.y + bounds.height / 2 - iconSize / 2
       for (const inner of metaIcons) {
         elements.push(
@@ -251,16 +264,16 @@ function topicToSvg(node: TopicRenderNode): string {
 
     // 标签胶囊行：节点下方水平居中，最多展示 3 个
     if (rich.labels && rich.labels.length > 0) {
-      const shownLabels = rich.labels.slice(0, 3)
-      const labelFontSize = 11
-      const labelHeight = 18
-      const labelGap = 4
-      const labelY = bounds.y + bounds.height + 6
+      const shownLabels = rich.labels.slice(0, RICH_LABEL_MAX_SHOWN)
+      const labelFontSize = RICH_LABEL_FONT_SIZE
+      const labelHeight = RICH_LABEL_HEIGHT
+      const labelGap = RICH_LABEL_GAP
+      const labelY = bounds.y + bounds.height + RICH_LABEL_TOP_GAP
 
       // 先测量每个标签宽度
       const labelWidths = shownLabels.map((label) => {
         const w = measureTextWidth(label, `400 ${labelFontSize}px ${FONT_FAMILY}`)
-        return Math.max(28, w + 16)
+        return Math.max(RICH_LABEL_MIN_WIDTH, w + RICH_LABEL_PADDING_X * 2)
       })
       const totalWidth = labelWidths.reduce((sum, w) => sum + w + labelGap, -labelGap)
       let labelX = bounds.x + bounds.width / 2 - totalWidth / 2
@@ -269,23 +282,23 @@ function topicToSvg(node: TopicRenderNode): string {
         const label = shownLabels[i]
         const w = labelWidths[i]
         elements.push(
-          `  <rect x="${fmt(labelX)}" y="${fmt(labelY)}" width="${fmt(w)}" height="${labelHeight}" rx="${labelHeight / 2}" ry="${labelHeight / 2}" fill="rgba(91,140,255,0.12)"/>`,
+          `  <rect x="${fmt(labelX)}" y="${fmt(labelY)}" width="${fmt(w)}" height="${labelHeight}" rx="${labelHeight / 2}" ry="${labelHeight / 2}" fill="${RICH_LABEL_BACKGROUND}"/>`,
         )
         elements.push(
-          `  <text x="${fmt(labelX + w / 2)}" y="${fmt(labelY + labelHeight / 2)}" font-size="${labelFontSize}" fill="${style.metaTextColor ?? '#3b5bdb'}" text-anchor="middle" dominant-baseline="central">${escapeXml(label)}</text>`,
+          `  <text x="${fmt(labelX + w / 2)}" y="${fmt(labelY + labelHeight / 2)}" font-size="${labelFontSize}" fill="${style.metaTextColor ?? RICH_LABEL_TEXT_COLOR}" text-anchor="middle" dominant-baseline="central">${escapeXml(label)}</text>`,
         )
         labelX += w + labelGap
       }
 
       // 多余标签以 +N 胶囊展示
-      if (rich.labels.length > 3) {
-        const moreText = `+${rich.labels.length - 3}`
-        const w = 28
+      if (rich.labels.length > RICH_LABEL_MAX_SHOWN) {
+        const moreText = `+${rich.labels.length - RICH_LABEL_MAX_SHOWN}`
+        const w = RICH_LABEL_MIN_WIDTH
         elements.push(
-          `  <rect x="${fmt(labelX)}" y="${fmt(labelY)}" width="${w}" height="${labelHeight}" rx="${labelHeight / 2}" ry="${labelHeight / 2}" fill="rgba(91,140,255,0.12)"/>`,
+          `  <rect x="${fmt(labelX)}" y="${fmt(labelY)}" width="${w}" height="${labelHeight}" rx="${labelHeight / 2}" ry="${labelHeight / 2}" fill="${RICH_LABEL_BACKGROUND}"/>`,
         )
         elements.push(
-          `  <text x="${fmt(labelX + w / 2)}" y="${fmt(labelY + labelHeight / 2)}" font-size="${labelFontSize}" fill="${style.metaTextColor ?? '#3b5bdb'}" text-anchor="middle" dominant-baseline="central">${escapeXml(moreText)}</text>`,
+          `  <text x="${fmt(labelX + w / 2)}" y="${fmt(labelY + labelHeight / 2)}" font-size="${labelFontSize}" fill="${style.metaTextColor ?? RICH_LABEL_TEXT_COLOR}" text-anchor="middle" dominant-baseline="central">${escapeXml(moreText)}</text>`,
         )
       }
     }

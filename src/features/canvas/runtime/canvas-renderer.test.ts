@@ -333,3 +333,148 @@ describe('renderScene', () => {
     expect(oldRingFills.length).toBe(0)
   })
 })
+
+describe('renderScene — 富内容（task / markers / notes / link / labels）', () => {
+  function makeRichRoot(): TopicSnapshot {
+    return makeTopic('root', '中心', [
+      {
+        id: 'rich_child',
+        text: '富内容节点',
+        collapsed: false,
+        children: [],
+        markers: [{ id: 'priority-1' }, { id: 'star' }],
+        labels: ['重要', '待办'],
+        notes: '这是一段备注',
+        link: { url: 'https://example.com', title: '示例' },
+        task: { status: 'started', priority: 2 },
+      },
+    ])
+  }
+
+  function buildRichScene() {
+    const layout = computeMindMapLayout(makeRichRoot())
+    return buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+  }
+
+  function childBounds(scene: ReturnType<typeof buildRichScene>) {
+    const node = scene.nodes.find(
+      (n): n is Extract<typeof n, { type: 'topic' }> => n.type === 'topic' && n.id === 'rich_child',
+    )
+    if (!node) throw new Error('场景里找不到 rich_child')
+    return node.bounds
+  }
+
+  it('draws label pills below the node', () => {
+    const { ctx, calls } = createMockCtx()
+    renderScene(ctx, buildRichScene(), defaultViewport, defaultCamera, 1)
+
+    const texts = calls
+      .filter((c) => c.method === 'fillText')
+      .map((c) => c.args[0] as string)
+    expect(texts).toContain('重要')
+    expect(texts).toContain('待办')
+
+    // 胶囊背景色（与 SVG 端同源）
+    expect(
+      calls.some((c) => c.method === 'fillStyle' && c.args[0] === 'rgba(91,140,255,0.12)'),
+    ).toBe(true)
+  })
+
+  it('draws label pills centered under the node box', () => {
+    const { ctx, calls } = createMockCtx()
+    const scene = buildRichScene()
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const bounds = childBounds(scene)
+    const labelTexts = calls.filter(
+      (c) => c.method === 'fillText' && c.args[0] === '重要',
+    )
+    expect(labelTexts).toHaveLength(1)
+    const labelX = labelTexts[0].args[1] as number
+    const nodeCenterX = bounds.x + bounds.width / 2
+    // 两个标签 + 一个间距，整行居中，故第一个标签中心应在节点中心左侧
+    expect(labelX).toBeLessThan(nodeCenterX)
+    expect(labelX).toBeGreaterThan(bounds.x)
+    // 标签位于节点下方
+    expect(labelTexts[0].args[2] as number).toBeGreaterThan(bounds.y + bounds.height)
+  })
+
+  it('draws task icon to the left of the node', () => {
+    const { ctx, calls } = createMockCtx()
+    const scene = buildRichScene()
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const bounds = childBounds(scene)
+    // 任务图标（started 状态）为描边圆环 + 实心内点，均表现为 arc 调用
+    const taskArcs = calls.filter(
+      (c) => c.method === 'arc' && (c.args[0] as number) < bounds.x,
+    )
+    expect(taskArcs.length).toBeGreaterThan(0)
+  })
+
+  it('draws marker/note/link icons to the right of the node', () => {
+    const { ctx, calls } = createMockCtx()
+    const scene = buildRichScene()
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const bounds = childBounds(scene)
+    const rightEdge = bounds.x + bounds.width
+    // priority-1 是「红圆 + 数字 1」：数字以 fillText 落在节点右侧
+    const markerTexts = calls.filter(
+      (c) =>
+        c.method === 'fillText' &&
+        c.args[0] === '1' &&
+        (c.args[1] as number) > rightEdge,
+    )
+    expect(markerTexts.length).toBeGreaterThan(0)
+
+    // 备注图标（#f6be00）与链接图标（#5b8cff）应各出现一次填充
+    const noteFills = calls.filter(
+      (c) => c.method === 'fillStyle' && c.args[0] === '#f6be00',
+    )
+    const linkFills = calls.filter(
+      (c) => c.method === 'fillStyle' && c.args[0] === '#5b8cff',
+    )
+    expect(noteFills.length).toBeGreaterThan(0)
+    expect(linkFills.length).toBeGreaterThan(0)
+  })
+
+  it('omits rich content when the topic has none', () => {
+    const { ctx, calls } = createMockCtx()
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const texts = calls.filter((c) => c.method === 'fillText').map((c) => c.args[0] as string)
+    expect(texts).not.toContain('重要')
+    expect(
+      calls.some((c) => c.method === 'fillStyle' && c.args[0] === 'rgba(91,140,255,0.12)'),
+    ).toBe(false)
+  })
+
+  it('does not leak text state after drawing rich content', () => {
+    const { ctx, calls } = createMockCtx()
+    renderScene(ctx, buildRichScene(), defaultViewport, defaultCamera, 1)
+
+    // 标签绘制会切到 center/middle，绘制结束必须复原，否则后续节点文字会错位
+    const lastAlign = calls.filter((c) => c.method === 'textAlign').pop()
+    const lastBaseline = calls.filter((c) => c.method === 'textBaseline').pop()
+    expect(lastAlign?.args[0]).toBe('left')
+    expect(lastBaseline?.args[0]).toBe('top')
+  })
+})
