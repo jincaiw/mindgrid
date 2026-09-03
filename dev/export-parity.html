@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>导出一致性对照 · Canvas(PNG) vs SVG</title>
+    <style>
+      :root {
+        color-scheme: light;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: #f6f7f9;
+        color: #1f2328;
+        font: 14px/1.6 -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+          'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 4px;
+      }
+      .hint {
+        color: #57606a;
+        font-size: 12px;
+        margin: 0 0 20px;
+      }
+      .row {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      .cell {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 12px;
+      }
+      .cell h2 {
+        font-size: 13px;
+        margin: 0 0 8px;
+        font-weight: 600;
+      }
+      .stage {
+        background: #fff;
+        background-image: linear-gradient(45deg, #eee 25%, transparent 25%),
+          linear-gradient(-45deg, #eee 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #eee 75%),
+          linear-gradient(-45deg, transparent 75%, #eee 75%);
+        background-size: 16px 16px;
+        background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+      }
+      .stage img,
+      .stage svg {
+        display: block;
+      }
+      /* 差值混合：两图完全一致的区域为纯黑，任何差异都会显色 */
+      .diff {
+        position: relative;
+      }
+      .diff img {
+        position: absolute;
+        inset: 0;
+      }
+      .diff img.top {
+        mix-blend-mode: difference;
+      }
+      #status {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 12px;
+        white-space: pre-wrap;
+        background: #0d1117;
+        color: #e6edf3;
+        padding: 12px;
+        border-radius: 8px;
+        margin-top: 20px;
+        max-width: 1200px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>导出一致性对照 · Canvas(PNG 路径) vs SVG</h1>
+    <p class="hint">
+      同一场景、同一视口、同一相机。差值视图中<b>纯黑 = 两端完全一致</b>，任何彩色残留即为渲染差异。
+    </p>
+    <div class="row" id="row"></div>
+    <pre id="status">渲染中…</pre>
+    <script type="module" src="./export-parity.ts"></script>
+  </body>
+</html>
