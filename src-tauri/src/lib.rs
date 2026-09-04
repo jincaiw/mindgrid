@@ -1,6 +1,8 @@
 pub mod app;
 pub mod domain;
 
+#[cfg(desktop)]
+use tauri::Emitter;
 use crate::app::assets::AssetStore;
 use crate::domain::document::DocumentSession;
 use std::sync::Mutex;
@@ -106,6 +108,20 @@ pub fn run() {
             // 自动更新插件：端点与公钥从 tauri.conf.json plugins.updater 读取。
             // 未配置端点时 check() 返回错误，前端优雅降级（仅隐藏"检查更新"入口）。
             app.handle().plugin(tauri_plugin_updater::Builder::new().build())?;
+
+            // 原生菜单栏（对标 XMind 的 7 个顶层菜单）。仅桌面端：
+            // 菜单点击只负责把 id 以事件转发给前端，业务逻辑统一在前端，
+            // 与工具栏 / 快捷键走同一条命令路径。
+            #[cfg(desktop)]
+            {
+                let menu = crate::app::menu::build_menu(app.handle())?;
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| {
+                    let action_id = event.id().as_ref().to_string();
+                    let _ = app.emit(crate::app::menu::MENU_ACTION_EVENT, action_id);
+                });
+            }
+
             Ok(())
         })
         .run(tauri::generate_context!())

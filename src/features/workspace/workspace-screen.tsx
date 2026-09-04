@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getActiveSheet } from '../../lib/document/sheets'
+import { hasTauriRuntime } from '../../lib/ipc/transport'
 import type { CameraState } from '../canvas/camera'
+import type { CanvasCommand } from '../menu/menu-actions'
+import type { MenuActionId } from '../menu/menu-actions'
+import { runMenuCommand } from '../menu/menu-dispatch'
+import { useNativeMenuActions } from '../menu/use-native-menu-actions'
 import { syncSelectionWithActiveTopic } from '../canvas/interaction-state'
 import { CanvasHost } from '../canvas/canvas-host'
 import { GanttView } from '../gantt/gantt-view'
@@ -68,10 +73,12 @@ export function WorkspaceScreen({
       session.activeTopicId ?? activeSheet?.rootTopic.id ?? selectedTopicIds[0] ?? '',
     ].filter(Boolean))
   }
-  const focusInspectorTopicTab = () => {
+  // 必须保持引用稳定：菜单派发的 useCallback 依赖它，
+  // 若每次渲染都是新引用，handleMenuAction 会跟着每渲染重建一次。
+  const focusInspectorTopicTab = useCallback(() => {
     setInspectorVisible(true)
     setInspectorTabRequest((current) => ({ tab: 'style', nonce: (current?.nonce ?? 0) + 1 }))
-  }
+  }, [])
 
   useEffect(() => {
     if (!activeSheet) {
@@ -97,6 +104,56 @@ export function WorkspaceScreen({
   const handleResetZoom = useCallback(() => {
     setZoomRequest((current) => ({ zoom: 1, nonce: (current?.nonce ?? 0) + 1 }))
   }, [])
+
+  // 浏览器环境下没有原生菜单栏，文件动作也不可用（与 AppShell 的快捷键同款约束）。
+  // 菜单栏命令在浏览器里不会被触发，但这些动作也可能由其它入口走到，故统一拦一层。
+  const desktopFileActionsEnabled = hasTauriRuntime()
+
+  // 原生菜单栏命令（对标批次 A5）：复制/剪切/粘贴与回到中心依赖画布内部状态，
+  // 用 nonce 单向请求转发；其余动作本层直接执行。
+  const [canvasCommand, setCanvasCommand] = useState<{
+    command: CanvasCommand
+    nonce: number
+  } | null>(null)
+
+  const handleMenuAction = useCallback(
+    (id: MenuActionId) => {
+      runMenuCommand(id, {
+        session,
+        activeSheet,
+        selectedTopicIds,
+        desktopFileActionsEnabled,
+        notify: (message) => onNotify?.(message),
+        setSelectedTopicIds,
+        toggleZenMode: () => setIsZenMode((v) => !v),
+        toggleGanttMode: () => setIsGanttMode((v) => !v),
+        toggleInspector: () => setInspectorVisible((v) => !v),
+        toggleSidebar: () => setSidebarVisible((v) => !v),
+        startPresentation: () => setIsPresenting(true),
+        openSearch: () => setSearchOpen(true),
+        resetZoom: handleResetZoom,
+        focusInspectorTopicTab,
+        openShortcutsHelp: () => setIsShortcutsHelpOpen(true),
+        checkForUpdates: () => onCheckForUpdates?.(),
+        cycleTheme: () => onCycleTheme?.(),
+        requestCanvasCommand: (command) =>
+          setCanvasCommand((current) => ({ command, nonce: (current?.nonce ?? 0) + 1 })),
+      })
+    },
+    [
+      activeSheet,
+      desktopFileActionsEnabled,
+      focusInspectorTopicTab,
+      handleResetZoom,
+      onCheckForUpdates,
+      onCycleTheme,
+      onNotify,
+      selectedTopicIds,
+      session,
+    ],
+  )
+
+  useNativeMenuActions(handleMenuAction)
 
   // 批次 26：侧栏显隐状态记忆
   useEffect(() => {
@@ -227,6 +284,7 @@ export function WorkspaceScreen({
                 showGrid={session.document?.settings?.['canvas.showGrid'] === true}
                 onCameraChange={handleCameraChange}
                 zoomRequest={zoomRequest}
+                canvasCommand={canvasCommand}
               />
             </div>
             {inspectorVisible ? (

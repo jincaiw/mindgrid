@@ -54,6 +54,7 @@ import {
 } from './mindmap-layout'
 import { findNearestNodeInDirection, type NavigationDirection } from './topic-navigation'
 import { Minimap } from './minimap'
+import type { CanvasCommand } from '../menu/menu-actions'
 import { computeLayout } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveTopicStyle } from './runtime/style-resolver'
@@ -95,6 +96,13 @@ interface CanvasHostProps {
    * 单向请求 + nonce 更安全。null / nonce 为 0 表示无请求。
    */
   zoomRequest?: { zoom: number; nonce: number } | null
+  /**
+   * 外部请求执行画布内部命令（nonce 变化时触发一次），用于原生菜单栏。
+   *
+   * 复制 / 剪切 / 粘贴依赖画布内的主题剪贴板状态，回到中心依赖相机动画，
+   * 外层都驱动不了，故沿用 zoomRequest 的单向 nonce 请求模式。
+   */
+  canvasCommand?: { command: CanvasCommand; nonce: number } | null
 }
 
 const HISTORY_FOCUS_HIGHLIGHT_MS = 1600
@@ -1900,6 +1908,7 @@ function TreeWorkspace({
   onSearchOpenChange: controlledOnSearchOpenChange,
   onCameraChange,
   zoomRequest,
+  canvasCommand,
 }: CanvasHostProps) {
   const {
     activeTopicId,
@@ -2260,6 +2269,49 @@ function TreeWorkspace({
     await writeTopicsToSystemClipboard(copyableTopics)
     await deleteTopics(deletableTopicIds, '剪切主题')
   }, [copyableTopics, deletableTopicIds, deleteTopics])
+
+  // 外部命令请求（原生菜单栏的复制/剪切/粘贴/回到中心）。
+  //
+  // 处理器闭包了选区与剪贴板状态，每次渲染都是新引用；若把它们放进依赖数组，
+  // 下一次任何无关的状态变化都会让 effect 重跑、命令被重复执行。
+  // 故用 ref 承载最新处理器，effect 只依赖 nonce。
+  const canvasCommandHandlersRef = useRef({
+    copy: handleCopyTopics,
+    cut: handleCutTopics,
+    paste: handlePasteTopics,
+  })
+
+  useEffect(() => {
+    canvasCommandHandlersRef.current = {
+      copy: handleCopyTopics,
+      cut: handleCutTopics,
+      paste: handlePasteTopics,
+    }
+  })
+
+  const canvasCommandNonce = canvasCommand?.nonce ?? 0
+  const canvasCommandName = canvasCommand?.command ?? null
+
+  useEffect(() => {
+    if (canvasCommandNonce === 0 || !canvasCommandName) {
+      return
+    }
+
+    switch (canvasCommandName) {
+      case 'edit.copy':
+        void canvasCommandHandlersRef.current.copy()
+        return
+      case 'edit.cut':
+        void canvasCommandHandlersRef.current.cut()
+        return
+      case 'edit.paste':
+        void canvasCommandHandlersRef.current.paste()
+        return
+      case 'view.recenter':
+        setFocusRootNonce((n) => n + 1)
+        return
+    }
+  }, [canvasCommandNonce, canvasCommandName])
 
   /**
    * 复制主题（Cmd+D）：复制为同级紧随，撤销标签"复制主题"。
