@@ -2,11 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 import type { DocumentSession } from '../document/use-document-session'
 
 /**
- * 画布顶部标签栏（批次 19 初版，Round 4 批次 26 移至画布顶部）。
+ * 画布标签栏（批次 19 初版 → 批次 26 移至画布顶部 → 对标批次 A1 归位底部状态条）。
  *
- * 对标 XMind 画布顶部的 Sheet 标签栏：横向列出当前文档的全部画布，
- * 单击切换、双击重命名、hover 显示关闭 ×、右键菜单管理（删除/左右移动）、末尾「+」新建。
- * 侧栏的画布管理面板保留不变，此处仅作为画布上方的快速入口。
+ * XMind 官方用户指南对状态条的描述是「左边显示画布名称，右边显示统计信息/缩放
+ * 比例/大纲」，即画布标签属于**底部状态条左段**，不在画布顶部、也不在侧栏。
+ *
+ * 标签栏横跨整个窗口宽度（原先放在画布列顶部时会被 280px 侧栏切断）。
+ * 新建 / 重命名 / 删除 / 排序都在这里完成，因此侧栏「画布管理」折叠区只保留
+ * 图表类型切换与跨画布拖拽等低频能力，默认折叠。
  */
 interface SheetTabBarProps {
   session: DocumentSession

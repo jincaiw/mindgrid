@@ -2060,6 +2060,88 @@ button {
   margin-top: 0;
 }
 
+/* —— 左栏导航面板（对标 XMind「主题 / 笔记 / 标记 & 标签」3 Tab）——
+   与 .panel--inspector 同构：Tab 条固定不滚，内容区独立滚动 */
+.panel--sidebar {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.sidebar-outline {
+  display: flex;
+  flex-direction: column;
+}
+
+/* 笔记页：输入区纵向铺满，与 XMind 左栏笔记一致 */
+.notes-panel {
+  min-height: 100%;
+}
+
+.notes-panel__field {
+  flex: 1;
+  min-height: 0;
+}
+
+.notes-panel__input {
+  flex: 1;
+  min-height: 180px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 标记 & 标签页：按维度横向汇总当前画布，点条目即多选定位 */
+.marker-label-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.marker-label-panel__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.marker-label-panel__item:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.marker-label-panel__text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.marker-label-panel__count {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.marker-label-panel__swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--color-accent);
+  flex-shrink: 0;
+}
+
 .panel__section--repair {
   border-top: 1px solid var(--color-border-default);
   padding: var(--space-3);

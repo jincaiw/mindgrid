@@ -118,11 +118,14 @@ export function Sidebar({
   selectedTopicIds,
   onSelectedTopicIdsChange,
 }: SidebarProps) {
-  const rootRef = useRef<HTMLElement | null>(null)
+  const rootRef = useRef<HTMLDivElement | null>(null)
   const activeSheet = useMemo(
     () => (session.document ? getActiveSheet(session.document) : null),
     [session.document],
   )
+  // 画布管理默认折叠：Tab 化后大纲树是「主题」页的主体，画布增删改名属低频操作，
+  // 且底部状态条的画布标签栏已覆盖新建/重命名/删除/排序（见 SheetTabBar）。
+  const [sheetManagerOpen, setSheetManagerOpen] = useState(false)
   const [sheetTitleDraft, setSheetTitleDraft] = useState(activeSheet?.title ?? '')
   const [topicTitleDraft, setTopicTitleDraft] = useState('')
   const movableTargetSheets = useMemo(
@@ -479,6 +482,12 @@ export function Sidebar({
       setRecentDropTopicId(topicId)
       setRecentDropSheetId(sheetId)
       setRecentDropSheetParentId(sheetParentId)
+      // 跨画布落点的成功高亮渲染在底部「画布管理」折叠区里。若动作由大纲区的
+      // 「移动到其他画布」按钮触发（而不是在画布列表上拖拽），该区默认折叠，
+      // 高亮就看不见了 —— 记到跨画布落点时自动展开。
+      if (sheetId) {
+        setSheetManagerOpen(true)
+      }
       dropSuccessTimeoutRef.current = setTimeout(() => {
         dropSuccessTimeoutRef.current = null
         setRecentDropTopicId(null)
@@ -633,7 +642,9 @@ export function Sidebar({
       block: 'nearest',
       inline: 'nearest',
     })
-  }, [recentDropSheetId, recentDropSheetParentId, recentDropTopicId])
+    // sheetManagerOpen 需入依赖：跨画布高亮触发的自动展开发生在同一批次里，
+    // 折叠状态下 DOM 里没有落点元素，展开后要再跑一次才能真正滚动过去
+  }, [recentDropSheetId, recentDropSheetParentId, recentDropTopicId, sheetManagerOpen])
   useEffect(() => {
     if (!rootRef.current || !historyFocusTopicId) {
       return
@@ -650,12 +661,7 @@ export function Sidebar({
   }, [historyFocusTopicId])
 
   return (
-    <aside className="panel panel--sidebar" aria-label="左侧边栏" ref={rootRef}>
-      <div className="panel__section">
-        <p className="panel__eyebrow">Workspace</p>
-        <h2 className="panel__title">文档导航</h2>
-      </div>
-
+    <div className="sidebar-outline" ref={rootRef}>
       <div className="outline-card">
         <span className="outline-card__badge">主文档</span>
         <strong>{session.summary?.rootTopicText ?? '当前工作区'}</strong>
@@ -666,252 +672,6 @@ export function Sidebar({
         </p>
       </div>
 
-      <div className="panel__section">
-        <p className="panel__eyebrow">Sheets</p>
-        <h3 className="panel__title">画布管理</h3>
-        <p className="panel__muted">当前文档里的所有画布都会参与保存、恢复和修复流程，也支持把主题直接拖到目标画布里。</p>
-        <div className="panel__actions">
-          <button className="panel__action" type="button" onClick={() => void session.createSheet()}>
-            新建画布
-          </button>
-          <button
-            className="panel__action"
-            type="button"
-            disabled={!activeSheet || !sheetTitleDraft.trim()}
-            onClick={() =>
-              activeSheet && void session.renameSheet(activeSheet.id, sheetTitleDraft)
-            }
-          >
-            重命名当前画布
-          </button>
-          <button
-            className="panel__action"
-            type="button"
-            disabled={!activeSheet || (session.summary?.sheetCount ?? 0) <= 1}
-            onClick={() => activeSheet && void session.deleteSheet(activeSheet.id)}
-          >
-            删除当前画布
-          </button>
-        </div>
-        <label className="panel__field">
-          <span>画布名称</span>
-          <input
-            type="text"
-            value={sheetTitleDraft}
-            onChange={(event) => setSheetTitleDraft(event.target.value)}
-            placeholder="输入当前画布名称"
-          />
-        </label>
-        <label className="panel__field">
-          <span>图表类型</span>
-          <select
-            value={activeSheet?.chartType ?? 'mindmap'}
-            disabled={!activeSheet}
-            onChange={(event) => {
-              if (activeSheet) {
-                void session.setSheetChartType(activeSheet.id, event.target.value as ChartType)
-              }
-            }}
-          >
-            {CHART_TYPE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <ul className="panel__list">
-          {session.document?.sheets.map((sheet, index) => (
-            <li
-              key={sheet.id}
-              onDragLeave={(event) => {
-                const nextTarget = event.relatedTarget
-
-                if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
-                  return
-                }
-
-                if (dropTargetSheetId === sheet.id) {
-                  setDropTargetSheetId(null)
-                  setDropTargetSheetParentId(null)
-                }
-                if (invalidDropSheetId === sheet.id) {
-                  setInvalidDropSheetId(null)
-                  setInvalidDragHint(null)
-                }
-              }}
-            >
-              <div className="panel__actions">
-                  <button
-                    className={`panel__action${dropTargetSheetId === sheet.id ? ' panel__action--drop-target' : ''}${invalidDropSheetId === sheet.id ? ' panel__action--drop-invalid' : ''}${recentDropSheetId === sheet.id ? ' panel__action--drop-success' : ''}`}
-                    data-sheet-id={sheet.id}
-                    type="button"
-                    onClick={() => void session.selectSheet(sheet.id)}
-                    onDragOver={(event) => {
-                      if (!canDropDraggedTopicOnSheet(sheet.id)) {
-                        setDropTargetTopicId(null)
-                        setDropTargetSheetId(null)
-                        setDropTargetSheetParentId(null)
-                        setInvalidDropTopicId(null)
-                        setInvalidDropSheetId(sheet.id)
-                        setInvalidDragHint(getInvalidSheetDropReason(sheet.id))
-                        return
-                      }
-
-                      event.preventDefault()
-                      event.dataTransfer.dropEffect = 'move'
-                      setDropTargetTopicId(null)
-                      setDropTargetSheetId(sheet.id)
-                      setDropTargetSheetParentId(sheet.rootTopic.id)
-                      setInvalidDropTopicId(null)
-                      setInvalidDropSheetId(null)
-                      setInvalidDragHint(null)
-                      clearPendingAutoExpand()
-                    }}
-                    onDrop={(event) => {
-                      event.preventDefault()
-
-                      if (!draggingTopicId || !canDropDraggedTopicOnSheet(sheet.id)) {
-                        setDropTargetSheetId(null)
-                        setDropTargetSheetParentId(null)
-                        setInvalidDropSheetId(null)
-                        clearPendingAutoExpand()
-                        return
-                      }
-
-                      setDraggingTopicId(null)
-                      setDropTargetTopicId(null)
-                      setDropTargetSheetId(null)
-                      setDropTargetSheetParentId(null)
-                      setInvalidDropTopicId(null)
-                      setInvalidDropSheetId(null)
-                      setInvalidDragHint(null)
-                      clearPendingAutoExpand()
-                      void (async () => {
-                        await session.moveTopicToSheet(
-                          draggingTopicId,
-                          sheet.id,
-                          sheet.rootTopic.id,
-                          `拖拽移动主题到画布“${sheet.title}”根主题`,
-                        )
-                        markDropSuccessHighlight(sheet.rootTopic.id, sheet.id, sheet.rootTopic.id)
-                      })()
-                    }}
-                    onDragLeave={(event) => {
-                      const container = event.currentTarget.closest('li')
-                      const nextTarget = event.relatedTarget
-
-                      if (
-                        container &&
-                        nextTarget instanceof Node &&
-                        container.contains(nextTarget)
-                      ) {
-                        return
-                      }
-
-                      if (dropTargetSheetId === sheet.id) {
-                        setDropTargetSheetId(null)
-                        setDropTargetSheetParentId(null)
-                      }
-                      if (invalidDropSheetId === sheet.id) {
-                        setInvalidDropSheetId(null)
-                        setInvalidDragHint(null)
-                      }
-                      clearPendingAutoExpand()
-                    }}
-                  >
-                    {sheet.title}
-                    {sheet.id === session.summary?.activeSheetId ? '（当前）' : ''}
-                  </button>
-                  <button
-                    className="panel__action"
-                    type="button"
-                    disabled={index === 0}
-                    onClick={() => void session.moveSheet(sheet.id, 'up')}
-                  >
-                    上移
-                  </button>
-                  <button
-                    className="panel__action"
-                    type="button"
-                    disabled={index === (session.document?.sheets.length ?? 0) - 1}
-                    onClick={() => void session.moveSheet(sheet.id, 'down')}
-                  >
-                    下移
-                  </button>
-                </div>
-                {((draggingTopicId && dropTargetSheetId === sheet.id) ||
-                  recentDropSheetId === sheet.id) ? (
-                  <div className="sheet-drop-targets">
-                    <p className="sheet-drop-targets__label">
-                      {draggingTopicId ? '拖到画布中的目标父主题' : '刚刚投放到的目标父主题'}
-                    </p>
-                    <div className="sheet-drop-targets__list">
-                      {sheetDropParentEntriesById[sheet.id]?.map((entry) => {
-                        const isRootTarget = entry.topicId === sheet.rootTopic.id
-                        const isActiveDropParent = dropTargetSheetParentId === entry.topicId
-                        const isRecentDropParent =
-                          recentDropSheetId === sheet.id && recentDropSheetParentId === entry.topicId
-
-                        return (
-                          <button
-                            key={entry.topicId}
-                            className={`sheet-drop-target${isActiveDropParent ? ' sheet-drop-target--active' : ''}${isRecentDropParent ? ' sheet-drop-target--success' : ''}`}
-                            data-drop-sheet-id={sheet.id}
-                            data-drop-parent-id={entry.topicId}
-                            type="button"
-                            disabled={!draggingTopicId}
-                            onDragOver={(event) => {
-                              if (!canDropDraggedTopicOnSheet(sheet.id)) {
-                                return
-                              }
-
-                              event.preventDefault()
-                              event.dataTransfer.dropEffect = 'move'
-                              setDropTargetTopicId(null)
-                              setDropTargetSheetId(sheet.id)
-                              setDropTargetSheetParentId(entry.topicId)
-                              setInvalidDropTopicId(null)
-                              setInvalidDropSheetId(null)
-                              setInvalidDragHint(null)
-                            }}
-                            onDrop={(event) => {
-                              event.preventDefault()
-
-                              if (!draggingTopicId || !canDropDraggedTopicOnSheet(sheet.id)) {
-                                return
-                              }
-
-                              setDraggingTopicId(null)
-                              setDropTargetTopicId(null)
-                              setDropTargetSheetId(null)
-                              setDropTargetSheetParentId(null)
-                              setInvalidDropTopicId(null)
-                              setInvalidDropSheetId(null)
-                              setInvalidDragHint(null)
-                              clearPendingAutoExpand()
-                              void (async () => {
-                                await session.moveTopicToSheet(
-                                  draggingTopicId,
-                                  sheet.id,
-                                  entry.topicId,
-                                  `拖拽移动主题到画布“${sheet.title}”的“${entry.path.join(' / ')}”下面`,
-                                )
-                                markDropSuccessHighlight(entry.topicId, sheet.id, entry.topicId)
-                              })()
-                            }}
-                          >
-                            {isRootTarget ? `根主题 / ${entry.text}` : entry.path.join(' / ')}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ) : null}
-            </li>
-          ))}
-        </ul>
-      </div>
 
       <div className="panel__section">
         <p className="panel__eyebrow">Outline</p>
@@ -1279,6 +1039,267 @@ export function Sidebar({
           </ul>
         ) : null}
       </div>
-    </aside>
+
+      <div className={`panel__section${sheetManagerOpen ? " panel__section--open" : " panel__section--collapsed"}`}>
+        <button
+          type="button"
+          className="panel__section-header"
+          aria-expanded={sheetManagerOpen}
+          onClick={() => setSheetManagerOpen((v) => !v)}
+        >
+          <span className="panel__section-chevron" aria-hidden="true">
+            {sheetManagerOpen ? '▾' : '▸'}
+          </span>
+          <span className="panel__eyebrow">Sheets</span>
+          <span className="panel__title">画布管理</span>
+        </button>
+        {sheetManagerOpen ? (
+          <>
+            <p className="panel__muted">当前文档里的所有画布都会参与保存、恢复和修复流程，也支持把主题直接拖到目标画布里。</p>
+            <div className="panel__actions">
+              <button className="panel__action" type="button" onClick={() => void session.createSheet()}>
+                新建画布
+              </button>
+              <button
+                className="panel__action"
+                type="button"
+                disabled={!activeSheet || !sheetTitleDraft.trim()}
+                onClick={() =>
+                  activeSheet && void session.renameSheet(activeSheet.id, sheetTitleDraft)
+                }
+              >
+                重命名当前画布
+              </button>
+              <button
+                className="panel__action"
+                type="button"
+                disabled={!activeSheet || (session.summary?.sheetCount ?? 0) <= 1}
+                onClick={() => activeSheet && void session.deleteSheet(activeSheet.id)}
+              >
+                删除当前画布
+              </button>
+            </div>
+            <label className="panel__field">
+              <span>画布名称</span>
+              <input
+                type="text"
+                value={sheetTitleDraft}
+                onChange={(event) => setSheetTitleDraft(event.target.value)}
+                placeholder="输入当前画布名称"
+              />
+            </label>
+            <label className="panel__field">
+              <span>图表类型</span>
+              <select
+                value={activeSheet?.chartType ?? 'mindmap'}
+                disabled={!activeSheet}
+                onChange={(event) => {
+                  if (activeSheet) {
+                    void session.setSheetChartType(activeSheet.id, event.target.value as ChartType)
+                  }
+                }}
+              >
+                {CHART_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ul className="panel__list">
+              {session.document?.sheets.map((sheet, index) => (
+                <li
+                  key={sheet.id}
+                  onDragLeave={(event) => {
+                    const nextTarget = event.relatedTarget
+
+                    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) {
+                      return
+                    }
+
+                    if (dropTargetSheetId === sheet.id) {
+                      setDropTargetSheetId(null)
+                      setDropTargetSheetParentId(null)
+                    }
+                    if (invalidDropSheetId === sheet.id) {
+                      setInvalidDropSheetId(null)
+                      setInvalidDragHint(null)
+                    }
+                  }}
+                >
+                  <div className="panel__actions">
+                      <button
+                        className={`panel__action${dropTargetSheetId === sheet.id ? ' panel__action--drop-target' : ''}${invalidDropSheetId === sheet.id ? ' panel__action--drop-invalid' : ''}${recentDropSheetId === sheet.id ? ' panel__action--drop-success' : ''}`}
+                        data-sheet-id={sheet.id}
+                        type="button"
+                        onClick={() => void session.selectSheet(sheet.id)}
+                        onDragOver={(event) => {
+                          if (!canDropDraggedTopicOnSheet(sheet.id)) {
+                            setDropTargetTopicId(null)
+                            setDropTargetSheetId(null)
+                            setDropTargetSheetParentId(null)
+                            setInvalidDropTopicId(null)
+                            setInvalidDropSheetId(sheet.id)
+                            setInvalidDragHint(getInvalidSheetDropReason(sheet.id))
+                            return
+                          }
+
+                          event.preventDefault()
+                          event.dataTransfer.dropEffect = 'move'
+                          setDropTargetTopicId(null)
+                          setDropTargetSheetId(sheet.id)
+                          setDropTargetSheetParentId(sheet.rootTopic.id)
+                          setInvalidDropTopicId(null)
+                          setInvalidDropSheetId(null)
+                          setInvalidDragHint(null)
+                          clearPendingAutoExpand()
+                        }}
+                        onDrop={(event) => {
+                          event.preventDefault()
+
+                          if (!draggingTopicId || !canDropDraggedTopicOnSheet(sheet.id)) {
+                            setDropTargetSheetId(null)
+                            setDropTargetSheetParentId(null)
+                            setInvalidDropSheetId(null)
+                            clearPendingAutoExpand()
+                            return
+                          }
+
+                          setDraggingTopicId(null)
+                          setDropTargetTopicId(null)
+                          setDropTargetSheetId(null)
+                          setDropTargetSheetParentId(null)
+                          setInvalidDropTopicId(null)
+                          setInvalidDropSheetId(null)
+                          setInvalidDragHint(null)
+                          clearPendingAutoExpand()
+                          void (async () => {
+                            await session.moveTopicToSheet(
+                              draggingTopicId,
+                              sheet.id,
+                              sheet.rootTopic.id,
+                              `拖拽移动主题到画布“${sheet.title}”根主题`,
+                            )
+                            markDropSuccessHighlight(sheet.rootTopic.id, sheet.id, sheet.rootTopic.id)
+                          })()
+                        }}
+                        onDragLeave={(event) => {
+                          const container = event.currentTarget.closest('li')
+                          const nextTarget = event.relatedTarget
+
+                          if (
+                            container &&
+                            nextTarget instanceof Node &&
+                            container.contains(nextTarget)
+                          ) {
+                            return
+                          }
+
+                          if (dropTargetSheetId === sheet.id) {
+                            setDropTargetSheetId(null)
+                            setDropTargetSheetParentId(null)
+                          }
+                          if (invalidDropSheetId === sheet.id) {
+                            setInvalidDropSheetId(null)
+                            setInvalidDragHint(null)
+                          }
+                          clearPendingAutoExpand()
+                        }}
+                      >
+                        {sheet.title}
+                        {sheet.id === session.summary?.activeSheetId ? '（当前）' : ''}
+                      </button>
+                      <button
+                        className="panel__action"
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => void session.moveSheet(sheet.id, 'up')}
+                      >
+                        上移
+                      </button>
+                      <button
+                        className="panel__action"
+                        type="button"
+                        disabled={index === (session.document?.sheets.length ?? 0) - 1}
+                        onClick={() => void session.moveSheet(sheet.id, 'down')}
+                      >
+                        下移
+                      </button>
+                    </div>
+                    {((draggingTopicId && dropTargetSheetId === sheet.id) ||
+                      recentDropSheetId === sheet.id) ? (
+                      <div className="sheet-drop-targets">
+                        <p className="sheet-drop-targets__label">
+                          {draggingTopicId ? '拖到画布中的目标父主题' : '刚刚投放到的目标父主题'}
+                        </p>
+                        <div className="sheet-drop-targets__list">
+                          {sheetDropParentEntriesById[sheet.id]?.map((entry) => {
+                            const isRootTarget = entry.topicId === sheet.rootTopic.id
+                            const isActiveDropParent = dropTargetSheetParentId === entry.topicId
+                            const isRecentDropParent =
+                              recentDropSheetId === sheet.id && recentDropSheetParentId === entry.topicId
+
+                            return (
+                              <button
+                                key={entry.topicId}
+                                className={`sheet-drop-target${isActiveDropParent ? ' sheet-drop-target--active' : ''}${isRecentDropParent ? ' sheet-drop-target--success' : ''}`}
+                                data-drop-sheet-id={sheet.id}
+                                data-drop-parent-id={entry.topicId}
+                                type="button"
+                                disabled={!draggingTopicId}
+                                onDragOver={(event) => {
+                                  if (!canDropDraggedTopicOnSheet(sheet.id)) {
+                                    return
+                                  }
+
+                                  event.preventDefault()
+                                  event.dataTransfer.dropEffect = 'move'
+                                  setDropTargetTopicId(null)
+                                  setDropTargetSheetId(sheet.id)
+                                  setDropTargetSheetParentId(entry.topicId)
+                                  setInvalidDropTopicId(null)
+                                  setInvalidDropSheetId(null)
+                                  setInvalidDragHint(null)
+                                }}
+                                onDrop={(event) => {
+                                  event.preventDefault()
+
+                                  if (!draggingTopicId || !canDropDraggedTopicOnSheet(sheet.id)) {
+                                    return
+                                  }
+
+                                  setDraggingTopicId(null)
+                                  setDropTargetTopicId(null)
+                                  setDropTargetSheetId(null)
+                                  setDropTargetSheetParentId(null)
+                                  setInvalidDropTopicId(null)
+                                  setInvalidDropSheetId(null)
+                                  setInvalidDragHint(null)
+                                  clearPendingAutoExpand()
+                                  void (async () => {
+                                    await session.moveTopicToSheet(
+                                      draggingTopicId,
+                                      sheet.id,
+                                      entry.topicId,
+                                      `拖拽移动主题到画布“${sheet.title}”的“${entry.path.join(' / ')}”下面`,
+                                    )
+                                    markDropSuccessHighlight(entry.topicId, sheet.id, entry.topicId)
+                                  })()
+                                }}
+                              >
+                                {isRootTarget ? `根主题 / ${entry.text}` : entry.path.join(' / ')}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </div>
+    </div>
   )
 }

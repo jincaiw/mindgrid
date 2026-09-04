@@ -313,6 +313,7 @@ it('restores cross-sheet target parent highlight after redo', async () => {
   )
 
   const sidebar = within(screen.getByLabelText('左侧边栏'))
+  expandSheetManager(sidebar)
 
   await waitFor(() =>
     expect(sidebar.getByRole('button', { name: '执行中心 / 归档区' })).toHaveClass(
@@ -462,6 +463,9 @@ it('renders the active sheet content instead of the first sheet', () => {
     />,
   )
 
+  // 「第二画布（当前）」是侧栏底部画布管理折叠区里的列表项，需先展开
+  expandSheetManager(within(screen.getByLabelText('左侧边栏')))
+
   expect(screen.getByText('第二画布（当前）')).toBeInTheDocument()
   expect(screen.getAllByText('第二中心主题').length).toBeGreaterThan(0)
 })
@@ -511,6 +515,7 @@ it('forwards sidebar sheet actions to the session', () => {
   // 限定在侧栏作用域：批次 19 引入的底部画布标签栏（SheetTabBar）也会渲染
   // 同名画布按钮与“新建画布”入口，全局查询会产生多元素歧义。
   const sidebar = within(screen.getByLabelText('左侧边栏'))
+  expandSheetManager(sidebar)
 
   fireEvent.click(sidebar.getByRole('button', { name: '新建画布' }))
   fireEvent.click(sidebar.getByRole('button', { name: '第二画布' }))
@@ -1172,6 +1177,7 @@ it('supports dragging a topic onto another sheet in the sidebar list', async () 
   )
 
   const sidebar = within(screen.getByLabelText('左侧边栏'))
+  expandSheetManager(sidebar)
   const draggedTopic = sidebar.getByRole('button', { name: /待迁移主题/ })
   const sheetTarget = sidebar.getByRole('button', { name: '执行画布' })
 
@@ -1258,6 +1264,7 @@ it('supports dragging a topic onto a specific parent in another sheet', async ()
   )
 
   const sidebar = within(screen.getByLabelText('左侧边栏'))
+  expandSheetManager(sidebar)
   const draggedTopic = sidebar.getByRole('button', { name: /待迁移主题/ })
   const sheetTarget = sidebar.getByRole('button', { name: '执行画布' })
 
@@ -1346,6 +1353,7 @@ it('shows a readable hint for invalid sheet drop targets in the sidebar list', (
   )
 
   const sidebar = within(screen.getByLabelText('左侧边栏'))
+  expandSheetManager(sidebar)
   const draggedTopic = sidebar.getByRole('button', { name: /待迁移主题/ })
   const currentSheet = sidebar.getByRole('button', { name: '主画布（当前）' })
 
@@ -1417,6 +1425,7 @@ it('forwards sidebar move-to-sheet actions to the session and highlights the tar
   )
 
   const sidebar = within(screen.getByLabelText('左侧边栏'))
+  expandSheetManager(sidebar)
 
   fireEvent.change(sidebar.getByRole('combobox', { name: '目标画布' }), {
     target: { value: 'sheet_2' },
@@ -2221,6 +2230,21 @@ const twoChildDocument: DocumentSession['document'] = {
       },
     },
   ],
+}
+
+/**
+ * 展开侧栏底部的「画布管理」折叠区。
+ *
+ * 左栏改成 XMind 式 3 Tab 后，画布管理默认折叠（新建/重命名/删除/排序已由底部
+ * 画布标签栏承接），画布列表、跨画布拖拽目标等属低频能力，按需展开。
+ */
+// 幂等：跨画布落点高亮会自动展开该区，此时再点只会把它收回去
+function expandSheetManager(sidebar: ReturnType<typeof within>) {
+  const header = sidebar.getByRole('button', { name: /画布管理/ })
+
+  if (header.getAttribute('aria-expanded') !== 'true') {
+    fireEvent.click(header)
+  }
 }
 
 function renderBatch14Workspace(sessionOverrides: Partial<DocumentSession> = {}) {

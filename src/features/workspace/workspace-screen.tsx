@@ -12,7 +12,7 @@ import type { EffectiveTheme, ThemeMode } from '../theme/use-theme'
 import { Inspector, type InspectorTab } from './inspector'
 import { OutlinerView } from './outliner-view'
 import { SheetTabBar } from './sheet-tab-bar'
-import { Sidebar } from './sidebar'
+import { NavPanel } from './nav-panel'
 import { Toolbar } from './toolbar'
 
 interface WorkspaceScreenProps {
@@ -210,7 +210,7 @@ export function WorkspaceScreen({
         ) : (
           <>
             {sidebarVisible ? (
-              <Sidebar
+              <NavPanel
                 session={session}
                 selectedTopicIds={selectedTopicIds}
                 onSelectedTopicIdsChange={setSelectedTopicIds}
