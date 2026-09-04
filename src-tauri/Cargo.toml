@@ -1,6 +1,6 @@
 [package]
 name = "mindgrid"
-version = "0.3.2"
+version = "0.3.3"
 description = "MindGrid desktop application shell"
 authors = ["MindGrid"]
 license = "UNLICENSED"
