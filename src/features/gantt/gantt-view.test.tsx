@@ -7,6 +7,19 @@ import { GanttView } from './gantt-view'
 
 const DAY_MS = 86_400_000
 
+/**
+ * 任务日期一律锚定「今天」的 UTC 零点，禁止写死绝对日期。
+ *
+ * 原因：条形 aria-label 会随 `isTaskOverdue(task, todayMs)` 追加「 已逾期」后缀
+ * （见 gantt-view.tsx 的 aria-label 模板）。写死日期后一到次日，未完成任务就会变成逾期，
+ * 所有 `getByLabelText('... 进行中')` 这类精确匹配逐一失效——而且只在 CI 上、只在跨天后才暴露。
+ * 逾期判定是 `dueDateMs < todayMs` 且已完成状态永不逾期，所以「截止日 = 今天」是安全的。
+ */
+function todayUtcMs(): number {
+  const now = new Date()
+  return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate())
+}
+
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
 }
@@ -77,8 +90,9 @@ describe('GanttView', () => {
   })
 
   it('按画布分组渲染任务名与状态条形，点击行选中主题', () => {
-    const day1 = Date.UTC(2026, 8, 1)
-    const day3 = Date.UTC(2026, 8, 3)
+    const todayUtc = todayUtcMs()
+    const day1 = todayUtc - 2 * DAY_MS
+    const day3 = todayUtc
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '设计'), task: { status: 'started', startDateMs: day1, dueDateMs: day3 } },
       { ...makeTopic('t_b', '开发'), task: { status: 'completed', dueDateMs: day3 } },
@@ -104,8 +118,7 @@ describe('GanttView', () => {
   })
 
   it('渲染今日标记与返回按钮，Esc 退出', () => {
-    const today = new Date()
-    const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+    const todayUtc = todayUtcMs()
     const root = makeTopic('t_root', '项目', [
       {
         ...makeTopic('t_a', '任务'),
@@ -142,7 +155,7 @@ describe('GanttView', () => {
   })
 
   it('日/周/月粒度切换更新按钮激活态', () => {
-    const todayUtc = Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+    const todayUtc = todayUtcMs()
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '任务'), task: { status: 'pending', startDateMs: todayUtc, dueDateMs: todayUtc } },
     ])
@@ -167,8 +180,9 @@ describe('GanttView', () => {
   })
 
   it('拖拽条形整体平移任务日期并提交 setTopicTask', () => {
-    const start = Date.UTC(2026, 8, 1)
-    const due = Date.UTC(2026, 8, 3)
+    const todayUtc = todayUtcMs()
+    const start = todayUtc - 2 * DAY_MS
+    const due = todayUtc
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '设计'), task: { status: 'started', startDateMs: start, dueDateMs: due, priority: 2 } },
     ])
@@ -198,7 +212,7 @@ describe('GanttView', () => {
   })
 
   it('未超过拖拽阈值的按下抬起按点击选中处理', () => {
-    const todayUtc = Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+    const todayUtc = todayUtcMs()
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '任务'), task: { status: 'pending', startDateMs: todayUtc, dueDateMs: todayUtc } },
     ])
@@ -219,8 +233,9 @@ describe('GanttView', () => {
   })
 
   it('拖右缘手柄仅延长截止日期', () => {
-    const start = Date.UTC(2026, 8, 1)
-    const due = Date.UTC(2026, 8, 3)
+    const todayUtc = todayUtcMs()
+    const start = todayUtc - 2 * DAY_MS
+    const due = todayUtc
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '设计'), task: { status: 'started', startDateMs: start, dueDateMs: due } },
     ])
@@ -247,9 +262,10 @@ describe('GanttView', () => {
   })
 
   it('按文档关系线渲染依赖箭头', () => {
-    const day1 = Date.UTC(2026, 8, 1)
-    const day3 = Date.UTC(2026, 8, 3)
-    const day5 = Date.UTC(2026, 8, 5)
+    const todayUtc = todayUtcMs()
+    const day1 = todayUtc
+    const day3 = todayUtc + 2 * DAY_MS
+    const day5 = todayUtc + 4 * DAY_MS
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '前置'), task: { status: 'started', startDateMs: day1, dueDateMs: day3 } },
       { ...makeTopic('t_b', '后继'), task: { status: 'pending', startDateMs: day3, dueDateMs: day5 } },
@@ -285,7 +301,7 @@ describe('GanttView', () => {
   })
 
   it('点击导出按钮调用会话导出并携带当前粒度', () => {
-    const todayUtc = Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+    const todayUtc = todayUtcMs()
     const root = makeTopic('t_root', '项目', [
       { ...makeTopic('t_a', '任务'), task: { status: 'pending', startDateMs: todayUtc, dueDateMs: todayUtc } },
     ])
