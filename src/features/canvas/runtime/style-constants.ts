@@ -22,6 +22,9 @@ export const COLORS = {
   // 默认主题与 --color-background-canvas 同为 #f5f5f7
 
   // 边（回退色，实际连线优先使用分支色）
+  // 注意：edgeActive 的取值必须与默认主题（built-in-themes.ts classic-blue）保持一致。
+  // 它的蓝不属于"UI 外壳色"，而是文档主题的连线色，改动会改变已有 .mgd 的外观，
+  // 因此不随批次 B4 的 accent 对齐一起改（见 style-resolver.ts：实际渲染走主题值）。
   edge: 'rgba(41, 88, 176, 0.34)',
   edgeActive: 'rgba(59, 130, 246, 0.74)',
 
@@ -33,20 +36,29 @@ export const COLORS = {
   nodeBgLeft: 'rgba(255, 255, 255, 0.94)',
   nodeBgRight: 'rgba(255, 255, 255, 0.96)',
 
-  // 状态（XMind 式 2px 实心描边，取代填充光环）
-  activeBorder: 'rgba(59, 130, 246, 0.45)',
-  activeOutline: '#5b8cff',
-  selectedOutline: '#5b8cff',
+  /**
+   * 状态色（XMind 式 2px 实心描边，取代填充光环）。
+   *
+   * 批次 B4：原值 #5b8cff 与默认主题根节点填充 rgba(91,140,255,0.96) 同色——
+   * 选中根节点时描边等于底色，选中环完全看不见；且与 DOM 侧用的
+   * var(--color-accent)（.mindmap-node--selected）不一致。现统一到 accent 家族。
+   *
+   * 这里是 Canvas 渲染路径，拿不到 CSS 变量，只能以字面量镜像 tokens.css 的
+   * --color-accent（#2d7ff9）。由 styles.test.ts 的跨文件一致性测试守住同步。
+   */
+  activeBorder: 'rgba(45, 127, 249, 0.45)',
+  activeOutline: '#2d7ff9',
+  selectedOutline: '#2d7ff9',
   searchMatchBorder: 'rgba(14, 165, 233, 0.22)',
   searchActiveOutline: '#0ea5e9',
   dropTargetBorder: 'rgba(16, 185, 129, 0.52)',
   dropTargetOutline: '#10b981',
-  historyFocusBorder: 'rgba(59, 130, 246, 0.4)',
-  historyFocusOutline: '#5b8cff',
+  historyFocusBorder: 'rgba(45, 127, 249, 0.4)',
+  historyFocusOutline: '#2d7ff9',
 
   // 覆盖层
-  selectionBorder: 'rgba(59, 130, 246, 0.48)',
-  selectionFill: 'rgba(59, 130, 246, 0.12)',
+  selectionBorder: 'rgba(45, 127, 249, 0.48)',
+  selectionFill: 'rgba(45, 127, 249, 0.12)',
   dropIndicatorBg: 'rgba(12, 21, 40, 0.92)',
   dropIndicatorText: 'rgba(255, 255, 255, 0.92)',
 

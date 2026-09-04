@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { TopicSnapshot } from '../../../lib/document/types'
 import { computeMindMapLayout } from '../mindmap-layout'
 import { renderScene } from './canvas-renderer'
+import { COLORS } from './style-constants'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
 import type { CameraProjection, Viewport } from './render-tree'
 
@@ -316,9 +317,11 @@ describe('renderScene', () => {
 
     renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
 
-    // 状态描边色（accent #5b8cff）应被设置为 strokeStyle
+    // 状态描边色应被设置为 strokeStyle。
+    // 从 COLORS 取值而不是写字面量：批次 B4 曾把 #5b8cff 换成 #2d7ff9，写死字面量的
+    // 断言会跟着失效一次；取常量则与生产代码同源，不会再漂。
     const accentStrokes = calls.filter(
-      (c) => c.method === 'strokeStyle' && c.args[0] === '#5b8cff',
+      (c) => c.method === 'strokeStyle' && c.args[0] === COLORS.activeOutline,
     )
     expect(accentStrokes.length).toBeGreaterThan(0)
     // 线宽 2px（XMind 式 outline）
@@ -326,11 +329,14 @@ describe('renderScene', () => {
       (c) => c.method === 'lineWidth' && c.args[0] === 2,
     )
     expect(lineWidth2.length).toBeGreaterThan(0)
-    // 不应再出现旧的半透明填充光环色 rgba(59,130,246,0.12)
-    const oldRingFills = calls.filter(
-      (c) => c.method === 'fillStyle' && c.args[0] === 'rgba(59, 130, 246, 0.12)',
+    // 不应再出现已被替换的旧状态色批次（B4 前的 #5b8cff / rgba(59,130,246,…)）
+    const legacyBlues = calls.filter(
+      (c) =>
+        (c.method === 'strokeStyle' || c.method === 'fillStyle') &&
+        typeof c.args[0] === 'string' &&
+        /#5b8cff|rgba\(59, 130, 246/i.test(c.args[0] as string),
     )
-    expect(oldRingFills.length).toBe(0)
+    expect(legacyBlues).toEqual([])
   })
 })
 

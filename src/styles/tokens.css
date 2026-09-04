@@ -19,12 +19,23 @@
   --color-surface-raised: #ffffff;
   /* 细微背景：用于 hover / inactive 的底纹（4% 黑） */
   --color-surface-subtle: rgba(0, 0, 0, 0.04);
-  /* 较强 Hover 底纹：用于 active / pressed 状态（6% 黑） */
+  /* Hover 底纹：用于 hover 状态（6% 黑） */
   --color-surface-hover: rgba(0, 0, 0, 0.06);
-  /* 毛玻璃表面：用于工具栏/标签栏/大纲头部等半透明面板（浅色：白底 82%） */
-  --color-surface-glass: rgba(255, 255, 255, 0.82);
-  /* 毛玻璃表面（强）：用于浮窗/弹层等更不透明的玻璃面板（浅色：白底 96%） */
-  --color-surface-glass-strong: rgba(255, 255, 255, 0.96);
+  /* 按下（pressed）底纹：比 hover 再深一档，让点击有落感（10% 黑）。
+     批次 B5 前它散落在 .toolbar__icon-btn:active / .panel__action:hover 里写死 */
+  --color-surface-active: rgba(0, 0, 0, 0.1);
+  /**
+   * 漂浮层表面：工具栏 / 场景工具条 / 小地图 / 浮窗等叠在画布之上的面板。
+   *
+   * 批次 B3 移除了全部 backdrop-filter（XMind 桌面端无毛玻璃）。原先 0.82 / 0.96 的
+   * 半透明值是"靠背后模糊来保证可读性"的——模糊一撤，叠在画布上的浮层会透出节点，
+   * 故这里改为实底。
+   *
+   * 名称保留 glass 是为避免 17 处调用点的大范围重命名；它现在是实底，不再半透明。
+   * 浅色下两者同为纯白（XMind 桌面端工具栏与浮层同为白底），暗色下保留层次差。
+   */
+  --color-surface-glass: #ffffff;
+  --color-surface-glass-strong: #ffffff;
   --color-text-primary: #1d1d1f;
   --color-text-secondary: rgba(60, 60, 67, 0.6);
   /* 次级 muted 文本：介于 primary 与 secondary 之间，用于标题/标签 */
@@ -41,6 +52,31 @@
   --color-accent-tint-strong: rgba(45, 127, 249, 0.16);
   --color-selection: rgba(45, 127, 249, 0.22);
   --color-focus-ring: rgba(45, 127, 249, 0.45);
+  /**
+   * accent alpha 阶梯（批次 B1）。
+   *
+   * 取代散落在 global.css 里的 40 处硬编码 rgba(45, 127, 249, α)：硬编码值在暗色主题下
+   * 仍是浅蓝，是历史遗留的主题失效问题。阶梯按"就近归并"原则取 9 档，任一处替换前后
+   * 的 alpha 偏差 ≤ 0.06（多数 ≤ 0.02，肉眼不可辨）。
+   *
+   * 与语义令牌的关系（语义令牌保持独立，不反向依赖阶梯）：
+   *   -10 ≈ --color-accent-tint，-24 ≈ --color-selection，-40 ≈ --color-focus-ring
+   *
+   * 增档规则：先确认现有档位是否够用（≤0.04 偏差直接归并），再决定是否新增，
+   * 避免阶梯重新退化为"一处一变量"。
+   */
+  --color-accent-06: rgba(45, 127, 249, 0.06);
+  --color-accent-10: rgba(45, 127, 249, 0.1);
+  --color-accent-14: rgba(45, 127, 249, 0.14);
+  --color-accent-18: rgba(45, 127, 249, 0.18);
+  --color-accent-24: rgba(45, 127, 249, 0.24);
+  --color-accent-32: rgba(45, 127, 249, 0.32);
+  --color-accent-40: rgba(45, 127, 249, 0.4);
+  --color-accent-50: rgba(45, 127, 249, 0.5);
+  --color-accent-72: rgba(45, 127, 249, 0.72);
+  /* accent 实心底色的按下/悬停态：比 --color-accent 深一档，用于蓝色实心按钮。
+     批次 B4 前它是散落在 .update-notification__action--primary 里的 #2563eb */
+  --color-accent-strong: #2563eb;
   --color-success: #34c759;
   --color-warning: #ff9f0a;
   --color-error: #ff3b30;
@@ -85,8 +121,10 @@
   --color-surface-raised: #323336;
   --color-surface-subtle: rgba(255, 255, 255, 0.04);
   --color-surface-hover: rgba(255, 255, 255, 0.08);
-  --color-surface-glass: rgba(40, 41, 44, 0.82);
-  --color-surface-glass-strong: rgba(40, 41, 44, 0.96);
+  --color-surface-active: rgba(255, 255, 255, 0.12);
+  /* 漂浮层表面（暗色，实底，无毛玻璃）：glass 与 glass-strong 保留一层明暗差 */
+  --color-surface-glass: #28292c;
+  --color-surface-glass-strong: #323336;
   --color-text-primary: #e6e6e6;
   --color-text-secondary: rgba(230, 230, 230, 0.6);
   --color-text-muted: #b8b8bc;
@@ -99,6 +137,19 @@
   --color-accent-tint-strong: rgba(111, 157, 255, 0.24);
   --color-selection: rgba(111, 157, 255, 0.32);
   --color-focus-ring: rgba(111, 157, 255, 0.5);
+  /* accent alpha 阶梯（暗色）：#6f9dff 在深底上需要更高不透明度才读得出来，
+     整体按浅色档位 ×1.6 取值，与既有 tint / selection 的提亮比例一致 */
+  --color-accent-06: rgba(111, 157, 255, 0.1);
+  --color-accent-10: rgba(111, 157, 255, 0.16);
+  --color-accent-14: rgba(111, 157, 255, 0.22);
+  --color-accent-18: rgba(111, 157, 255, 0.26);
+  --color-accent-24: rgba(111, 157, 255, 0.32);
+  --color-accent-32: rgba(111, 157, 255, 0.42);
+  --color-accent-40: rgba(111, 157, 255, 0.52);
+  --color-accent-50: rgba(111, 157, 255, 0.62);
+  --color-accent-72: rgba(111, 157, 255, 0.82);
+  /* 暗色下"更深一档"要反过来：底色暗，按下态应更亮 */
+  --color-accent-strong: #8fb4ff;
   --color-success: #30d158;
   --color-warning: #ffb340;
   --color-error: #ff453a;
@@ -126,19 +177,32 @@
     --color-surface-raised: #323336;
     --color-surface-subtle: rgba(255, 255, 255, 0.04);
     --color-surface-hover: rgba(255, 255, 255, 0.08);
-    --color-surface-glass: rgba(40, 41, 44, 0.82);
-    --color-surface-glass-strong: rgba(40, 41, 44, 0.96);
+    --color-surface-active: rgba(255, 255, 255, 0.12);
+    /* 漂浮层表面（暗色，实底，无毛玻璃）：取值与 [data-theme="dark"] 块一致 */
+    --color-surface-glass: #28292c;
+    --color-surface-glass-strong: #323336;
     --color-text-primary: #e6e6e6;
     --color-text-secondary: rgba(230, 230, 230, 0.6);
     --color-text-muted: #b8b8bc;
     --color-text: #f0f0f4;
     --color-border-default: rgba(255, 255, 255, 0.1);
     --color-border-strong: rgba(255, 255, 255, 0.18);
-  --color-accent: #6f9dff;
-  --color-accent-tint: rgba(111, 157, 255, 0.16);
-  --color-accent-tint-strong: rgba(111, 157, 255, 0.24);
-  --color-selection: rgba(111, 157, 255, 0.32);
-  --color-focus-ring: rgba(111, 157, 255, 0.5);
+    --color-accent: #6f9dff;
+    --color-accent-tint: rgba(111, 157, 255, 0.16);
+    --color-accent-tint-strong: rgba(111, 157, 255, 0.24);
+    --color-selection: rgba(111, 157, 255, 0.32);
+    --color-focus-ring: rgba(111, 157, 255, 0.5);
+    /* accent alpha 阶梯（暗色）：取值与 [data-theme="dark"] 块保持一致 */
+    --color-accent-06: rgba(111, 157, 255, 0.1);
+    --color-accent-10: rgba(111, 157, 255, 0.16);
+    --color-accent-14: rgba(111, 157, 255, 0.22);
+    --color-accent-18: rgba(111, 157, 255, 0.26);
+    --color-accent-24: rgba(111, 157, 255, 0.32);
+    --color-accent-32: rgba(111, 157, 255, 0.42);
+    --color-accent-40: rgba(111, 157, 255, 0.52);
+    --color-accent-50: rgba(111, 157, 255, 0.62);
+    --color-accent-72: rgba(111, 157, 255, 0.82);
+    --color-accent-strong: #8fb4ff;
     --color-success: #30d158;
     --color-warning: #ffb340;
     --color-error: #ff453a;
