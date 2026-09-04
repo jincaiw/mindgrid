@@ -18,7 +18,7 @@ import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import { MarkerSelector } from '../canvas/marker-selector'
-import { GridIcon, GroupIcon, LinkIcon, TypeIcon } from './icons'
+import { GridIcon, PlayIcon, TypeIcon } from './icons'
 
 /**
  * XMind 格式面板式分区：可折叠（默认展开），标题行点击切换。
@@ -212,8 +212,15 @@ const BRANCH_PALETTE_PRESETS: { id: string; label: string; colors: string[] }[] 
   },
 ]
 
-/** Inspector tab 类型：上下文感知面板，参考 XMind 右侧 Inspector tab 结构。 */
-export type InspectorTab = 'topic' | 'canvas' | 'relationships' | 'grouping'
+/**
+ * Inspector 子页类型：对标 XMind 右侧格式面板的 3 个子页。
+ *
+ * 与旧版 4 Tab（主题 / 画布 / 关系线 / 分组）的差异不只是改名：
+ * 旧版按「数据类型」分 Tab，导致「画布信息」和「分支样式」这类同为画布级配置
+ * 的分区被拆到不同页；新版按 XMind 的「样式 / 演说 / 画布」归类，
+ * 关系线与边界概要归入画布页（二者都是画布级结构）。
+ */
+export type InspectorTab = 'style' | 'pitch' | 'canvas'
 
 interface TabConfig {
   id: InspectorTab
@@ -222,21 +229,27 @@ interface TabConfig {
 }
 
 const TABS: TabConfig[] = [
-  { id: 'topic', label: '主题', icon: TypeIcon },
+  { id: 'style', label: '样式', icon: TypeIcon },
+  { id: 'pitch', label: '演说', icon: PlayIcon },
   { id: 'canvas', label: '画布', icon: GridIcon },
-  { id: 'relationships', label: '关系线', icon: LinkIcon },
-  { id: 'grouping', label: '分组', icon: GroupIcon },
 ]
 
 interface InspectorProps {
   session: DocumentSession
   selectedTopicIds: string[]
   onSelectedTopicIdsChange: (topicIds: string[]) => void
-  /** 外部 tab 切换请求（如工具栏“插入→备注”聚焦主题 tab）；nonce 变化时生效。 */
+  /** 外部 tab 切换请求（如工具栏“插入→备注”聚焦样式子页）；nonce 变化时生效。 */
   tabRequest?: { tab: InspectorTab; nonce: number } | null
+  /** 「演说」子页的放映入口，与工具栏演示按钮走同一路径。 */
+  onStartPresentation?: () => void
 }
 
-export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorProps) {
+export function Inspector({
+  session,
+  selectedTopicIds,
+  tabRequest,
+  onStartPresentation,
+}: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const activeTopic =
     session.document && session.activeTopicId
@@ -246,6 +259,11 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
     () =>
       session.document?.sheets.filter((sheet) => sheet.id !== activeSheet?.id) ?? [],
     [activeSheet?.id, session.document],
+  )
+  // 「演说」子页展示预计幻灯片数：放映按大纲顺序逐主题推进，故等于当前画布主题数
+  const activeSheetTopicCount = useMemo(
+    () => (activeSheet ? flattenTopicTree(activeSheet.rootTopic).length : 0),
+    [activeSheet],
   )
   const [moveTargetSheetId, setMoveTargetSheetId] = useState(movableTargetSheets[0]?.id ?? '')
   const targetSheet = session.document ? getSheetById(session.document, moveTargetSheetId) : null
@@ -277,8 +295,8 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
   const themes = useMemo(() => listThemes(), [])
   const currentThemeId = session.document?.theme?.id ?? DEFAULT_THEME_ID
 
-  // —— Tab 状态：默认主题 tab，选中节点时直接编辑富内容 ——
-  const [activeTab, setActiveTab] = useState<InspectorTab>('topic')
+  // —— Tab 状态：默认样式子页，选中节点时直接编辑富内容 ——
+  const [activeTab, setActiveTab] = useState<InspectorTab>('style')
 
   // 外部 tab 切换请求（nonce 变化即切到指定 tab）
   useEffect(() => {
@@ -572,11 +590,11 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
       </div>
 
       <div className="panel__tab-body">
-        {activeTab === 'topic' ? (
+        {activeTab === 'style' ? (
           <div
-            id="inspector-tabpanel-topic"
+            id="inspector-tabpanel-style"
             role="tabpanel"
-            aria-labelledby="inspector-tab-topic"
+            aria-labelledby="inspector-tab-style"
             className="panel__tab-panel"
           >
             <PanelSection eyebrow="Topic" title="主题属性">
@@ -1044,6 +1062,158 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
               </PanelSection>
             ) : null}
 
+            <PanelSection eyebrow="Branch Style" title="分支样式">
+              <p className="panel__muted">
+                调整当前画布所有连线的形状、粗细与分支配色（写入画布级覆盖，节点级颜色优先）。
+              </p>
+
+              <div className="panel__field">
+                <span>连线类型</span>
+                <div className="panel__segmented" role="group" aria-label="连线类型">
+                  {EDGE_TYPE_OPTIONS.map((opt) => {
+                    const active = (activeBranchStyle?.edgeType ?? 'curve') === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => applyBranchStyle({ edgeType: opt.value })}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="panel__field">
+                <span>
+                  连线粗细
+                  <output className="panel__value-out">
+                    {branchThicknessDraft === '' || branchThicknessDraft === 1
+                      ? '默认'
+                      : `${branchThicknessDraft}×`}
+                  </output>
+                </span>
+                <input
+                  type="range"
+                  aria-label="连线粗细乘数"
+                  min={BRANCH_THICKNESS_MIN}
+                  max={BRANCH_THICKNESS_MAX}
+                  step={0.1}
+                  value={branchThicknessDraft === '' ? 1 : branchThicknessDraft}
+                  onChange={(e) => setBranchThicknessDraft(Number(e.target.value))}
+                  onPointerUp={() => applyBranchStyle({ thickness: branchThicknessDraft })}
+                  onKeyUp={() => applyBranchStyle({ thickness: branchThicknessDraft })}
+                  onBlur={() => applyBranchStyle({ thickness: branchThicknessDraft })}
+                />
+              </div>
+
+              <div className="panel__field">
+                <span>分支色板</span>
+                <div
+                  className="panel__palette-grid"
+                  role="radiogroup"
+                  aria-label="分支色板预设"
+                >
+                  {BRANCH_PALETTE_PRESETS.map((preset) => {
+                    const currentPalette = activeBranchStyle?.colorPalette
+                    const isDefault = !currentPalette || currentPalette.length === 0
+                    const active =
+                      preset.id === 'default'
+                        ? isDefault
+                        : JSON.stringify(preset.colors) ===
+                          JSON.stringify(currentPalette ?? [])
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={`panel__palette-swatch${active ? ' panel__palette-swatch--active' : ''}`}
+                        title={preset.label}
+                        onClick={() =>
+                          applyBranchStyle({
+                            colorPalette:
+                              preset.id === 'default' ? null : preset.colors,
+                          })
+                        }
+                      >
+                        <span className="panel__palette-strip">
+                          {preset.colors.map((c, i) => (
+                            <span
+                              key={i}
+                              className="panel__palette-dot"
+                              style={{ background: c }}
+                            />
+                          ))}
+                        </span>
+                        <span className="panel__palette-name">{preset.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {activeBranchStyle ? (
+                <button
+                  className="panel__action panel__action--ghost"
+                  type="button"
+                  onClick={() => {
+                    if (!activeSheet) return
+                    setBranchThicknessDraft('')
+                    void session.setSheetBranchStyle(activeSheet.id, null)
+                  }}
+                >
+                  清除分支样式覆盖
+                </button>
+              ) : null}
+            </PanelSection>
+          </div>
+        ) : null}
+
+        {activeTab === 'pitch' ? (
+          <div
+            id="inspector-tabpanel-pitch"
+            role="tabpanel"
+            aria-labelledby="inspector-tab-pitch"
+            className="panel__tab-panel"
+          >
+            <PanelSection eyebrow="Pitch" title="演说放映">
+              <p className="panel__muted">
+                按当前画布的大纲顺序逐主题全屏放映。演讲词写在主题的备注里，放映时不会显示。
+              </p>
+              <div className="accordion-card">
+                <span>预计幻灯片</span>
+                <span>{activeSheetTopicCount} 页</span>
+              </div>
+              {onStartPresentation ? (
+                <button
+                  type="button"
+                  className="panel__action"
+                  onClick={onStartPresentation}
+                >
+                  开始放映
+                </button>
+              ) : null}
+              <p className="panel__eyebrow">放映快捷键</p>
+              <ul className="panel__list">
+                <li>→ / 空格 / 回车：下一页</li>
+                <li>← / Backspace：上一页</li>
+                <li>Esc：退出放映</li>
+              </ul>
+            </PanelSection>
+          </div>
+        ) : null}
+
+        {activeTab === 'canvas' ? (
+          <div
+            id="inspector-tabpanel-canvas"
+            role="tabpanel"
+            aria-labelledby="inspector-tab-canvas"
+            className="panel__tab-panel"
+          >
             <PanelSection eyebrow="Move" title="跨画布移动">
               <p className="panel__muted">
                 把当前主题分支移动或复制到另一张画布，并可指定目标父主题；完成后会自动切换过去。
@@ -1173,16 +1343,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                 {hasMultipleSelectedTopics ? '批量复制到目标画布' : '复制到目标画布'}
               </button>
             </PanelSection>
-          </div>
-        ) : null}
 
-        {activeTab === 'canvas' ? (
-          <div
-            id="inspector-tabpanel-canvas"
-            role="tabpanel"
-            aria-labelledby="inspector-tab-canvas"
-            className="panel__tab-panel"
-          >
             <PanelSection eyebrow="Canvas" title="画布信息">
               <div className="accordion-card">
                 <span>当前画布</span>
@@ -1255,124 +1416,6 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
               ) : null}
             </PanelSection>
 
-            <PanelSection eyebrow="Branch Style" title="分支样式">
-              <p className="panel__muted">
-                调整当前画布所有连线的形状、粗细与分支配色（写入画布级覆盖，节点级颜色优先）。
-              </p>
-
-              <div className="panel__field">
-                <span>连线类型</span>
-                <div className="panel__segmented" role="group" aria-label="连线类型">
-                  {EDGE_TYPE_OPTIONS.map((opt) => {
-                    const active = (activeBranchStyle?.edgeType ?? 'curve') === opt.value
-                    return (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        className={`panel__seg${active ? ' panel__seg--active' : ''}`}
-                        aria-pressed={active}
-                        onClick={() => applyBranchStyle({ edgeType: opt.value })}
-                      >
-                        {opt.label}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              <div className="panel__field">
-                <span>
-                  连线粗细
-                  <output className="panel__value-out">
-                    {branchThicknessDraft === '' || branchThicknessDraft === 1
-                      ? '默认'
-                      : `${branchThicknessDraft}×`}
-                  </output>
-                </span>
-                <input
-                  type="range"
-                  aria-label="连线粗细乘数"
-                  min={BRANCH_THICKNESS_MIN}
-                  max={BRANCH_THICKNESS_MAX}
-                  step={0.1}
-                  value={branchThicknessDraft === '' ? 1 : branchThicknessDraft}
-                  onChange={(e) => setBranchThicknessDraft(Number(e.target.value))}
-                  onPointerUp={() => applyBranchStyle({ thickness: branchThicknessDraft })}
-                  onKeyUp={() => applyBranchStyle({ thickness: branchThicknessDraft })}
-                  onBlur={() => applyBranchStyle({ thickness: branchThicknessDraft })}
-                />
-              </div>
-
-              <div className="panel__field">
-                <span>分支色板</span>
-                <div
-                  className="panel__palette-grid"
-                  role="radiogroup"
-                  aria-label="分支色板预设"
-                >
-                  {BRANCH_PALETTE_PRESETS.map((preset) => {
-                    const currentPalette = activeBranchStyle?.colorPalette
-                    const isDefault = !currentPalette || currentPalette.length === 0
-                    const active =
-                      preset.id === 'default'
-                        ? isDefault
-                        : JSON.stringify(preset.colors) ===
-                          JSON.stringify(currentPalette ?? [])
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        className={`panel__palette-swatch${active ? ' panel__palette-swatch--active' : ''}`}
-                        title={preset.label}
-                        onClick={() =>
-                          applyBranchStyle({
-                            colorPalette:
-                              preset.id === 'default' ? null : preset.colors,
-                          })
-                        }
-                      >
-                        <span className="panel__palette-strip">
-                          {preset.colors.map((c, i) => (
-                            <span
-                              key={i}
-                              className="panel__palette-dot"
-                              style={{ background: c }}
-                            />
-                          ))}
-                        </span>
-                        <span className="panel__palette-name">{preset.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {activeBranchStyle ? (
-                <button
-                  className="panel__action panel__action--ghost"
-                  type="button"
-                  onClick={() => {
-                    if (!activeSheet) return
-                    setBranchThicknessDraft('')
-                    void session.setSheetBranchStyle(activeSheet.id, null)
-                  }}
-                >
-                  清除分支样式覆盖
-                </button>
-              ) : null}
-            </PanelSection>
-          </div>
-        ) : null}
-
-        {activeTab === 'relationships' ? (
-          <div
-            id="inspector-tabpanel-relationships"
-            role="tabpanel"
-            aria-labelledby="inspector-tab-relationships"
-            className="panel__tab-panel"
-          >
             <PanelSection eyebrow="Relationships" title="关系线">
               <p className="panel__muted">
                 在任意两个主题之间建立非父子连接，用于表达跨分支或跨画布的关联。关系线保存在文档级别。
@@ -1455,16 +1498,7 @@ export function Inspector({ session, selectedTopicIds, tabRequest }: InspectorPr
                 创建关系线
               </button>
             </PanelSection>
-          </div>
-        ) : null}
 
-        {activeTab === 'grouping' ? (
-          <div
-            id="inspector-tabpanel-grouping"
-            role="tabpanel"
-            aria-labelledby="inspector-tab-grouping"
-            className="panel__tab-panel"
-          >
             <PanelSection eyebrow="Grouping" title="边界与概要">
               <p className="panel__muted">
                 为当前画布中的若干主题添加视觉分组（边界）或归纳说明（概要）。先在画布上选中至少 2 个主题，再创建。

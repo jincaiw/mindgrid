@@ -58,7 +58,7 @@ export function WorkspaceScreen({
   const [isGanttMode, setIsGanttMode] = useState(false)
   // 批次 20：快捷键帮助浮层显隐
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
-  // 工具栏“插入→备注/标签/链接/标记”：请求 Inspector 切到主题 tab
+  // 工具栏“插入→备注/标签/链接/标记”：请求 Inspector 切到样式子页
   const [inspectorTabRequest, setInspectorTabRequest] = useState<{
     tab: InspectorTab
     nonce: number
@@ -70,7 +70,7 @@ export function WorkspaceScreen({
   }
   const focusInspectorTopicTab = () => {
     setInspectorVisible(true)
-    setInspectorTabRequest((current) => ({ tab: 'topic', nonce: (current?.nonce ?? 0) + 1 }))
+    setInspectorTabRequest((current) => ({ tab: 'style', nonce: (current?.nonce ?? 0) + 1 }))
   }
 
   useEffect(() => {
@@ -235,6 +235,7 @@ export function WorkspaceScreen({
                 selectedTopicIds={selectedTopicIds}
                 onSelectedTopicIdsChange={setSelectedTopicIds}
                 tabRequest={inspectorTabRequest}
+                onStartPresentation={() => setIsPresenting(true)}
               />
             ) : null}
           </>

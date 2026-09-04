@@ -1628,6 +1628,9 @@ it('forwards inspector move-to-sheet action to the session', () => {
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
 
+  // 跨画布移动属画布级操作，3 子页改造后归入「画布」页
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+
   fireEvent.change(inspector.getByRole('combobox', { name: '目标画布' }), {
     target: { value: 'sheet_2' },
   })
@@ -1723,6 +1726,9 @@ it('supports batch move-to-sheet actions from the inspector', () => {
   fireEvent.click(sidebar.getByRole('button', { name: /复盘主题/ }), { ctrlKey: true })
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
+  // 跨画布移动属画布级操作，3 子页改造后归入「画布」页
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+
   fireEvent.change(inspector.getByRole('combobox', { name: '目标画布' }), {
     target: { value: 'sheet_2' },
   })
@@ -1889,28 +1895,33 @@ it('switches inspector tabs to reveal context-aware panels', () => {
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
 
-  // 默认在“主题” tab：富内容编辑可见，关系线创建表单不可见
+  // 默认在“样式”子页：富内容编辑可见，画布级表单不可见
   expect(inspector.getByPlaceholderText('为该主题添加详细备注…')).toBeInTheDocument()
   expect(inspector.queryByRole('button', { name: '创建关系线' })).not.toBeInTheDocument()
 
-  // 切换到“关系线” tab：创建表单出现，富内容编辑消失
-  fireEvent.click(inspector.getByRole('tab', { name: '关系线' }))
-  expect(inspector.getByRole('button', { name: '创建关系线' })).toBeInTheDocument()
+  // 切换到“演说”子页：放映入口出现，富内容编辑消失
+  fireEvent.click(inspector.getByRole('tab', { name: '演说' }))
   expect(inspector.queryByPlaceholderText('为该主题添加详细备注…')).not.toBeInTheDocument()
 
-  // 切换到“画布” tab：文档主题选择器出现
+  // 放映入口与工具栏演示按钮走同一路径：点了就真的进入演示模式。
+  // 不用 getByLabelText('演示模式')——工具栏那个演示按钮也是这个 aria-label，会撞车，
+  // 故用演示视图内部的「演示控制」组来判定
+  fireEvent.click(inspector.getByRole('button', { name: '开始放映' }))
+  expect(screen.getByRole('group', { name: '演示控制' })).toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(screen.queryByRole('group', { name: '演示控制' })).not.toBeInTheDocument()
+
+  // 切换到“画布”子页：文档主题、关系线、边界/概要都在这里（三者都是画布级结构）
   fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
   expect(inspector.getByRole('radiogroup', { name: '文档主题' })).toBeInTheDocument()
-
-  // 切换到“分组” tab：边界/概要创建表单出现
-  fireEvent.click(inspector.getByRole('tab', { name: '分组' }))
+  expect(inspector.getByRole('button', { name: '创建关系线' })).toBeInTheDocument()
   expect(inspector.getByPlaceholderText('例如：核心模块、风险项')).toBeInTheDocument()
   expect(inspector.getByPlaceholderText('对这组主题的归纳说明')).toBeInTheDocument()
 
-  // 回到“主题” tab：active 状态正确
-  const topicTab = inspector.getByRole('tab', { name: '主题' })
-  fireEvent.click(topicTab)
-  expect(topicTab).toHaveAttribute('aria-selected', 'true')
+  // 回到“样式”子页：active 状态正确
+  const styleTab = inspector.getByRole('tab', { name: '样式' })
+  fireEvent.click(styleTab)
+  expect(styleTab).toHaveAttribute('aria-selected', 'true')
 })
 
 it('applies node color overrides from the inspector color editor', () => {
@@ -2364,20 +2375,20 @@ it('creates boundary and summary for a multi-selection, and notifies otherwise',
   expect(createSummary).toHaveBeenCalledWith('sheet_1', ['topic_plan', 'topic_review'], '概要')
 })
 
-it('focuses the inspector topic tab when inserting note/label/link/marker', () => {
+it('focuses the inspector style subpage when inserting note/label/link/marker', () => {
   renderBatch14Workspace()
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
   const toolbar = within(screen.getByLabelText('主工具栏'))
 
-  // 先切到画布 tab，再通过插入→备注切回主题 tab
+  // 先切到画布子页，再通过插入→备注切回样式子页
   fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
   expect(inspector.getByRole('tab', { name: '画布' })).toHaveAttribute('aria-selected', 'true')
 
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '备注' }))
 
-  expect(inspector.getByRole('tab', { name: '主题' })).toHaveAttribute('aria-selected', 'true')
+  expect(inspector.getByRole('tab', { name: '样式' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('reveals the inspector when inserting rich content while it is hidden', () => {
@@ -2389,12 +2400,12 @@ it('reveals the inspector when inserting rich content while it is hidden', () =>
   fireEvent.keyDown(window, { key: 'i', metaKey: true })
   expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
 
-  // 插入→标签：检查器重新显示并停在主题 tab
+  // 插入→标签：检查器重新显示并停在样式子页
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '标签' }))
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
-  expect(inspector.getByRole('tab', { name: '主题' })).toHaveAttribute('aria-selected', 'true')
+  expect(inspector.getByRole('tab', { name: '样式' })).toHaveAttribute('aria-selected', 'true')
 })
 
 it('switches the sheet chart type from the structure menu', () => {
@@ -2417,15 +2428,16 @@ it('switches the sheet chart type from the structure menu', () => {
   expect(setSheetChartType).toHaveBeenCalledWith('sheet_1', 'fishbone')
 })
 
-it('commits branch style overrides from the inspector canvas tab', () => {
+it('commits branch style overrides from the inspector style subpage', () => {
   const setSheetBranchStyle = vi.fn(async () => {})
 
   renderBatch14Workspace({ setSheetBranchStyle })
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
 
-  // 分支样式控件在“画布” tab 下
-  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
+  // 分支样式是主题外观配置，3 子页改造后与主题属性/富内容同归「样式」页（默认页）
+  const styleTab = inspector.getByRole('tab', { name: '样式' })
+  expect(styleTab).toHaveAttribute('aria-selected', 'true')
 
   // 默认状态：连线类型组存在，"曲线" 高亮（默认值）
   const edgeTypeGroup = inspector.getByRole('group', { name: '连线类型' })
@@ -2482,8 +2494,8 @@ it('clears branch style overrides by clicking default values or reset button', (
   )
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
-  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
 
+  // 分支样式在默认的「样式」子页里，无需切页
   // 已有覆盖时"折线"高亮
   const edgeTypeGroup = inspector.getByRole('group', { name: '连线类型' })
   expect(within(edgeTypeGroup).getByRole('button', { name: '折线' })).toHaveAttribute(
