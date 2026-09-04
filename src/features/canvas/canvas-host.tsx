@@ -87,6 +87,14 @@ interface CanvasHostProps {
   onSearchOpenChange?: (open: boolean) => void
   // 画布线网格显示开关（XMind 默认无网格），由检查器「画布设置」驱动
   showGrid?: boolean
+  // 相机变化上报（供外层在状态栏显示缩放比例，对标 XMind 状态条右段）
+  onCameraChange?: (camera: CameraState) => void
+  /**
+   * 外部请求设置缩放（nonce 变化时触发一次）。用于状态栏「缩放比例」点击复位到 100%。
+   * 沿用 focusRootNonce 的 nonce 请求模式：受控相机状态容易造成双向反馈，
+   * 单向请求 + nonce 更安全。null / nonce 为 0 表示无请求。
+   */
+  zoomRequest?: { zoom: number; nonce: number } | null
 }
 
 const HISTORY_FOCUS_HIGHLIGHT_MS = 1600
@@ -193,6 +201,7 @@ function MindMapScene({
   activeSearchTopicId,
   historyFocusTopicId,
   focusRootNonce,
+  zoomRequest,
   onSelectedTopicIdsChange,
   onEditingTextChange,
   onStartEditingTopic,
@@ -240,6 +249,8 @@ function MindMapScene({
   historyFocusTopicId: string | null
   /** 聚焦根主题的请求 nonce：变化时触发相机动画居中根主题（Cmd+R）。0 表示初始无请求。 */
   focusRootNonce: number
+  /** 外部请求设置缩放的 nonce（配合 zoomRequest.zoom），0 表示初始无请求。 */
+  zoomRequest: { zoom: number; nonce: number } | null
   onSelectedTopicIdsChange: (topicIds: string[]) => void
   onEditingTextChange: (text: string) => void
   onStartEditingTopic: (topicId: string) => void
@@ -628,6 +639,19 @@ function MindMapScene({
     },
     [animateCameraTo],
   )
+
+  // 外部缩放请求（状态栏点击「缩放比例」复位到 100%）。
+  // 拆成两个原始值再进依赖数组，避免把对象整体放进依赖导致每次渲染都触发。
+  const zoomRequestNonce = zoomRequest?.nonce ?? 0
+  const zoomRequestTarget = zoomRequest?.zoom ?? null
+
+  useEffect(() => {
+    if (zoomRequestNonce === 0 || zoomRequestTarget == null) {
+      return
+    }
+
+    setZoomFromViewportCenter(zoomRequestTarget)
+  }, [zoomRequestNonce, zoomRequestTarget, setZoomFromViewportCenter])
 
   const focusTopicInViewport = useCallback(
     (topicId: string) => {
@@ -1874,6 +1898,8 @@ function TreeWorkspace({
   onNotify,
   searchOpen: controlledSearchOpen,
   onSearchOpenChange: controlledOnSearchOpenChange,
+  onCameraChange,
+  zoomRequest,
 }: CanvasHostProps) {
   const {
     activeTopicId,
@@ -1926,6 +1952,18 @@ function TreeWorkspace({
   const [focusRootNonce, setFocusRootNonce] = useState(0)
   const historyFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sheetCameraMapRef = useRef<Record<string, CameraState>>({})
+  /**
+   * 必须保持引用稳定：MindMapScene 的相机上报 effect 把 onCameraChange 放进依赖数组，
+   * 内联箭头会导致「上报 → 外层 setState → 重渲染 → 新箭头 → effect 重跑」无限循环
+   * （camera 对象引用未变，但 React 在 effect 刷新期走不到相同值提前退出的快路径）。
+   */
+  const handleCameraChange = useCallback(
+    (camera: CameraState) => {
+      sheetCameraMapRef.current[activeSheet.id] = camera
+      onCameraChange?.(camera)
+    },
+    [activeSheet.id, onCameraChange],
+  )
   const deletableTopicIds = useMemo(
     () => getDeletableTopicIds(selectedTopicIds, rootTopic.id),
     [rootTopic.id, selectedTopicIds],
@@ -2529,9 +2567,7 @@ function TreeWorkspace({
         <MindMapScene
           key={activeSheet.id}
           initialCamera={sheetCameraMapRef.current[activeSheet.id] ?? null}
-          onCameraChange={(camera) => {
-            sheetCameraMapRef.current[activeSheet.id] = camera
-          }}
+          onCameraChange={handleCameraChange}
           rootTopic={rootTopic}
           chartType={activeSheet.chartType}
           floatingTopics={floatingTopics}
@@ -2553,6 +2589,7 @@ function TreeWorkspace({
           activeSearchTopicId={activeSearchResult?.topicId ?? null}
           historyFocusTopicId={historyFocusTopicId}
           focusRootNonce={focusRootNonce}
+          zoomRequest={zoomRequest ?? null}
           onSelectedTopicIdsChange={setSelectedTopicIds}
           onEditingTextChange={setEditingText}
           onStartEditingTopic={startInlineEditing}
@@ -2592,6 +2629,8 @@ export function CanvasHost({
   searchOpen,
   onSearchOpenChange,
   showGrid = false,
+  onCameraChange,
+  zoomRequest,
 }: CanvasHostProps) {
   return (
     <main
@@ -2606,6 +2645,8 @@ export function CanvasHost({
         onNotify,
         searchOpen,
         onSearchOpenChange,
+        onCameraChange,
+        zoomRequest,
       })}
     </main>
   )

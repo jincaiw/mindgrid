@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { getActiveSheet } from '../../lib/document/sheets'
+import type { CameraState } from '../canvas/camera'
 import { syncSelectionWithActiveTopic } from '../canvas/interaction-state'
 import { CanvasHost } from '../canvas/canvas-host'
 import { GanttView } from '../gantt/gantt-view'
 import type { DocumentSession } from '../document/use-document-session'
 import { PresentationView } from '../presentation/presentation-view'
 import { ShortcutsHelp } from '../shortcuts/shortcuts-help'
+import { StatusBar } from '../status/status-bar'
 import type { EffectiveTheme, ThemeMode } from '../theme/use-theme'
 import { Inspector, type InspectorTab } from './inspector'
 import { OutlinerView } from './outliner-view'
@@ -18,8 +20,6 @@ interface WorkspaceScreenProps {
   onCheckForUpdates?: () => void
   // 画布等深层组件的瞬态通知（ToastRegion 展示）
   onNotify?: (message: string) => void
-  // 多选计数上报（AppShell 状态栏显示真实选中数）
-  onSelectedTopicCountChange?: (count: number) => void
   // 批次 20：UI 主题切换（system → light → dark → system 循环）
   themeMode?: ThemeMode
   themeEffective?: EffectiveTheme
@@ -30,7 +30,6 @@ export function WorkspaceScreen({
   session,
   onCheckForUpdates,
   onNotify,
-  onSelectedTopicCountChange,
   themeMode = 'system',
   themeEffective = 'light',
   onCycleTheme,
@@ -85,10 +84,19 @@ export function WorkspaceScreen({
     )
   }, [activeSheet?.id, activeSheet?.rootTopic.id, session.activeTopicId, session.document?.revision])
 
-  // 向 AppShell 上报真实多选计数（状态栏显示）
-  useEffect(() => {
-    onSelectedTopicCountChange?.(selectedTopicIds.length)
-  }, [selectedTopicIds.length, onSelectedTopicCountChange])
+  // 状态栏右段需显示缩放比例（对标 XMind 状态条），故把缩放提升到本层。
+  // 只存 zoom 数值而非整个相机对象：平移时 x/y 每帧都变，若整棵子树跟着重渲染会明显掉帧；
+  // 且用「相同值返回原值」的 updater 显式让 React 跳过无变化更新。
+  const [zoom, setZoom] = useState<number | null>(null)
+  const [zoomRequest, setZoomRequest] = useState<{ zoom: number; nonce: number } | null>(null)
+
+  const handleCameraChange = useCallback((camera: CameraState) => {
+    setZoom((current) => (current === camera.zoom ? current : camera.zoom))
+  }, [])
+
+  const handleResetZoom = useCallback(() => {
+    setZoomRequest((current) => ({ zoom: 1, nonce: (current?.nonce ?? 0) + 1 }))
+  }, [])
 
   // 批次 26：侧栏显隐状态记忆
   useEffect(() => {
@@ -161,7 +169,6 @@ export function WorkspaceScreen({
         onCycleTheme={onCycleTheme}
         onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
       />
-      {/* Sheet 标签栏渲染在画布列顶部（canvas-column 内），与画布对齐 */}
       {isZenMode ? (
         <button
           className="zen-exit-btn"
@@ -210,7 +217,6 @@ export function WorkspaceScreen({
               />
             ) : null}
             <div className="canvas-column">
-              {isZenMode ? null : <SheetTabBar session={session} />}
               <CanvasHost
                 session={session}
                 selectedTopicIds={selectedTopicIds}
@@ -219,6 +225,8 @@ export function WorkspaceScreen({
                 searchOpen={searchOpen}
                 onSearchOpenChange={setSearchOpen}
                 showGrid={session.document?.settings?.['canvas.showGrid'] === true}
+                onCameraChange={handleCameraChange}
+                zoomRequest={zoomRequest}
               />
             </div>
             {inspectorVisible ? (
@@ -232,6 +240,17 @@ export function WorkspaceScreen({
           </>
         )}
       </div>
+      {/* XMind 式底部状态条：左侧画布分页标签，右侧统计信息 / 缩放比例 / 大纲切换。
+          收进 workspace-shell 内，ZEN 模式才能用 `.workspace-shell--zen .status-bar` 整条隐藏。 */}
+      <StatusBar
+        session={session}
+        selectedTopicCount={selectedTopicIds.length}
+        zoom={zoom ?? undefined}
+        onResetZoom={handleResetZoom}
+        isOutlinerMode={isOutlinerMode}
+        onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
+        sheetTabs={<SheetTabBar session={session} />}
+      />
       {isPresenting && session.document ? (
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />
       ) : null}

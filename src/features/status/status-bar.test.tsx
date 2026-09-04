@@ -1,6 +1,9 @@
-import { screen } from '@testing-library/react'
+import { fireEvent, screen } from '@testing-library/react'
+import { describe, it, vi } from 'vitest'
 import { renderWithApp } from '../../test/render'
+import type { TopicSnapshot } from '../../lib/document/types'
 import { StatusBar } from './status-bar'
+import { collectTopicStats } from './topic-stats'
 import type { DocumentSession } from '../document/use-document-session'
 
 const sessionStub: DocumentSession = {
@@ -123,28 +126,34 @@ importDocxOutline: async () => {},
   redo: async () => {},
 }
 
-it('shows status, document name, sheet title, selection count and recent action', () => {
-  renderWithApp(<StatusBar session={sessionStub} />)
+// XMind 式状态条：左段为画布分页标签插槽，右段为统计信息 / 缩放比例 / 大纲切换。
+// 旧版的「状态 / 文档 / 画布」三项已移出状态条——文档名与保存状态由工具栏承载。
 
-  expect(screen.getByText('状态：就绪')).toBeInTheDocument()
-  expect(screen.getByText('文档：未命名')).toBeInTheDocument()
-  expect(screen.getByText('画布：主画布')).toBeInTheDocument()
-  expect(screen.getByText('选中：1 个主题')).toBeInTheDocument()
-  expect(screen.getByText('最近动作：已删除 2 个主题')).toBeInTheDocument()
+it('renders the sheet tabs slot in the left group', () => {
+  renderWithApp(<StatusBar session={sessionStub} sheetTabs={<span>分页标签占位</span>} />)
+
+  const statusBar = screen.getByLabelText('状态栏')
+  const left = statusBar.querySelector('.status-bar__left')
+
+  expect(left).not.toBeNull()
+  expect(left).toHaveTextContent('分页标签占位')
 })
 
-it('shows the file name with an unsaved marker for a dirty document', () => {
-  renderWithApp(
-    <StatusBar
-      session={{
-        ...sessionStub,
-        filePath: '/Users/jason/工作计划.mgd',
-        hasUnsavedChanges: true,
-      }}
-    />,
-  )
+it('shows topic stats, selection count and recent action in the right group', () => {
+  renderWithApp(<StatusBar session={sessionStub} />)
 
-  expect(screen.getByText('文档：工作计划.mgd（未保存）')).toBeInTheDocument()
+  // 当前画布仅根主题「中心主题」：1 个主题、4 字
+  expect(screen.getByText('1 个主题 · 4 字')).toBeInTheDocument()
+  expect(screen.getByText('选中 1')).toBeInTheDocument()
+  expect(screen.getByText('已删除 2 个主题')).toBeInTheDocument()
+})
+
+it('hides the recent action when there is none', () => {
+  renderWithApp(<StatusBar session={{ ...sessionStub, recentAction: '' }} />)
+
+  expect(screen.queryByText('已删除 2 个主题')).not.toBeInTheDocument()
+  // 统计信息仍在
+  expect(screen.getByText('1 个主题 · 4 字')).toBeInTheDocument()
 })
 
 it('shows zero selected topics when no topic is active', () => {
@@ -157,13 +166,74 @@ it('shows zero selected topics when no topic is active', () => {
     />,
   )
 
-  expect(screen.getByText('选中：0 个主题')).toBeInTheDocument()
+  expect(screen.getByText('选中 0')).toBeInTheDocument()
 })
 
 it('shows the real multi-selection count when provided by the workspace', () => {
   renderWithApp(<StatusBar session={sessionStub} selectedTopicCount={3} />)
 
-  expect(screen.getByText('选中：3 个主题')).toBeInTheDocument()
+  expect(screen.getByText('选中 3')).toBeInTheDocument()
+})
+
+it('shows the zoom percentage and forwards a reset request on click', () => {
+  const onResetZoom = vi.fn()
+
+  renderWithApp(<StatusBar session={sessionStub} zoom={1.5} onResetZoom={onResetZoom} />)
+
+  const zoomButton = screen.getByRole('button', { name: '150%' })
+  fireEvent.click(zoomButton)
+
+  expect(onResetZoom).toHaveBeenCalledTimes(1)
+})
+
+it('renders the outline toggle with a pressed state driven by the current mode', () => {
+  renderWithApp(<StatusBar session={sessionStub} isOutlinerMode onToggleOutliner={() => {}} />)
+
+  expect(screen.getByRole('button', { name: '大纲' })).toHaveAttribute('aria-pressed', 'true')
+})
+
+it('omits zoom and outline controls when no handlers are provided', () => {
+  renderWithApp(<StatusBar session={sessionStub} />)
+
+  expect(screen.queryByRole('button', { name: '大纲' })).not.toBeInTheDocument()
+  // zoom 缺省为 1，但未提供复位回调时不渲染按钮
+  expect(screen.queryByRole('button', { name: '100%' })).not.toBeInTheDocument()
+})
+
+describe('collectTopicStats', () => {
+  const topic = (id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot => ({
+    id,
+    text,
+    collapsed: false,
+    children,
+  })
+
+  it('counts nested topics, characters and CJK words', () => {
+    const root = topic('root', '中心主题', [
+      topic('a', '规划', [topic('a1', '执行步骤')]),
+      topic('b', '复盘'),
+    ])
+
+    expect(collectTopicStats(root)).toEqual({
+      topicCount: 4,
+      // 中心主题(4) + 规划(2) + 执行步骤(4) + 复盘(2) = 12 字
+      wordCount: 12,
+      charCount: 12,
+    })
+  })
+
+  it('counts latin text by whitespace-separated words', () => {
+    const root = topic('root', 'Roadmap Q4', [topic('a', 'ship the updater')])
+
+    // Roadmap + Q4 = 2 词；ship/the/updater = 3 词
+    expect(collectTopicStats(root).wordCount).toBe(5)
+    // 字符数不计空白：RoadmapQ4(9) + shiptheupdater(14) = 23
+    expect(collectTopicStats(root).charCount).toBe(23)
+  })
+
+  it('returns zeros when there is no root topic', () => {
+    expect(collectTopicStats(null)).toEqual({ topicCount: 0, wordCount: 0, charCount: 0 })
+  })
 })
 
 it('does not expose debug fields like topic id, undo stack or recovery snapshot', () => {

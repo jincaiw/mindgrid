@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { hasTauriRuntime } from '../lib/ipc/transport'
 import { useDocumentSession } from '../features/document/use-document-session'
 import { ToastRegion } from '../features/feedback/toast-region'
-import { StatusBar } from '../features/status/status-bar'
 import { WorkspaceScreen } from '../features/workspace/workspace-screen'
 import { useUpdater } from '../features/updater/use-updater'
 import { UpdateNotification } from '../features/updater/update-notification'
@@ -24,8 +23,6 @@ export function AppShell() {
   // 瞬态通知（如系统剪贴板不可用），数秒后自动消失；文档级错误优先展示
   const [notice, setNotice] = useState<string | null>(null)
   const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // WorkspaceScreen 上报的真实多选计数（状态栏“选中：N 个主题”）
-  const [selectedTopicCount, setSelectedTopicCount] = useState(0)
 
   const notify = useCallback((message: string) => {
     if (noticeTimeoutRef.current) {
@@ -118,12 +115,10 @@ export function AppShell() {
         session={session}
         onCheckForUpdates={() => void updater.manualCheck()}
         onNotify={notify}
-        onSelectedTopicCountChange={setSelectedTopicCount}
         themeMode={theme.mode}
         themeEffective={theme.effective}
         onCycleTheme={theme.cycleMode}
       />
-      <StatusBar session={session} selectedTopicCount={selectedTopicCount} />
       <ToastRegion
         message={session.error ?? notice}
         actionLabel={session.error ? toastActionLabel : undefined}

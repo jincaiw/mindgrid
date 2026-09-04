@@ -28,15 +28,15 @@ button {
 .app-frame {
   display: grid;
   min-height: 100vh;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: 1fr;
 }
 
 /* XMind 式贴合布局：通栏相接、无间隙、无圆角，仅以 1px 发丝线分隔 */
 .workspace-shell {
   display: grid;
-  /* 两行：工具栏 + 主体。Sheet 标签栏位于画布列顶部（canvas-column 内），
-     故不作为 shell 的独立行——避免空置 36px 行 */
-  grid-template-rows: 44px minmax(0, 1fr);
+  /* 三行：工具栏(44) + 主体(自适应) + 状态条(28)。
+     状态条收进 shell 内，画布分页标签并入其左侧（对标 XMind 底部状态条） */
+  grid-template-rows: 44px minmax(0, 1fr) auto;
   padding: 0;
   gap: 0;
   height: 100vh;
@@ -89,9 +89,15 @@ button {
   display: none;
 }
 
+/* ZEN 专注模式：整条状态条（含其中的画布分页标签）一并隐藏。
+   因状态条渲染在 shell 内，可直接用后代选择器命中 */
 .workspace-shell--zen {
-  grid-template-rows: 1fr;
+  grid-template-rows: minmax(0, 1fr);
   padding: 0;
+}
+
+.workspace-shell--zen .status-bar {
+  display: none;
 }
 
 .workspace-shell--zen .workspace-shell__body {
@@ -126,21 +132,16 @@ button {
   grid-template-columns: minmax(0, 1fr);
 }
 
-/* ZEN 模式下隐藏顶部画布标签栏 */
-.workspace-shell--zen .sheet-tab-bar {
-  display: none;
-}
-
-/* 画布顶部标签栏（对标 XMind：位于画布列顶部，hover 出关闭 ×） */
+/* 画布分页标签栏（对标 XMind：位于底部状态条左侧，通栏、hover 出关闭 ×）。
+   背景与边框由外层 .status-bar 提供，此处不再单独绘制——避免双重发丝线 */
 .sheet-tab-bar {
   display: flex;
   align-items: stretch;
   gap: var(--space-2);
-  padding: 0 var(--space-2);
-  min-height: 30px;
-  border-bottom: 1px solid var(--color-border-default);
-  background: var(--color-surface-glass-strong);
-  backdrop-filter: blur(20px);
+  padding: 0;
+  min-height: inherit;
+  min-width: 0;
+  background: transparent;
 }
 
 .sheet-tab-bar__scroll {
@@ -149,6 +150,7 @@ button {
   gap: 4px;
   overflow-x: auto;
   flex: 1 1 auto;
+  min-width: 0;
   scrollbar-width: thin;
 }
 
@@ -2938,15 +2940,15 @@ button {
   text-align: center;
 }
 
-/* XMind 式状态栏：底部通栏细条，发丝线上边框 */
+/* XMind 式状态条：底部通栏细条，发丝线上边框。
+   左段 = 画布分页标签，右段 = 统计信息 / 缩放比例 / 大纲切换 */
 .status-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
   margin: 0;
-  padding: 0 12px;
+  padding: 0 8px;
   min-height: 28px;
   border-top: 1px solid var(--color-border-default);
   border-radius: 0;
@@ -2955,11 +2957,51 @@ button {
   font-size: 12px;
 }
 
-.status-bar__group {
+.status-bar__left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.status-bar__right {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
   gap: var(--space-3);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.status-bar__stat {
+  color: var(--color-text-secondary);
+}
+
+.status-bar__action {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+}
+
+.status-bar__button {
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  line-height: 1.4;
+}
+
+.status-bar__button:hover {
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+}
+
+.status-bar__button[aria-pressed='true'] {
+  background: var(--color-accent);
+  color: #fff;
 }
 
 .toast-region {
@@ -3037,8 +3079,16 @@ button {
   }
 
   .status-bar {
+    /* 窄屏：分页标签与右段信息上下堆叠，避免挤压成一团 */
     flex-direction: column;
-    align-items: flex-start;
+    align-items: stretch;
+    gap: 2px;
+    padding: 4px 8px;
+  }
+
+  .status-bar__right {
+    justify-content: flex-end;
+    flex-wrap: wrap;
   }
 }
 
