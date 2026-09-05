@@ -911,6 +911,22 @@ it('zooms in with Cmd/Ctrl + =', () => {
   expect(getZoomLabel()).toHaveTextContent('115%')
 })
 
+it('does not treat Alt + Cmd/Ctrl + 0 as zoom-to-fit', () => {
+  const getZoomLabel = () =>
+    within(screen.getByLabelText('思维导图舞台')).getByText(/%/, {
+      selector: '.editor-card__hint',
+    })
+
+  renderWithApp(<CanvasHost session={createSessionStub()} />)
+  expect(getZoomLabel()).toHaveTextContent('100%')
+
+  // ⌥⌘0 是「重设样式」（由 workspace-screen 处理）。若画布的缩放分支不排除 Alt，
+  // 一次按键会既重设样式又触发「适应画布」——缩放被悄悄改掉。
+  fireEvent.keyDown(window, { key: '0', metaKey: true, altKey: true })
+
+  expect(getZoomLabel()).toHaveTextContent('100%')
+})
+
 it('renders only the scene without debug scaffolding', () => {
   renderWithApp(<CanvasHost session={createSessionStub()} />)
 

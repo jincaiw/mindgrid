@@ -1031,8 +1031,10 @@ function MindMapScene({
 
       const isModifierPressed = event.metaKey || event.ctrlKey
 
-      // 缩放快捷键（XMind 标配：Cmd/Ctrl + -/=/0/1）
-      if (isModifierPressed) {
+      // 缩放快捷键（XMind 标配：Cmd/Ctrl + -/=/0/1）。
+      // 显式排除 Alt：⌥⌘0 是菜单的「重设样式」，⌥⌘C/V 已在上方消费掉，
+      // 但 ⌥⌘0 会落到这里被当成「适应画布」——不排 Alt 就是两个动作同时触发。
+      if (isModifierPressed && !event.altKey) {
         if (event.key === '=' || event.key === '+') {
           event.preventDefault()
           setZoomFromViewportCenter(cameraRef.current.zoom * 1.15)
@@ -2522,7 +2524,8 @@ function TreeWorkspace({
         }
       }
 
-      if (isModifierPressed && event.key.toLowerCase() === 'f') {
+      // ⌥⌘F 是 ZEN 模式（XMind 的双绑定），必须排除 Alt，否则一次按键既进 ZEN 又开搜索
+      if (isModifierPressed && !event.altKey && event.key.toLowerCase() === 'f') {
         event.preventDefault()
         openSearch()
         return

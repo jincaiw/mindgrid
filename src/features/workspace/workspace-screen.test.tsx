@@ -2579,6 +2579,60 @@ it('toggles the inspector via Cmd/Ctrl + I and the toolbar button', () => {
   expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
 })
 
+it('toggles the sidebar with Cmd/Ctrl + B', () => {
+  renderWithApp(<WorkspaceScreen session={sessionStub} />)
+
+  expect(screen.getByLabelText('左侧边栏')).toBeInTheDocument()
+
+  fireEvent.keyDown(window, { key: 'b', metaKey: true })
+  expect(screen.queryByLabelText('左侧边栏')).not.toBeInTheDocument()
+
+  fireEvent.keyDown(window, { key: 'b', metaKey: true })
+  expect(screen.getByLabelText('左侧边栏')).toBeInTheDocument()
+})
+
+it('creates a new sheet with Cmd/Ctrl + T', () => {
+  const createSheet = vi.fn(async () => {})
+
+  renderWithApp(<WorkspaceScreen session={{ ...sessionStub, createSheet }} />)
+
+  fireEvent.keyDown(window, { key: 't', metaKey: true })
+
+  expect(createSheet).toHaveBeenCalledTimes(1)
+})
+
+it('resets the topic style with Alt + Cmd/Ctrl + 0', async () => {
+  const setTopicStyleRef = vi.fn(async () => {})
+  const setTopicStyleOverrides = vi.fn(async () => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{ ...sessionStub, setTopicStyleRef, setTopicStyleOverrides }}
+    />,
+  )
+
+  fireEvent.keyDown(window, { key: '0', metaKey: true, altKey: true })
+
+  await waitFor(() => {
+    expect(setTopicStyleRef).toHaveBeenCalledWith('topic_root', null)
+  })
+  expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_root', null)
+})
+
+it('enters ZEN with Alt + Cmd/Ctrl + F without opening search', () => {
+  renderWithApp(<WorkspaceScreen session={sessionStub} />)
+
+  fireEvent.keyDown(window, { key: 'f', metaKey: true, altKey: true })
+
+  // ⌥⌘F 是 XMind 的 ZEN 绑定；若画布的「查找」分支没排掉 Alt，会同时弹出搜索框
+  expect(screen.queryByRole('textbox', { name: '搜索主题' })).not.toBeInTheDocument()
+  // 工具栏/面板是 CSS 隐藏（不卸载），故用 shell 类名与浮动退出按钮判断是否真的进了 ZEN
+  expect(screen.getByLabelText('主工具栏').closest('.workspace-shell')).toHaveClass(
+    'workspace-shell--zen',
+  )
+  expect(screen.getByRole('button', { name: '退出专注模式' })).toBeInTheDocument()
+})
+
 it('toggles the bottom tab bar with Shift + Cmd/Ctrl + T', () => {
   renderBatch14Workspace()
 

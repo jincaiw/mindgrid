@@ -296,25 +296,55 @@ export function WorkspaceScreen({
     }
   }, [toolbarVisible, tabBarVisible])
 
-  // 快捷键：Cmd/Ctrl + . 切换 ZEN 模式（Esc 退出），Shift + Cmd/Ctrl + P 进入演示模式，
-  // Cmd/Ctrl + I 切换检查器显隐（preventDefault 避免浏览器书签栏冲突），
-  // Shift + Cmd/Ctrl + T 切换底部标签页栏，
+  // 快捷键：Shift + Cmd/Ctrl + T 切换底部标签页栏，
+  // Cmd/Ctrl + .（或 XMind 的 ⌥⌘F）切换 ZEN 模式（Esc 退出），
+  // Shift + Cmd/Ctrl + P 进入演说模式，
+  // Cmd/Ctrl + I 切换格式面板显隐（preventDefault 避免浏览器书签栏冲突），
+  // Cmd/Ctrl + B 切换左侧导航面板，Cmd/Ctrl + T 新建画布，
+  // Alt + Cmd/Ctrl + 0 重设主题样式，
   // Esc 在大纲全屏视图或 ZEN 模式下退出
+  //
+  // 这里只放**画布与大纲都不处理**的键：⌘Z/⌘⇧Z/⌘F/⌘D 等由 canvas-host 的
+  // window 级监听处理，若本层再接一份，一次按键会双触发（preventDefault 挡不住
+  // 同一 target 上的其它监听器）。
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 't') {
+      const mod = e.metaKey || e.ctrlKey
+      const key = e.key.toLowerCase()
+
+      if (mod && e.shiftKey && key === 't') {
         e.preventDefault()
         setTabBarVisible((v) => !v)
-      } else if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+      } else if (mod && !e.shiftKey && key === 'b') {
+        e.preventDefault()
+        setSidebarVisible((v) => !v)
+      } else if (mod && !e.shiftKey && !e.altKey && key === 't') {
+        // ⌘T 在浏览器里是「新建标签页」，必须 preventDefault
+        e.preventDefault()
+        void session.createSheet()
+      } else if (mod && e.altKey && e.key === '0') {
+        // 重设样式：清掉 styleRef 与 styleOverrides，回到文档主题的样子
+        e.preventDefault()
+        const topicId = session.activeTopicId ?? activeSheetRootTopicId
+        if (topicId) {
+          void (async () => {
+            await session.setTopicStyleRef(topicId, null)
+            await session.setTopicStyleOverrides(topicId, null)
+          })()
+        }
+      } else if (mod && e.altKey && key === 'f') {
         e.preventDefault()
         setIsZenMode((v) => !v)
-      } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
-        // 与工具栏演示按钮同一进入路径；已打开时 setIsPresenting(true) 为幂等，相当于忽略
+      } else if (mod && e.key === '.') {
+        e.preventDefault()
+        setIsZenMode((v) => !v)
+      } else if (mod && e.shiftKey && key === 'p') {
+        // 与工具栏演说按钮同一进入路径；已打开时 setIsPresenting(true) 为幂等，相当于忽略
         e.preventDefault()
         if (session.document) {
           setIsPresenting(true)
         }
-      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === 'i') {
+      } else if (mod && !e.shiftKey && key === 'i') {
         e.preventDefault()
         setInspectorVisible((v) => !v)
       } else if (e.key === 'Escape') {
@@ -330,7 +360,8 @@ export function WorkspaceScreen({
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isZenMode, isOutlinerMode, isGanttMode, session.document])
+    // 依赖里放原始值而非 activeSheet 对象：后者每次渲染都是新引用，会让监听反复重挂
+  }, [isZenMode, isOutlinerMode, isGanttMode, session, activeSheetRootTopicId])
 
   return (
     <div

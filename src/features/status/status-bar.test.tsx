@@ -140,24 +140,30 @@ it('renders the sheet tabs slot in the left group', () => {
   expect(left).toHaveTextContent('分页标签占位')
 })
 
-it('shows topic stats, selection count and recent action in the right group', () => {
+it('shows the XMind style "主题: 序号/总数" counter in the right group', () => {
   renderWithApp(<StatusBar session={sessionStub} />)
 
-  // 当前画布仅根主题「中心主题」：1 个主题、4 字
-  expect(screen.getByText('1 个主题 · 4 字')).toBeInTheDocument()
-  expect(screen.getByText('选中 1')).toBeInTheDocument()
-  expect(screen.getByText('已删除 2 个主题')).toBeInTheDocument()
+  // 当前画布仅根主题「中心主题」，且它正被选中 → 主题: 1/1
+  expect(screen.getByText('主题: 1/1')).toBeInTheDocument()
 })
 
-it('hides the recent action when there is none', () => {
+it('keeps word counts and the recent action in the counter tooltip', () => {
+  renderWithApp(<StatusBar session={sessionStub} />)
+
+  // 字数与最近动作不再占右段空间，但信息不能丢——挂在计数标签的 title 上
+  expect(screen.getByText('主题: 1/1')).toHaveAttribute(
+    'title',
+    '共 1 个主题，4 字，4 个字符\n最近动作：已删除 2 个主题',
+  )
+})
+
+it('omits the recent action line from the tooltip when there is none', () => {
   renderWithApp(<StatusBar session={{ ...sessionStub, recentAction: '' }} />)
 
-  expect(screen.queryByText('已删除 2 个主题')).not.toBeInTheDocument()
-  // 统计信息仍在
-  expect(screen.getByText('1 个主题 · 4 字')).toBeInTheDocument()
+  expect(screen.getByText('主题: 1/1')).toHaveAttribute('title', '共 1 个主题，4 字，4 个字符')
 })
 
-it('shows zero selected topics when no topic is active', () => {
+it('reports only the total when no topic is active', () => {
   renderWithApp(
     <StatusBar
       session={{
@@ -167,13 +173,44 @@ it('shows zero selected topics when no topic is active', () => {
     />,
   )
 
-  expect(screen.getByText('选中 0')).toBeInTheDocument()
+  expect(screen.getByText('主题: 1')).toBeInTheDocument()
 })
 
-it('shows the real multi-selection count when provided by the workspace', () => {
+it('switches to "已选 n/总数" for a multi-selection', () => {
   renderWithApp(<StatusBar session={sessionStub} selectedTopicCount={3} />)
 
-  expect(screen.getByText('选中 3')).toBeInTheDocument()
+  expect(screen.getByText('已选 3/1')).toBeInTheDocument()
+})
+
+it('numbers the selected topic by visible outline order', () => {
+  // 根主题 3 个子节点，选中第 2 个 → 主题: 3/4（根占第 1 位）
+  const session: DocumentSession = {
+    ...sessionStub,
+    document: {
+      ...sessionStub.document!,
+      sheets: [
+        {
+          id: 'sheet_1',
+          title: '主画布',
+          rootTopic: {
+            id: 'topic_root',
+            text: '中心主题',
+            collapsed: false,
+            children: [
+              { id: 'topic_a', text: '规划', collapsed: false, children: [] },
+              { id: 'topic_b', text: '复盘', collapsed: false, children: [] },
+              { id: 'topic_c', text: '归档', collapsed: false, children: [] },
+            ],
+          },
+        },
+      ],
+    },
+    activeTopicId: 'topic_b',
+  }
+
+  renderWithApp(<StatusBar session={session} />)
+
+  expect(screen.getByText('主题: 3/4')).toBeInTheDocument()
 })
 
 it('shows the zoom percentage and forwards a reset request on click', () => {

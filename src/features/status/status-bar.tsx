@@ -1,5 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { getActiveSheet } from '../../lib/document/sheets'
+import { collectVisibleTopicIds } from '../../lib/document/tree'
 import type { DocumentSession } from '../document/use-document-session'
 import { collectTopicStats } from './topic-stats'
 
@@ -33,28 +34,48 @@ export function StatusBar({
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const selectedCount = selectedTopicCount ?? (session.activeTopicId ? 1 : 0)
 
-  // 统计信息按当前画布重算：XMind 状态条右段为「主题个数 / 字数 / 字符数」
+  // 统计信息按当前画布重算（XMind 只显示「主题: 序号/总数」，字数与字符数进悬停）
   const stats = useMemo(() => collectTopicStats(activeSheet?.rootTopic), [activeSheet?.rootTopic])
+
+  /**
+   * 「主题: n/N」的 N 用**可见**主题数而非全量主题数：
+   * 序号取自可见序列的索引，若分母用全量，折叠状态下会出现「主题: 3/15」但点不到第 15 个
+   * 的自相矛盾。分子分母同源才自洽。
+   */
+  const visibleTopicIds = useMemo(
+    () => (activeSheet ? collectVisibleTopicIds(activeSheet.rootTopic) : []),
+    [activeSheet],
+  )
+  const totalCount = visibleTopicIds.length
+  const selectedIndex = session.activeTopicId
+    ? visibleTopicIds.indexOf(session.activeTopicId)
+    : -1
+
+  // XMind 右段：主题: 序号/总数；多选时改为「已选 n/总数」
+  const countLabel =
+    selectedCount > 1
+      ? `已选 ${selectedCount}/${totalCount}`
+      : selectedIndex >= 0
+        ? `主题: ${selectedIndex + 1}/${totalCount}`
+        : `主题: ${totalCount}`
+
+  // 字数、字符数与最近动作都收进悬停提示，信息不丢但不再占右段空间
+  const countTitle = [
+    `共 ${stats.topicCount} 个主题，${stats.wordCount} 字，${stats.charCount} 个字符`,
+    selectedCount > 1 ? `已选中 ${selectedCount} 个主题` : null,
+    session.recentAction ? `最近动作：${session.recentAction}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   return (
     <footer className="status-bar" aria-label="状态栏">
       <div className="status-bar__left">{sheetTabs}</div>
 
       <div className="status-bar__right">
-        {session.recentAction ? (
-          <span className="status-bar__action" title={session.recentAction}>
-            {session.recentAction}
-          </span>
-        ) : null}
-
-        <span
-          className="status-bar__stat"
-          title={`当前画布共 ${stats.topicCount} 个主题，${stats.wordCount} 字，${stats.charCount} 个字符`}
-        >
-          {`${stats.topicCount} 个主题 · ${stats.wordCount} 字`}
+        <span className="status-bar__stat" title={countTitle}>
+          {countLabel}
         </span>
-
-        <span className="status-bar__stat">{`选中 ${selectedCount}`}</span>
 
         {onResetZoom ? (
           <button
