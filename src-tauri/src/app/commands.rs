@@ -707,6 +707,23 @@ pub fn toggle_topic_collapsed(
 }
 
 #[tauri::command]
+pub fn set_topics_collapsed(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_ids: Vec<String>,
+    collapsed: bool,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topics_collapsed(&topic_ids, collapsed)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
 pub fn set_topic_notes(
     app: AppHandle,
     state: State<'_, AppState>,

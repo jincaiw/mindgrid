@@ -1,4 +1,9 @@
-import { isMenuActionId, MENU_ACTION_IDS, toCanvasCommand } from './menu-actions'
+import {
+  isMenuActionId,
+  MENU_ACTION_IDS,
+  MENU_CHECK_ITEM_IDS,
+  toCanvasCommand,
+} from './menu-actions'
 // 用 Vite 的 ?raw 直接把 Rust 源码读成字符串，避免依赖 node:fs
 // （测试跑在 jsdom 环境，没有 node 类型与 import.meta.url 的 file: 语义）。
 import menuRsSource from '../../../src-tauri/src/app/menu.rs?raw'
@@ -9,7 +14,7 @@ it('has no duplicated action ids', () => {
 
 it('accepts known ids and rejects unknown ones', () => {
   expect(isMenuActionId('file.save')).toBe(true)
-  expect(isMenuActionId('format.chart.fishbone')).toBe(true)
+  expect(isMenuActionId('view.mode-outline')).toBe(true)
   expect(isMenuActionId('file.delete-everything')).toBe(false)
   expect(isMenuActionId('')).toBe(false)
   expect(isMenuActionId(null)).toBe(false)
@@ -24,26 +29,47 @@ it('accepts known ids and rejects unknown ones', () => {
  * 且没有任何编译期信号：两侧语言不同，谁也约束不了谁。
  */
 it('stays in sync with the ids registered in src-tauri/src/app/menu.rs', () => {
-  // 匹配 item(handle, "id", …) 这个辅助函数的调用点。
+  // 匹配 item(handle, "id", …) 与 check_item(handle, "id", …) 两个辅助函数的调用点。
   // 不直接匹配 MenuItem::with_id —— 那里拿到的是变量名而非字面量。
-  // PredefinedMenuItem::about 不经过 item()，天然被排除。
-  const rustIds = [...menuRsSource.matchAll(/\bitem\(\s*handle\s*,\s*"([^"]+)"/g)].map(
-    (match) => match[1],
-  )
+  // 注意 `item` 前要用 `\b`；`check_item` 的下划线是单词字符，
+  // 故 `\bitem\(` 不会误命中 check_item 的尾部。
+  // PredefinedMenuItem（窗口/关于）不经过这两个辅助函数，天然被排除。
+  const rustIds = [
+    ...menuRsSource.matchAll(/\b(?:item|check_item)\(\s*handle\s*,\s*"([^"]+)"/g),
+  ].map((match) => match[1])
 
   expect(rustIds.length).toBeGreaterThan(30)
   expect(new Set(rustIds).size).toBe(rustIds.length)
   expect([...rustIds].sort()).toEqual([...MENU_ACTION_IDS].sort())
 })
 
-it('routes only clipboard and camera commands to the canvas host', () => {
+it('keeps every checkable id registered as a CheckMenuItem in Rust', () => {
+  // 反过来验一遍：TS 声明为可勾选的项，Rust 侧必须真的用 check_item 注册。
+  // 若 Rust 侧误写成 item，前端回写勾选态时会静默失败（get 到的是普通项）。
+  for (const id of MENU_CHECK_ITEM_IDS) {
+    expect(menuRsSource).toMatch(
+      new RegExp(`check_item\\(\\s*handle\\s*,\\s*"${id.replace(/\./g, '\\.')}"`),
+    )
+  }
+})
+
+it('routes only canvas-internal commands to the canvas host', () => {
+  // 剪贴板 / 样式剪贴板 / 相机都住在 CanvasHost 内部，外层拿不到
   expect(toCanvasCommand('edit.copy')).toBe('edit.copy')
   expect(toCanvasCommand('edit.cut')).toBe('edit.cut')
   expect(toCanvasCommand('edit.paste')).toBe('edit.paste')
-  expect(toCanvasCommand('view.recenter')).toBe('view.recenter')
+  expect(toCanvasCommand('edit.duplicate')).toBe('edit.duplicate')
+  expect(toCanvasCommand('edit.copy-style')).toBe('edit.copy-style')
+  expect(toCanvasCommand('edit.paste-style')).toBe('edit.paste-style')
+  expect(toCanvasCommand('edit.go-to-center')).toBe('edit.go-to-center')
+  for (const id of ['view.zoom-in', 'view.zoom-out', 'view.zoom-actual', 'view.zoom-fit'] as const) {
+    expect(toCanvasCommand(id)).toBe(id)
+  }
 
   // 其余动作外层直接执行，不该转发
   expect(toCanvasCommand('edit.select-all')).toBeNull()
+  expect(toCanvasCommand('edit.reset-style')).toBeNull()
+  expect(toCanvasCommand('edit.expand-all')).toBeNull()
   expect(toCanvasCommand('insert.child')).toBeNull()
-  expect(toCanvasCommand('view.collapse')).toBeNull()
+  expect(toCanvasCommand('view.sidebar')).toBeNull()
 })

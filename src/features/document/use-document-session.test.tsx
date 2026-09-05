@@ -46,6 +46,7 @@ const commandMocks = vi.hoisted(() => ({
   selectSheet: vi.fn(),
   selectTopic: vi.fn(),
   toggleTopicCollapsed: vi.fn(),
+  setTopicsCollapsed: vi.fn(),
   setTopicNotes: vi.fn(),
   setTopicLink: vi.fn(),
   setTopicMarkers: vi.fn(),

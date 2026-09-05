@@ -260,3 +260,19 @@ export function collectVisibleTopicIds(root: TopicSnapshot): string[] {
   walk(root)
   return ids
 }
+
+/**
+ * 收集一棵子树的全部主题 ID（含自身），**忽略折叠状态**。
+ *
+ * 与 `collectVisibleTopicIds` 的区别就在这里：展开操作要下钻到折叠节点内部，
+ * 若沿用「可见」语义，被折叠的分支永远展开不了。
+ */
+export function collectSubtreeTopicIds(topic: TopicSnapshot): string[] {
+  const ids: string[] = [topic.id]
+
+  for (const child of topic.children) {
+    ids.push(...collectSubtreeTopicIds(child))
+  }
+
+  return ids
+}

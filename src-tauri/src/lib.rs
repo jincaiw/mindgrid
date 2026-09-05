@@ -36,6 +36,13 @@ fn is_release_build() -> bool {
     !cfg!(debug_assertions)
 }
 
+/// 回写原生菜单项的勾选态。前端在视图模式 / 面板显隐变化后调用，
+/// 否则用户用快捷键或工具栏按钮切换时，菜单上的勾会停留在旧状态。
+#[tauri::command]
+fn set_menu_item_checked(app: tauri::AppHandle, id: String, checked: bool) {
+    app::menu::set_menu_item_checked(&app, &id, checked)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -75,6 +82,7 @@ pub fn run() {
             app::commands::delete_topic,
             app::commands::delete_topics,
             app::commands::toggle_topic_collapsed,
+            app::commands::set_topics_collapsed,
             app::commands::set_topic_notes,
             app::commands::set_topic_link,
             app::commands::set_topic_markers,
@@ -102,7 +110,8 @@ pub fn run() {
             app::commands::paste_topics,
             app::commands::undo_document_command,
             app::commands::redo_document_command,
-            is_release_build
+            is_release_build,
+            set_menu_item_checked
         ])
         .setup(|app| {
             app.handle().plugin(tauri_plugin_dialog::init())?;

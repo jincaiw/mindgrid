@@ -92,6 +92,7 @@ importDocxOutline: async () => {},
   deleteTopic: async () => {},
   deleteTopics: async () => {},
   toggleTopicCollapsed: async () => {},
+  setTopicsCollapsed: async () => {},
   setTopicNotes: async () => {},
   setTopicImage: async () => {},
   removeTopicImage: async () => {},
@@ -2576,6 +2577,34 @@ it('toggles the inspector via Cmd/Ctrl + I and the toolbar button', () => {
   // 工具栏按钮隐藏
   fireEvent.click(inspectorToggle)
   expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
+})
+
+it('toggles the bottom tab bar with Shift + Cmd/Ctrl + T', () => {
+  renderBatch14Workspace()
+
+  // 标签页栏默认显示（渲染在状态条左段）
+  expect(screen.getByRole('tablist', { name: '画布标签栏' })).toBeInTheDocument()
+
+  fireEvent.keyDown(window, { key: 't', metaKey: true, shiftKey: true })
+  expect(screen.queryByRole('tablist', { name: '画布标签栏' })).not.toBeInTheDocument()
+
+  // 再按一次恢复
+  fireEvent.keyDown(window, { key: 't', metaKey: true, shiftKey: true })
+  expect(screen.getByRole('tablist', { name: '画布标签栏' })).toBeInTheDocument()
+})
+
+it('honours the persisted toolbar visibility preference', () => {
+  // 菜单「查看 → 工具栏」写入 sessionStorage；这里直接预置偏好来验渲染分支，
+  // 免去为单个断言去 mock 整个 Tauri 事件层（派发侧的接线由 menu-dispatch 单测覆盖）。
+  window.sessionStorage.setItem('mindgrid.toolbar-visible', '0')
+  try {
+    renderWithApp(<WorkspaceScreen session={sessionStub} />)
+    expect(screen.queryByLabelText('主工具栏')).not.toBeInTheDocument()
+    // 工具栏收起后画布仍在，功能不依赖它
+    expect(screen.getByLabelText('画布区域')).toBeInTheDocument()
+  } finally {
+    window.sessionStorage.removeItem('mindgrid.toolbar-visible')
+  }
 })
 
 it('opens the canvas search with Cmd/Ctrl + F instead of a toolbar button', () => {

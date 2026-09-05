@@ -896,6 +896,19 @@ impl DocumentSession {
         })
     }
 
+    /// 批量折叠 / 展开（对应菜单项「展开子主题」「展开所有子分支」）。
+    /// 全部写入落在同一个 change set 里，一次撤销即可整体回退。
+    pub fn set_topics_collapsed(
+        &mut self,
+        topic_ids: &[String],
+        collapsed: bool,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set(
+            if collapsed { "折叠主题" } else { "展开主题" },
+            |editor| editor.set_topics_collapsed(topic_ids, collapsed),
+        )
+    }
+
     pub fn set_topic_notes(
         &mut self,
         topic_id: &str,
@@ -1945,6 +1958,86 @@ mod tests {
         assert!(collapsed_topic.collapsed);
         assert!(!restored_topic.collapsed);
         assert_eq!(collapsed.active_topic_id, topic_id);
+    }
+
+    #[test]
+    fn set_topics_collapsed_batch_is_a_single_undo_step() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        // 造两层子树：分支 → 子分支 → 孙节点，用于验证「展开所有子分支」的递归范围。
+        // create_child_topic 返回的是整份会话快照而非新主题 id，
+        // 故新 id 要从快照的树里读回来。
+        let branch_id = root_topic.children[0].id.clone();
+        session
+            .create_child_topic(&branch_id)
+            .expect("child topic should be created");
+        let child_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children
+            .first()
+            .and_then(|branch| branch.children.first())
+            .map(|child| child.id.clone())
+            .expect("child topic id should be readable from the snapshot");
+        session
+            .create_child_topic(&child_id)
+            .expect("grandchild topic should be created");
+
+        let collapsed_ids = vec![branch_id.clone(), child_id.clone()];
+        let collapsed = session
+            .set_topics_collapsed(&collapsed_ids, true)
+            .expect("batch collapse should succeed");
+
+        let branch = super::find_topic(collapsed.document.root_topic(), &branch_id)
+            .expect("branch should exist");
+        let child =
+            super::find_topic(collapsed.document.root_topic(), &child_id).expect("child exists");
+        assert!(branch.collapsed);
+        assert!(child.collapsed);
+
+        // 关键：一次撤销必须整体回退，而不是每个主题各退一步
+        let undone = session.undo().expect("undo should succeed");
+        let restored_branch = super::find_topic(undone.document.root_topic(), &branch_id)
+            .expect("branch should exist after undo");
+        let restored_child =
+            super::find_topic(undone.document.root_topic(), &child_id).expect("child after undo");
+        assert!(!restored_branch.collapsed);
+        assert!(!restored_child.collapsed);
+    }
+
+    #[test]
+    fn set_topics_collapsed_rejects_topics_without_children() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        // 叶子节点没有可折叠内容，应报错而不是写入空 change set
+        session
+            .create_child_topic(&root_topic.children[0].id)
+            .expect("leaf topic should be created");
+        let leaf_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children
+            .first()
+            .and_then(|branch| branch.children.first())
+            .map(|leaf| leaf.id.clone())
+            .expect("leaf topic id should be readable from the snapshot");
+
+        let result = session.set_topics_collapsed(&[leaf_id], true);
+        assert!(result.is_err());
     }
 
     #[test]

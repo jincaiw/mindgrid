@@ -1,11 +1,14 @@
 /**
- * 原生菜单栏 → 前端命令的契约层（对标批次 A5）。
+ * 原生菜单栏 → 前端命令的契约层（对标批次 A5，批次 D2 重排）。
  *
  * Rust 侧（`src-tauri/src/app/menu.rs`）只负责「画菜单 + 转发 id」，
  * 业务一律在前端执行，与工具栏、快捷键走同一条命令路径。
  *
- * id 命名即 Rust 侧 `MenuItem::with_id` 的第一个参数，两侧必须一致。
- * 改任一侧都要同步另一侧，否则菜单项点击后静默失效。
+ * id 命名即 Rust 侧 `MenuItem::with_id` / `CheckMenuItem::with_id` 的第一个参数，
+ * 两侧必须一致。改任一侧都要同步另一侧，否则菜单项点击后静默失效。
+ *
+ * 顶层顺序对标 XMind：文件 / 编辑 / 插入 / 工具 / 查看 / 窗口 / 帮助。
+ * 注意「查看」在「工具」之后——这与 XMind 一致，不要按字母直觉重排。
  */
 
 export const MENU_ACTION_EVENT = 'mindgrid://menu-action'
@@ -13,11 +16,15 @@ export const MENU_ACTION_EVENT = 'mindgrid://menu-action'
 export type MenuActionId =
   // 文件
   | 'file.new'
+  | 'file.new-sheet'
   | 'file.open'
   | 'file.save'
   | 'file.save-as'
   | 'file.import-markdown'
+  | 'file.import-opml'
+  | 'file.import-docx'
   | 'file.export-markdown'
+  | 'file.export-opml'
   | 'file.export-png'
   | 'file.export-svg'
   | 'file.export-pdf'
@@ -28,124 +35,196 @@ export type MenuActionId =
   | 'edit.cut'
   | 'edit.copy'
   | 'edit.paste'
+  | 'edit.duplicate'
+  | 'edit.delete-topic'
+  | 'edit.copy-style'
+  | 'edit.paste-style'
+  | 'edit.reset-style'
+  | 'edit.go-to-center'
   | 'edit.select-all'
-  // 视图
-  | 'view.zen'
-  | 'view.present'
-  | 'view.pitch'
-  | 'view.gantt'
-  | 'view.inspector'
-  | 'view.sidebar'
-  | 'view.search'
-  | 'view.recenter'
-  | 'view.collapse'
-  | 'view.reset-zoom'
+  | 'edit.expand-subtopics'
+  | 'edit.expand-all'
+  | 'edit.collapse'
+  | 'edit.find'
   // 插入
   | 'insert.child'
-  | 'insert.sibling'
+  | 'insert.sibling-after'
+  | 'insert.sibling-before'
   | 'insert.parent'
+  | 'insert.relationship'
+  | 'insert.summary'
+  | 'insert.boundary'
   | 'insert.notes'
   | 'insert.labels'
+  | 'insert.task'
   | 'insert.link'
   | 'insert.marker'
   | 'insert.image'
-  | 'insert.relationship'
-  | 'insert.boundary'
-  | 'insert.summary'
-  // 格式
-  | 'format.panel'
-  | 'format.chart.mindmap'
-  | 'format.chart.logic'
-  | 'format.chart.tree'
-  | 'format.chart.org'
-  | 'format.chart.fishbone'
-  | 'format.chart.timeline'
-  // 工具 / 帮助
+  | 'insert.new-sheet'
+  // 工具
   | 'tools.check-update'
+  | 'tools.shortcuts'
   | 'tools.cycle-theme'
-  | 'help.shortcuts'
+  // 查看
+  | 'view.mode-mindmap'
+  | 'view.mode-outline'
+  | 'view.gantt'
+  | 'view.zoom-in'
+  | 'view.zoom-out'
+  | 'view.zoom-actual'
+  | 'view.zoom-fit'
+  | 'view.zen'
+  | 'view.present'
+  | 'view.pitch'
+  | 'view.sidebar'
+  | 'view.inspector'
+  | 'view.toolbar'
+  | 'view.tab-bar'
 
 /** 全部 id 的清单，用于运行时校验与测试（防止两侧漂移）。 */
 export const MENU_ACTION_IDS: readonly MenuActionId[] = [
+  // 文件
   'file.new',
+  'file.new-sheet',
   'file.open',
   'file.save',
   'file.save-as',
   'file.import-markdown',
+  'file.import-opml',
+  'file.import-docx',
   'file.export-markdown',
+  'file.export-opml',
   'file.export-png',
   'file.export-svg',
   'file.export-pdf',
   'file.export-recovery',
+  // 编辑
   'edit.undo',
   'edit.redo',
   'edit.cut',
   'edit.copy',
   'edit.paste',
+  'edit.duplicate',
+  'edit.delete-topic',
+  'edit.copy-style',
+  'edit.paste-style',
+  'edit.reset-style',
+  'edit.go-to-center',
   'edit.select-all',
-  'view.zen',
-  'view.present',
-  'view.pitch',
-  'view.gantt',
-  'view.inspector',
-  'view.sidebar',
-  'view.search',
-  'view.recenter',
-  'view.collapse',
-  'view.reset-zoom',
+  'edit.expand-subtopics',
+  'edit.expand-all',
+  'edit.collapse',
+  'edit.find',
+  // 插入
   'insert.child',
-  'insert.sibling',
+  'insert.sibling-after',
+  'insert.sibling-before',
   'insert.parent',
+  'insert.relationship',
+  'insert.summary',
+  'insert.boundary',
   'insert.notes',
   'insert.labels',
+  'insert.task',
   'insert.link',
   'insert.marker',
   'insert.image',
-  'insert.relationship',
-  'insert.boundary',
-  'insert.summary',
-  'format.panel',
-  'format.chart.mindmap',
-  'format.chart.logic',
-  'format.chart.tree',
-  'format.chart.org',
-  'format.chart.fishbone',
-  'format.chart.timeline',
+  'insert.new-sheet',
+  // 工具
   'tools.check-update',
+  'tools.shortcuts',
   'tools.cycle-theme',
-  'help.shortcuts',
+  // 查看
+  'view.mode-mindmap',
+  'view.mode-outline',
+  'view.gantt',
+  'view.zoom-in',
+  'view.zoom-out',
+  'view.zoom-actual',
+  'view.zoom-fit',
+  'view.zen',
+  'view.present',
+  'view.pitch',
+  'view.sidebar',
+  'view.inspector',
+  'view.toolbar',
+  'view.tab-bar',
 ]
+
+/**
+ * 可勾选项（Rust 侧用 CheckMenuItem 注册）。
+ *
+ * 这些项的状态可能从菜单以外的地方改变（快捷键、工具栏按钮、状态条按钮），
+ * 故前端在状态变化后要调用 `set_menu_item_checked` 回写，否则勾会停在旧值。
+ */
+export const MENU_CHECK_ITEM_IDS: readonly MenuActionId[] = [
+  'view.mode-mindmap',
+  'view.mode-outline',
+  'view.gantt',
+  'view.sidebar',
+  'view.inspector',
+  'view.toolbar',
+  'view.tab-bar',
+]
+
+/** 思维导图 / 大纲是互斥单选项，勾一个必须取消另一个。 */
+export const VIEW_MODE_RADIO_IDS = {
+  mindmap: 'view.mode-mindmap',
+  outline: 'view.mode-outline',
+} as const satisfies Record<string, MenuActionId>
 
 export function isMenuActionId(value: unknown): value is MenuActionId {
   return typeof value === 'string' && (MENU_ACTION_IDS as readonly string[]).includes(value)
 }
 
 /**
- * 「格式」菜单的结构（图表类型）子项 → ChartType。
- * 与侧栏「画布管理」里的图表类型下拉同源。
+ * 相对缩放命令（菜单「放大 / 缩小 / 实际大小 / 适应画布」）。
+ *
+ * 与 `zoomRequest`（绝对缩放值）分开的原因：放大缩小要基于**当前**缩放，
+ * 而当前缩放只存在于相机内部；外层持有的 zoom 是上一帧相机上报的快照，
+ * 连续点击时可能已经过期。
  */
-export const CHART_TYPE_BY_MENU_ACTION: Readonly<
-  Record<string, 'mindmap' | 'logic' | 'tree' | 'org' | 'fishbone' | 'timeline'>
-> = {
-  'format.chart.mindmap': 'mindmap',
-  'format.chart.logic': 'logic',
-  'format.chart.tree': 'tree',
-  'format.chart.org': 'org',
-  'format.chart.fishbone': 'fishbone',
-  'format.chart.timeline': 'timeline',
+export type ZoomCommand = 'in' | 'out' | 'actual' | 'fit'
+
+/** 菜单 id → 缩放命令。 */
+export const ZOOM_COMMAND_BY_MENU_ACTION: Readonly<Record<string, ZoomCommand>> = {
+  'view.zoom-in': 'in',
+  'view.zoom-out': 'out',
+  'view.zoom-actual': 'actual',
+  'view.zoom-fit': 'fit',
 }
 
 /**
  * 需要转发给 CanvasHost 的命令：这些动作依赖画布内部状态
- * （主题剪贴板、相机），外层无法直接驱动。
+ * （主题剪贴板、样式剪贴板、相机），外层无法直接驱动。
  */
-export type CanvasCommand = 'edit.copy' | 'edit.cut' | 'edit.paste' | 'view.recenter'
+export type CanvasCommand =
+  | 'edit.copy'
+  | 'edit.cut'
+  | 'edit.paste'
+  | 'edit.duplicate'
+  | 'edit.copy-style'
+  | 'edit.paste-style'
+  | 'edit.go-to-center'
+  | 'view.zoom-in'
+  | 'view.zoom-out'
+  | 'view.zoom-actual'
+  | 'view.zoom-fit'
+
+const CANVAS_COMMANDS: readonly string[] = [
+  'edit.copy',
+  'edit.cut',
+  'edit.paste',
+  'edit.duplicate',
+  'edit.copy-style',
+  'edit.paste-style',
+  'edit.go-to-center',
+  'view.zoom-in',
+  'view.zoom-out',
+  'view.zoom-actual',
+  'view.zoom-fit',
+]
 
 export function toCanvasCommand(id: MenuActionId): CanvasCommand | null {
-  return id === 'edit.copy' ||
-    id === 'edit.cut' ||
-    id === 'edit.paste' ||
-    id === 'view.recenter'
-    ? id
-    : null
+  return CANVAS_COMMANDS.includes(id) ? (id as CanvasCommand) : null
 }

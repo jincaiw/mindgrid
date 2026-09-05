@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createDefaultDocument } from './default-document'
 import {
   canReparentTopic,
+  collectSubtreeTopicIds,
+  collectVisibleTopicIds,
   findTopicById,
   flattenTopicTree,
   getBatchReparentTopicValidation,
@@ -140,5 +142,38 @@ describe('getBatchReparentTopicValidation', () => {
       isValid: false,
       reason: '所选主题已经都在这个父主题下面了。',
     })
+  })
+})
+
+/**
+ * collectSubtreeTopicIds 与 collectVisibleTopicIds 的唯一区别就是「遇折叠是否下钻」。
+ * 展开所有子分支必须用前者：若误用后者，被折叠的分支永远展开不了。
+ */
+describe('collectSubtreeTopicIds', () => {
+  const collapsedTree = {
+    id: 'root',
+    text: '根',
+    collapsed: false,
+    children: [
+      {
+        id: 'branch',
+        text: '分支',
+        collapsed: true,
+        children: [{ id: 'leaf', text: '叶', collapsed: false, children: [] }],
+      },
+    ],
+  }
+
+  it('includes the topic itself and every descendant', () => {
+    expect(collectSubtreeTopicIds(collapsedTree)).toEqual(['root', 'branch', 'leaf'])
+  })
+
+  it('drills into collapsed branches, unlike collectVisibleTopicIds', () => {
+    expect(collectVisibleTopicIds(collapsedTree)).toEqual(['root', 'branch'])
+    expect(collectSubtreeTopicIds(collapsedTree)).toContain('leaf')
+  })
+
+  it('returns only the id for a leaf topic', () => {
+    expect(collectSubtreeTopicIds(collapsedTree.children[0].children[0])).toEqual(['leaf'])
   })
 })

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { getActiveSheet } from '../../lib/document/sheets'
 import {
   buildDocumentTopicSearchIndex,
@@ -117,6 +118,23 @@ export function WorkspaceScreen({
       return true
     }
   })
+  // 批次 D2：工具栏显隐（查看菜单「工具栏」）。XMind 允许收起工具栏换取画布高度，
+  // 与侧栏同样写 sessionStorage 记忆。
+  const [toolbarVisible, setToolbarVisible] = useState<boolean>(() => {
+    try {
+      return window.sessionStorage.getItem('mindgrid.toolbar-visible') !== '0'
+    } catch {
+      return true
+    }
+  })
+  // 批次 D2：底部标签页栏显隐（查看菜单「显示标签页栏」⇧⌘T）
+  const [tabBarVisible, setTabBarVisible] = useState<boolean>(() => {
+    try {
+      return window.sessionStorage.getItem('mindgrid.tab-bar-visible') !== '0'
+    } catch {
+      return true
+    }
+  })
   // 批次 19：大纲全屏视图（隐藏画布，全宽编辑主题树，Esc 返回）
   const [isOutlinerMode, setIsOutlinerMode] = useState(false)
   // 批次 23：甘特图全屏视图（汇总全文档任务时间轴，Esc 返回）
@@ -191,13 +209,16 @@ export function WorkspaceScreen({
         notify: (message) => onNotify?.(message),
         setSelectedTopicIds,
         toggleZenMode: () => setIsZenMode((v) => !v),
+        // 思维导图 / 大纲是菜单里的互斥单选项，必须显式置位而非取反
+        setOutlineMode: (enabled) => setIsOutlinerMode(enabled),
         toggleGanttMode: () => setIsGanttMode((v) => !v),
         toggleInspector: () => setInspectorVisible((v) => !v),
         toggleSidebar: () => setSidebarVisible((v) => !v),
+        toggleToolbar: () => setToolbarVisible((v) => !v),
+        toggleTabBar: () => setTabBarVisible((v) => !v),
         startPresentation: () => setIsPresenting(true),
         startPitch: () => setIsPitching(true),
         openSearch: () => setSearchOpen(true),
-        resetZoom: handleResetZoom,
         focusInspectorTopicTab,
         openShortcutsHelp: () => setIsShortcutsHelpOpen(true),
         checkForUpdates: () => onCheckForUpdates?.(),
@@ -210,7 +231,6 @@ export function WorkspaceScreen({
       activeSheet,
       desktopFileActionsEnabled,
       focusInspectorTopicTab,
-      handleResetZoom,
       onCheckForUpdates,
       onCycleTheme,
       onNotify,
@@ -221,6 +241,42 @@ export function WorkspaceScreen({
 
   useNativeMenuActions(handleMenuAction)
 
+  /**
+   * 把面板显隐与视图模式回写到原生菜单的勾选态。
+   *
+   * 不做这一步的话，勾只在「用户点菜单项」时才对；一旦用快捷键（⌘I、⌘B、⇧⌘T）
+   * 或工具栏按钮切换，菜单上的勾就停在旧值——用户再点一次反而切回去了。
+   * 浏览器开发态没有原生菜单，invoke 会失败，故先用运行时判断挡掉。
+   */
+  useEffect(() => {
+    if (!hasTauriRuntime()) {
+      return
+    }
+
+    const states: Array<[MenuActionId, boolean]> = [
+      ['view.mode-mindmap', !isOutlinerMode],
+      ['view.mode-outline', isOutlinerMode],
+      ['view.gantt', isGanttMode],
+      ['view.sidebar', sidebarVisible],
+      ['view.inspector', inspectorVisible],
+      ['view.toolbar', toolbarVisible],
+      ['view.tab-bar', tabBarVisible],
+    ]
+
+    for (const [id, checked] of states) {
+      void invoke('set_menu_item_checked', { id, checked }).catch(() => {
+        // 菜单缺失或窗口已销毁时静默忽略：勾选态只是显示细节
+      })
+    }
+  }, [
+    isOutlinerMode,
+    isGanttMode,
+    sidebarVisible,
+    inspectorVisible,
+    toolbarVisible,
+    tabBarVisible,
+  ])
+
   // 批次 26：侧栏显隐状态记忆
   useEffect(() => {
     try {
@@ -230,12 +286,26 @@ export function WorkspaceScreen({
     }
   }, [sidebarVisible])
 
+  // 工具栏与标签页栏的显隐同样记忆，重开后保持用户上次的选择
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem('mindgrid.toolbar-visible', toolbarVisible ? '1' : '0')
+      window.sessionStorage.setItem('mindgrid.tab-bar-visible', tabBarVisible ? '1' : '0')
+    } catch {
+      // 存储不可用（如隐私模式）时静默忽略
+    }
+  }, [toolbarVisible, tabBarVisible])
+
   // 快捷键：Cmd/Ctrl + . 切换 ZEN 模式（Esc 退出），Shift + Cmd/Ctrl + P 进入演示模式，
   // Cmd/Ctrl + I 切换检查器显隐（preventDefault 避免浏览器书签栏冲突），
+  // Shift + Cmd/Ctrl + T 切换底部标签页栏，
   // Esc 在大纲全屏视图或 ZEN 模式下退出
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key === '.') {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault()
+        setTabBarVisible((v) => !v)
+      } else if ((e.metaKey || e.ctrlKey) && e.key === '.') {
         e.preventDefault()
         setIsZenMode((v) => !v)
       } else if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'p') {
@@ -273,22 +343,24 @@ export function WorkspaceScreen({
         右段 ZEN/演说/格式。搜索(⌘F)、侧栏(⌘B)、大纲、甘特、检查更新一律
         收进原生菜单与状态条，不再占工具栏位置。
       */}
-      <Toolbar
-        session={session}
-        selectedTopicIds={selectedTopicIds}
-        onClearSelection={clearMultiSelection}
-        onStartPresentation={() => setIsPresenting(true)}
-        onToggleZenMode={() => setIsZenMode((v) => !v)}
-        isZenMode={isZenMode}
-        inspectorVisible={inspectorVisible}
-        onToggleInspector={() => setInspectorVisible((v) => !v)}
-        onFocusInspectorTopicTab={focusInspectorTopicTab}
-        onNotify={onNotify}
-        themeMode={themeMode}
-        themeEffective={themeEffective}
-        onCycleTheme={onCycleTheme}
-        onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
-      />
+      {toolbarVisible ? (
+        <Toolbar
+          session={session}
+          selectedTopicIds={selectedTopicIds}
+          onClearSelection={clearMultiSelection}
+          onStartPresentation={() => setIsPresenting(true)}
+          onToggleZenMode={() => setIsZenMode((v) => !v)}
+          isZenMode={isZenMode}
+          inspectorVisible={inspectorVisible}
+          onToggleInspector={() => setInspectorVisible((v) => !v)}
+          onFocusInspectorTopicTab={focusInspectorTopicTab}
+          onNotify={onNotify}
+          themeMode={themeMode}
+          themeEffective={themeEffective}
+          onCycleTheme={onCycleTheme}
+          onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
+        />
+      ) : null}
       {isZenMode ? (
         <button
           className="zen-exit-btn"
@@ -391,7 +463,7 @@ export function WorkspaceScreen({
         onResetZoom={handleResetZoom}
         isOutlinerMode={isOutlinerMode}
         onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
-        sheetTabs={<SheetTabBar session={session} />}
+        sheetTabs={tabBarVisible ? <SheetTabBar session={session} /> : null}
       />
       {isPresenting && session.document ? (
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />

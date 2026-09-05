@@ -61,6 +61,7 @@ import {
   setTopicStyleRef,
   setTopicTask,
   toggleTopicCollapsed,
+  setTopicsCollapsed,
   undoDocumentCommand,
 } from '../../lib/ipc/commands'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
@@ -133,6 +134,8 @@ export interface DocumentSession extends DocumentSessionState {
   deleteTopic: (topicId: string) => Promise<void>
   deleteTopics: (topicIds: string[], actionLabel?: string) => Promise<void>
   toggleTopicCollapsed: (topicId: string) => Promise<void>
+  /** 批量展开 / 折叠：整批落在同一条历史记录里，一次撤销即可回退。 */
+  setTopicsCollapsed: (topicIds: string[], collapsed: boolean) => Promise<void>
   setTopicNotes: (topicId: string, notes: string | null) => Promise<void>
   /** 插入主题图片：sourcePath 为本地绝对路径（Tauri），浏览器开发态传 data: URL。 */
   setTopicImage: (topicId: string, sourcePath: string) => Promise<void>
@@ -1189,6 +1192,20 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  /**
+   * 批量展开 / 折叠（菜单「展开子主题」「展开所有子分支」）。
+   * Rust 侧把所有主题写进同一个 change set，故这里只跑一次 runCommand，
+   * 用户按一次撤销即可整体回退。
+   */
+  const collapseTopicsBatch = useCallback(
+    async (topicIds: string[], collapsed: boolean) => {
+      await runCommand(collapsed ? '折叠主题' : '展开主题', () =>
+        setTopicsCollapsed(topicIds, collapsed),
+      )
+    },
+    [runCommand],
+  )
+
   const updateTopicNotes = useCallback(
     async (topicId: string, notes: string | null) => {
       await runCommand('编辑备注', () => setTopicNotes(topicId, notes))
@@ -1492,6 +1509,7 @@ export function useDocumentSession(): DocumentSession {
       deleteTopic: deleteActiveTopic,
       deleteTopics: deleteMultipleTopics,
       toggleTopicCollapsed: toggleCollapsedTopic,
+      setTopicsCollapsed: collapseTopicsBatch,
       setTopicNotes: updateTopicNotes,
       setTopicImage: updateTopicImage,
       removeTopicImage: clearTopicImage,

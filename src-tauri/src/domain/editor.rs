@@ -1257,6 +1257,47 @@ impl<'a> DocumentEditor<'a> {
         Ok(topic_id.to_string())
     }
 
+    /// 批量设置折叠状态（「展开子主题 / 展开所有子分支」）。
+    ///
+    /// 为什么不复用 `toggle_topic_collapsed` 逐个调：那会每个主题各产生一条历史记录，
+    /// 用户要按 N 次撤销才能回到原点。这里在**同一个 change set 内**批量写入，
+    /// 一次撤销即可整体回退。
+    ///
+    /// 只处理有子主题的主题——叶子节点没有可折叠内容，写入无意义且会污染历史。
+    pub fn set_topics_collapsed(
+        &mut self,
+        topic_ids: &[String],
+        collapsed: bool,
+    ) -> Result<String, String> {
+        let sheet_id = self.active_sheet_id();
+        // 先只读地筛出「存在且有子主题」的目标，避免在持有 &mut 时又借 &self 检查
+        let targets: Vec<String> = {
+            let sheet = self
+                .document
+                .find_sheet(&sheet_id)
+                .ok_or_else(|| "找不到需要折叠的主题".to_string())?;
+            topic_ids
+                .iter()
+                .filter(|topic_id| {
+                    find_topic(&sheet.root_topic, topic_id)
+                        .map(|topic| !topic.children.is_empty())
+                        .unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        };
+
+        if targets.is_empty() {
+            return Err("没有可折叠或展开的主题".into());
+        }
+
+        for topic_id in &targets {
+            self.set_topic_collapsed(&sheet_id, topic_id, collapsed);
+        }
+
+        Ok(targets[0].clone())
+    }
+
     /// 校验主题在活动画布中存在（含浮动主题），返回活动画布 id。供富字段命令复用。
     fn ensure_active_topic_sheet(&self, topic_id: &str, label: &str) -> Result<String, String> {
         let sheet_id = self.active_sheet_id();

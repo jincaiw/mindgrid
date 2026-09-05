@@ -54,7 +54,8 @@ import {
 } from './mindmap-layout'
 import { findNearestNodeInDirection, type NavigationDirection } from './topic-navigation'
 import { Minimap } from './minimap'
-import type { CanvasCommand } from '../menu/menu-actions'
+import type { CanvasCommand, ZoomCommand } from '../menu/menu-actions'
+import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
 import { computeLayout } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveTopicStyle } from './runtime/style-resolver'
@@ -228,6 +229,7 @@ function MindMapScene({
   historyFocusTopicId,
   focusRootNonce,
   zoomRequest,
+  zoomCommand,
   onSelectedTopicIdsChange,
   onEditingTextChange,
   onStartEditingTopic,
@@ -279,6 +281,11 @@ function MindMapScene({
   focusRootNonce: number
   /** 外部请求设置缩放的 nonce（配合 zoomRequest.zoom），0 表示初始无请求。 */
   zoomRequest: { zoom: number; nonce: number } | null
+  /**
+   * 相对缩放命令（放大 / 缩小 / 实际大小 / 适应画布）的 nonce 请求。
+   * 必须走相机内部状态：放大缩小基于当前缩放，外层只有上一帧的快照。
+   */
+  zoomCommand: { command: ZoomCommand; nonce: number } | null
   onSelectedTopicIdsChange: (topicIds: string[]) => void
   onEditingTextChange: (text: string) => void
   onStartEditingTopic: (topicId: string) => void
@@ -677,6 +684,34 @@ function MindMapScene({
 
     setZoomFromViewportCenter(zoomRequestTarget)
   }, [zoomRequestNonce, zoomRequestTarget, setZoomFromViewportCenter])
+
+  // 菜单「放大 / 缩小 / 实际大小 / 适应画布」。
+  // 必须落在 MindMapScene 内：缩放基于**当前**相机，而相机状态只存在于本组件，
+  // 外层（TreeWorkspace）拿到的 zoom 是上一帧上报的快照。
+  // 乘数 1.15 与画布右键菜单、⌘+ / ⌘- 快捷键保持一致。
+  const zoomCommandNonce = zoomCommand?.nonce ?? 0
+  const zoomCommandName = zoomCommand?.command ?? null
+
+  useEffect(() => {
+    if (zoomCommandNonce === 0 || !zoomCommandName) {
+      return
+    }
+
+    switch (zoomCommandName) {
+      case 'in':
+        setZoomFromViewportCenter(cameraRef.current.zoom * 1.15)
+        return
+      case 'out':
+        setZoomFromViewportCenter(cameraRef.current.zoom / 1.15)
+        return
+      case 'actual':
+        setZoomFromViewportCenter(1)
+        return
+      case 'fit':
+        fitToView()
+        return
+    }
+  }, [zoomCommandNonce, zoomCommandName, setZoomFromViewportCenter, fitToView])
 
   const focusTopicInViewport = useCallback(
     (topicId: string) => {
@@ -2019,6 +2054,10 @@ function TreeWorkspace({
   const [historyFocusTopicId, setHistoryFocusTopicId] = useState<string | null>(null)
   // Cmd+R 聚焦根主题的请求 nonce：变化时触发 MindMapScene 相机动画。0 = 初始无请求。
   const [focusRootNonce, setFocusRootNonce] = useState(0)
+  // 菜单缩放命令的 nonce 请求（转发给 MindMapScene，由它在相机内部执行）
+  const [zoomCommand, setZoomCommand] = useState<{ command: ZoomCommand; nonce: number } | null>(
+    null,
+  )
   const historyFocusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sheetCameraMapRef = useRef<Record<string, CameraState>>({})
   /**
@@ -2333,22 +2372,27 @@ function TreeWorkspace({
     await deleteTopics(deletableTopicIds, '剪切主题')
   }, [copyableTopics, deletableTopicIds, deleteTopics])
 
-  // 外部命令请求（原生菜单栏的复制/剪切/粘贴/回到中心）。
+  // 外部命令请求（原生菜单栏的复制/剪切/粘贴、样式剪贴板、缩放、回到中心）。
   //
   // 处理器闭包了选区与剪贴板状态，每次渲染都是新引用；若把它们放进依赖数组，
   // 下一次任何无关的状态变化都会让 effect 重跑、命令被重复执行。
   // 故用 ref 承载最新处理器，effect 只依赖 nonce。
-  const canvasCommandHandlersRef = useRef({
-    copy: handleCopyTopics,
-    cut: handleCutTopics,
-    paste: handlePasteTopics,
-  })
+  //
+  // 这些处理器定义在下方（复制主题、样式剪贴板等），故初始对象里用空函数占位：
+  // 挂载后的 effect 会在每次渲染末尾把它们替换成真实实现。
+  const canvasCommandHandlersRef = useRef<Record<string, () => void>>({})
 
   useEffect(() => {
+    // 样式命令的作用目标与 Alt+Cmd+C/V 快捷键一致：选中主题 → 活动主题 → 根主题
+    const styleTopicId = selectedTopicIds[0] ?? activeTopicId ?? rootTopic.id
     canvasCommandHandlersRef.current = {
-      copy: handleCopyTopics,
-      cut: handleCutTopics,
-      paste: handlePasteTopics,
+      copy: () => void handleCopyTopics(),
+      cut: () => void handleCutTopics(),
+      paste: () => void handlePasteTopics(),
+      duplicate: () => void handleDuplicateTopic(),
+      copyStyle: () => handleCopyStyle(styleTopicId),
+      pasteStyle: () => void handlePasteStyle(styleTopicId),
+      goToCenter: () => setFocusRootNonce((n) => n + 1),
     }
   })
 
@@ -2360,19 +2404,28 @@ function TreeWorkspace({
       return
     }
 
-    switch (canvasCommandName) {
-      case 'edit.copy':
-        void canvasCommandHandlersRef.current.copy()
-        return
-      case 'edit.cut':
-        void canvasCommandHandlersRef.current.cut()
-        return
-      case 'edit.paste':
-        void canvasCommandHandlersRef.current.paste()
-        return
-      case 'view.recenter':
-        setFocusRootNonce((n) => n + 1)
-        return
+    // 命令名 → ref 里的处理器键，与 menu-actions.ts 的 CanvasCommand 一一对应
+    const HANDLER_BY_COMMAND: Partial<Record<string, string>> = {
+      'edit.copy': 'copy',
+      'edit.cut': 'cut',
+      'edit.paste': 'paste',
+      'edit.duplicate': 'duplicate',
+      'edit.copy-style': 'copyStyle',
+      'edit.paste-style': 'pasteStyle',
+      'edit.go-to-center': 'goToCenter',
+    }
+
+    const handlerKey = HANDLER_BY_COMMAND[canvasCommandName]
+    if (handlerKey) {
+      canvasCommandHandlersRef.current[handlerKey]?.()
+      return
+    }
+
+    // 缩放不在这里执行：相机状态在 MindMapScene 内部，外层拿得到的是上一帧快照。
+    // 故转成 nonce 请求下传，由 MindMapScene 基于当前相机执行。
+    const zoomCommand = ZOOM_COMMAND_BY_MENU_ACTION[canvasCommandName]
+    if (zoomCommand) {
+      setZoomCommand((current) => ({ command: zoomCommand, nonce: (current?.nonce ?? 0) + 1 }))
     }
   }, [canvasCommandNonce, canvasCommandName])
 
@@ -2707,6 +2760,7 @@ function TreeWorkspace({
           historyFocusTopicId={historyFocusTopicId}
           focusRootNonce={focusRootNonce}
           zoomRequest={zoomRequest ?? null}
+          zoomCommand={zoomCommand}
           onSelectedTopicIdsChange={setSelectedTopicIds}
           onEditingTextChange={setEditingText}
           onStartEditingTopic={startInlineEditing}

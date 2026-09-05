@@ -171,6 +171,14 @@ export function toggleTopicCollapsed(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('toggle_topic_collapsed', { topic_id: topicId })
 }
 
+/** 批量折叠 / 展开：Rust 侧落在一个 change set 内，故整体只需一次撤销。 */
+export function setTopicsCollapsed(topicIds: string[], collapsed: boolean) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topics_collapsed', {
+    topic_ids: topicIds,
+    collapsed,
+  })
+}
+
 export function setTopicNotes(topicId: string, notes: string | null) {
   return invokeCommand<DocumentSessionSnapshot>('set_topic_notes', {
     topic_id: topicId,

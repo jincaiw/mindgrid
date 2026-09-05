@@ -99,6 +99,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     deleteTopic: async () => {},
     deleteTopics: async () => {},
     toggleTopicCollapsed: async () => {},
+    setTopicsCollapsed: async () => {},
     setTopicNotes: async () => {},
     setTopicImage: async () => {},
     removeTopicImage: async () => {},

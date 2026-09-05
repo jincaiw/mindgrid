@@ -1,4 +1,4 @@
-//! 应用原生菜单栏（对标 XMind 桌面端「文件 / 编辑 / 视图 / 插入 / 格式 / 工具 / 帮助」）。
+//! 应用原生菜单栏（对标 XMind 桌面端「文件 / 编辑 / 插入 / 工具 / 查看 / 窗口 / 帮助」）。
 //!
 //! 设计要点：
 //!
@@ -13,10 +13,15 @@
 //!    一次按键会同时触发原生菜单事件与前端处理器，动作被执行两次。
 //!    因此快捷键只作为提示文字拼在菜单项标签里。
 //!
-//! 3. macOS 自动成为系统菜单栏，Windows / Linux 显示在窗口内（Tauri 默认行为）。
+//! 3. **勾选态由前端回写。** 可勾选项（查看模式的单选项、各面板显隐）的真实状态
+//!    只有前端知道——用户可能用快捷键或工具栏按钮切换，那时菜单项不会因为没被点
+//!    击而自动更新。故提供 `set_menu_item_checked` 命令，前端在状态变化时回写。
+//!    否则菜单上的勾会「说谎」。
+//!
+//! 4. macOS 自动成为系统菜单栏，Windows / Linux 显示在窗口内（Tauri 默认行为）。
 
 use tauri::{
-    menu::{Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder},
+    menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder},
     AppHandle, Runtime,
 };
 
@@ -40,6 +45,20 @@ fn combo_shift(key: &str) -> String {
     }
 }
 
+/// ⌥⌘X（macOS）/ Ctrl+Alt+X（其余平台）。
+fn combo_alt(key: &str) -> String {
+    if cfg!(target_os = "macos") {
+        format!(" (⌥⌘{})", key)
+    } else {
+        format!(" (Ctrl+Alt+{})", key)
+    }
+}
+
+/// 无修饰键的按键提示（Tab / Enter / Delete 等）。
+fn plain(key: &str) -> String {
+    format!(" ({})", key)
+}
+
 /// 带快捷键提示的菜单项。id 是稳定契约，前端按 id 派发。
 fn item<R: Runtime, M: tauri::Manager<R>>(
     manager: &M,
@@ -49,10 +68,42 @@ fn item<R: Runtime, M: tauri::Manager<R>>(
     MenuItem::with_id(manager, id, text, true, None::<&str>)
 }
 
+/// 可勾选菜单项（查看模式的单选项、面板显隐）。
+///
+/// 初始 checked 一律为「默认视图」的样子，真实状态由前端在挂载后回写。
+fn check_item<R: Runtime, M: tauri::Manager<R>>(
+    manager: &M,
+    id: &'static str,
+    text: &str,
+    checked: bool,
+) -> tauri::Result<CheckMenuItem<R>> {
+    CheckMenuItem::with_id(manager, id, text, true, checked, None::<&str>)
+}
+
 pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     // —— 文件 ——
+    // 导入/导出收成二级子菜单（XMind 同样如此），避免一级菜单过长。
+    let import = SubmenuBuilder::new(handle, "导入")
+        .item(&item(handle, "file.import-markdown", "Markdown…")?)
+        .item(&item(handle, "file.import-opml", "OPML…")?)
+        .item(&item(handle, "file.import-docx", "Word…")?)
+        .build()?;
+
+    let export = SubmenuBuilder::new(handle, "导出")
+        .item(&item(handle, "file.export-markdown", "Markdown…")?)
+        .item(&item(handle, "file.export-opml", "OPML…")?)
+        .item(&item(handle, "file.export-png", "PNG 图片…")?)
+        .item(&item(handle, "file.export-svg", "SVG 矢量图…")?)
+        .item(&item(handle, "file.export-pdf", "PDF 文档…")?)
+        .build()?;
+
     let file = SubmenuBuilder::new(handle, "文件")
         .item(&item(handle, "file.new", &format!("新建文档{}", combo("N")))?)
+        .item(&item(
+            handle,
+            "file.new-sheet",
+            &format!("新建标签页{}", combo("T")),
+        )?)
         .item(&item(handle, "file.open", &format!("打开文档…{}", combo("O")))?)
         .separator()
         .item(&item(handle, "file.save", &format!("保存{}", combo("S")))?)
@@ -62,15 +113,8 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &format!("另存为…{}", combo_shift("S")),
         )?)
         .separator()
-        .item(&item(
-            handle,
-            "file.import-markdown",
-            "从 Markdown 导入…",
-        )?)
-        .item(&item(handle, "file.export-markdown", "导出为 Markdown…")?)
-        .item(&item(handle, "file.export-png", "导出为 PNG…")?)
-        .item(&item(handle, "file.export-svg", "导出为 SVG…")?)
-        .item(&item(handle, "file.export-pdf", "导出为 PDF…")?)
+        .item(&import)
+        .item(&export)
         .separator()
         .item(&item(handle, "file.export-recovery", "导出修复副本…")?)
         .build()?;
@@ -85,97 +129,166 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         )?)
         .separator()
         .item(&item(handle, "edit.cut", &format!("剪切{}", combo("X")))?)
-        .item(&item(handle, "edit.copy", &format!("复制{}", combo("C")))?)
+        .item(&item(handle, "edit.copy", &format!("拷贝{}", combo("C")))?)
         .item(&item(handle, "edit.paste", &format!("粘贴{}", combo("V")))?)
+        .item(&item(handle, "edit.duplicate", &format!("复制{}", combo("D")))?)
+        .item(&item(
+            handle,
+            "edit.delete-topic",
+            &format!("删除主题{}", plain("Delete")),
+        )?)
+        .separator()
+        .item(&item(
+            handle,
+            "edit.copy-style",
+            &format!("拷贝样式{}", combo_alt("C")),
+        )?)
+        .item(&item(
+            handle,
+            "edit.paste-style",
+            &format!("粘贴样式{}", combo_alt("V")),
+        )?)
+        .item(&item(
+            handle,
+            "edit.reset-style",
+            &format!("重设样式{}", combo_alt("0")),
+        )?)
+        .separator()
+        .item(&item(
+            handle,
+            "edit.go-to-center",
+            &format!("前往中心主题{}", combo("R")),
+        )?)
         .item(&item(
             handle,
             "edit.select-all",
             &format!("全选{}", combo("A")),
         )?)
-        .build()?;
-
-    // —— 视图 ——
-    let view = SubmenuBuilder::new(handle, "视图")
-        .item(&item(handle, "view.zen", &format!("专注模式{}", combo(".")))?)
-        .item(&item(
-            handle,
-            "view.present",
-            &format!("演示模式{}", combo_shift("P")),
-        )?)
-        .item(&item(
-            handle,
-            "view.pitch",
-            "提案简报",
-        )?)
-        .item(&item(handle, "view.gantt", "甘特图")?)
         .separator()
+        .item(&item(handle, "edit.expand-subtopics", "展开子主题")?)
         .item(&item(
             handle,
-            "view.inspector",
-            &format!("右侧格式面板{}", combo("I")),
+            "edit.expand-all",
+            "展开所有子分支",
         )?)
         .item(&item(
             handle,
-            "view.sidebar",
-            &format!("左侧导航面板{}", combo("B")),
-        )?)
-        .separator()
-        .item(&item(handle, "view.search", &format!("搜索{}", combo("F")))?)
-        .item(&item(
-            handle,
-            "view.recenter",
-            &format!("回到中心主题{}", combo("R")),
-        )?)
-        .item(&item(
-            handle,
-            "view.collapse",
+            "edit.collapse",
             &format!("折叠 / 展开{}", combo("/")),
         )?)
-        .item(&item(handle, "view.reset-zoom", &format!("缩放复位{}", combo("0")))?)
+        .separator()
+        .item(&item(
+            handle,
+            "edit.find",
+            &format!("查找与替换{}", combo("F")),
+        )?)
         .build()?;
 
     // —— 插入 ——
     let insert = SubmenuBuilder::new(handle, "插入")
-        .item(&item(handle, "insert.child", &format!("子主题{}", " (Tab)"))?)
-        .item(&item(handle, "insert.sibling", "同级主题 (Enter)")?)
+        .item(&item(
+            handle,
+            "insert.child",
+            &format!("子主题{}", plain("Tab")),
+        )?)
+        .item(&item(
+            handle,
+            "insert.sibling-after",
+            &format!("主题（之后）{}", plain("Enter")),
+        )?)
+        .item(&item(
+            handle,
+            "insert.sibling-before",
+            &format!("主题（之前）{}", plain("⇧Enter")),
+        )?)
         .item(&item(
             handle,
             "insert.parent",
             &format!("父主题{}", combo("Enter")),
         )?)
         .separator()
-        .item(&item(handle, "insert.notes", "备注…")?)
-        .item(&item(handle, "insert.labels", "标签…")?)
-        .item(&item(handle, "insert.link", "链接…")?)
-        .item(&item(handle, "insert.marker", "标记…")?)
-        .item(&item(handle, "insert.image", "图片…")?)
+        .item(&item(handle, "insert.relationship", "联系")?)
+        .item(&item(handle, "insert.summary", "概要")?)
+        .item(&item(handle, "insert.boundary", "外框")?)
         .separator()
-        .item(&item(handle, "insert.relationship", "关系线…")?)
-        .item(&item(handle, "insert.boundary", "边界…")?)
-        .item(&item(handle, "insert.summary", "概要…")?)
-        .build()?;
-
-    // —— 格式：XMind 的「格式」菜单承载结构（图表类型）与面板开关 ——
-    let format = SubmenuBuilder::new(handle, "格式")
-        .item(&item(handle, "format.panel", "切换右侧格式面板")?)
+        .item(&item(handle, "insert.notes", "笔记")?)
+        .item(&item(handle, "insert.labels", "标签")?)
+        .item(&item(handle, "insert.task", "任务")?)
+        .item(&item(handle, "insert.link", "链接")?)
+        .item(&item(handle, "insert.marker", "标记")?)
+        .item(&item(handle, "insert.image", "本地图片…")?)
         .separator()
-        .item(&item(handle, "format.chart.mindmap", "思维导图")?)
-        .item(&item(handle, "format.chart.logic", "逻辑图")?)
-        .item(&item(handle, "format.chart.tree", "树状图")?)
-        .item(&item(handle, "format.chart.org", "组织结构图")?)
-        .item(&item(handle, "format.chart.fishbone", "鱼骨图")?)
-        .item(&item(handle, "format.chart.timeline", "时间线")?)
+        .item(&item(
+            handle,
+            "insert.new-sheet",
+            &format!("新画布{}", combo_alt("N")),
+        )?)
         .build()?;
 
     // —— 工具 ——
     let tools = SubmenuBuilder::new(handle, "工具")
         .item(&item(handle, "tools.check-update", "检查更新…")?)
-        .item(&item(handle, "tools.cycle-theme", "切换主题外观")?)
+        .item(&item(handle, "tools.shortcuts", "快捷键…")?)
+        .item(&item(handle, "tools.cycle-theme", "切换明暗外观")?)
+        .build()?;
+
+    // —— 查看 ——
+    // 思维导图 / 大纲是互斥单选项，甘特图与下方各面板显隐是可独立勾选的开关。
+    let view = SubmenuBuilder::new(handle, "查看")
+        .item(&check_item(handle, "view.mode-mindmap", "思维导图", true)?)
+        .item(&check_item(handle, "view.mode-outline", "大纲", false)?)
+        .separator()
+        .item(&check_item(handle, "view.gantt", "甘特图", false)?)
+        .separator()
+        .item(&item(handle, "view.zoom-in", &format!("放大{}", combo("+")))?)
+        .item(&item(handle, "view.zoom-out", &format!("缩小{}", combo("-")))?)
+        .item(&item(
+            handle,
+            "view.zoom-actual",
+            &format!("实际大小{}", combo("1")),
+        )?)
+        .item(&item(handle, "view.zoom-fit", &format!("适应画布{}", combo("0")))?)
+        .separator()
+        .item(&item(handle, "view.zen", &format!("ZEN 模式{}", combo(".")))?)
+        .item(&item(
+            handle,
+            "view.present",
+            &format!("演说模式{}", combo_shift("P")),
+        )?)
+        .item(&item(handle, "view.pitch", "提案简报")?)
+        .separator()
+        .item(&check_item(
+            handle,
+            "view.sidebar",
+            &format!("导航面板{}", combo("B")),
+            true,
+        )?)
+        .item(&check_item(
+            handle,
+            "view.inspector",
+            &format!("格式面板{}", combo("I")),
+            true,
+        )?)
+        .item(&check_item(handle, "view.toolbar", "工具栏", true)?)
+        .item(&check_item(
+            handle,
+            "view.tab-bar",
+            &format!("显示标签页栏{}", combo_shift("T")),
+            true,
+        )?)
+        .build()?;
+
+    // —— 窗口：系统预置项，无自定义 id ——
+    let window = SubmenuBuilder::new(handle, "窗口")
+        .item(&PredefinedMenuItem::minimize(handle, Some("最小化"))?)
+        .item(&PredefinedMenuItem::maximize(handle, Some("缩放"))?)
+        .item(&PredefinedMenuItem::close_window(handle, Some("关闭"))?)
+        .separator()
+        .item(&PredefinedMenuItem::fullscreen(handle, Some("全屏切换"))?)
         .build()?;
 
     // —— 帮助 ——
     let help = SubmenuBuilder::new(handle, "帮助")
-        .item(&item(handle, "help.shortcuts", "快捷键…")?)
         .item(&PredefinedMenuItem::about(
             handle,
             Some("关于 MindGrid"),
@@ -186,10 +299,27 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     MenuBuilder::new(handle)
         .item(&file)
         .item(&edit)
-        .item(&view)
         .item(&insert)
-        .item(&format)
         .item(&tools)
+        .item(&view)
+        .item(&window)
         .item(&help)
         .build()
+}
+
+/// 回写菜单项的勾选态（供前端在状态变化时调用）。
+///
+/// 找不到对应 id（例如浏览器开发态没有原生菜单）时静默返回，不视为错误——
+/// 勾选态只是显示细节，不该因为菜单缺失而打断业务流程。
+pub fn set_menu_item_checked<R: Runtime>(app: &AppHandle<R>, id: &str, checked: bool) {
+    // `Manager::menu()` 返回 Option：桌面端一定有菜单，移动端/无菜单窗口则为 None
+    let Some(menu) = app.menu() else {
+        return
+    };
+    let Some(entry) = menu.get(id) else {
+        return
+    };
+    if let Some(check_item) = entry.as_check_menuitem() {
+        let _ = check_item.set_checked(checked);
+    }
 }
