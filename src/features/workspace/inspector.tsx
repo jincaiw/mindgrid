@@ -19,6 +19,7 @@ import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-im
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import { MarkerSelector } from '../canvas/marker-selector'
 import { buildPitchActs } from '../presentation/pitch-controller'
+import { StructurePicker } from './structure-picker'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
 
 /**
@@ -1248,6 +1249,18 @@ export function Inspector({
             aria-labelledby="inspector-tab-canvas"
             className="panel__tab-panel"
           >
+            <PanelSection eyebrow="Structure" title="骨架">
+              <StructurePicker
+                value={activeSheet?.chartType ?? 'mindmap'}
+                onChange={(chartType) => {
+                  if (activeSheet) {
+                    void session.setSheetChartType(activeSheet.id, chartType)
+                  }
+                }}
+                disabled={!activeSheet}
+              />
+            </PanelSection>
+
             <PanelSection eyebrow="Move" title="跨画布移动">
               <p className="panel__muted">
                 把当前主题分支移动或复制到另一张画布，并可指定目标父主题；完成后会自动切换过去。

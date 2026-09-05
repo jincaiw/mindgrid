@@ -268,23 +268,20 @@ export function WorkspaceScreen({
         isOutlinerMode ? ' workspace-shell--outliner' : ''
       }${isGanttMode ? ' workspace-shell--gantt' : ''}`}
     >
+      {/*
+        XMind 式工具栏只留：中段 主题/子主题/联系/概要/外框/标记/插入，
+        右段 ZEN/演说/格式。搜索(⌘F)、侧栏(⌘B)、大纲、甘特、检查更新一律
+        收进原生菜单与状态条，不再占工具栏位置。
+      */}
       <Toolbar
         session={session}
         selectedTopicIds={selectedTopicIds}
         onClearSelection={clearMultiSelection}
         onStartPresentation={() => setIsPresenting(true)}
-        onCheckForUpdates={onCheckForUpdates}
         onToggleZenMode={() => setIsZenMode((v) => !v)}
         isZenMode={isZenMode}
-        onOpenSearch={() => setSearchOpen(true)}
         inspectorVisible={inspectorVisible}
         onToggleInspector={() => setInspectorVisible((v) => !v)}
-        sidebarVisible={sidebarVisible}
-        onToggleSidebar={() => setSidebarVisible((v) => !v)}
-        isOutlinerMode={isOutlinerMode}
-        onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
-        isGanttMode={isGanttMode}
-        onToggleGantt={() => setIsGanttMode((v) => !v)}
         onFocusInspectorTopicTab={focusInspectorTopicTab}
         onNotify={onNotify}
         themeMode={themeMode}

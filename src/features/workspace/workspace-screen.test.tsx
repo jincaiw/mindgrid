@@ -126,26 +126,37 @@ it('renders toolbar and canvas host', () => {
   renderWithApp(<WorkspaceScreen session={sessionStub} />)
 
   expect(screen.getByLabelText('主工具栏')).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '打开文档' })).toHaveAttribute(
-    'title',
-    '打开文档（Cmd/Ctrl + O）',
-  )
-  expect(screen.getByRole('button', { name: '保存文档' })).toHaveAttribute(
-    'title',
-    '保存文档（Cmd/Ctrl + S）',
-  )
-  expect(screen.getByRole('button', { name: '另存为' })).toHaveAttribute(
-    'title',
-    '另存为（Shift + Cmd/Ctrl + S）',
-  )
-  // 导入/导出按钮在下拉菜单中
-  expect(screen.getByRole('button', { name: '导出' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '导入' })).toBeInTheDocument()
-  expect(screen.getByRole('button', { name: '新建文档' })).toHaveAttribute(
-    'title',
-    '新建文档（Cmd/Ctrl + N）',
-  )
+  // 中段：XMind 式竖排动作 主题 / 子主题 / 联系 / 概要 / 外框 / 标记 / 插入
+  for (const label of ['主题', '子主题', '联系', '概要', '外框', '标记', '插入']) {
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+  }
+  // 右段：ZEN / 演说 / 格式
+  for (const label of ['ZEN', '演说', '格式']) {
+    expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+  }
   expect(screen.getByLabelText('画布区域')).toBeInTheDocument()
+})
+
+it('keeps file actions out of the toolbar (XMind puts them in the menu)', () => {
+  renderWithApp(<WorkspaceScreen session={sessionStub} />)
+
+  // 文件操作与撤销重做全部收进原生菜单与快捷键，工具栏不再占位置
+  const movedOut = [
+    '新建文档',
+    '打开文档',
+    '保存文档',
+    '另存为',
+    '导入',
+    '导出',
+    '撤销',
+    '重做',
+    '搜索',
+    '侧栏',
+    '检查器',
+  ]
+  for (const label of movedOut) {
+    expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
+  }
 })
 
 it('shows save and recovery timestamps in the toolbar as time information', () => {
@@ -176,7 +187,7 @@ it('shows save and recovery timestamps in the toolbar as time information', () =
   expect(screen.queryByText(/已自动保存/)).not.toBeInTheDocument()
 })
 
-it('exposes detailed undo and redo history labels on toolbar buttons', () => {
+it('keeps undo/redo out of the toolbar after moving them to the menu', () => {
   renderWithApp(
     <WorkspaceScreen
       session={{
@@ -189,13 +200,9 @@ it('exposes detailed undo and redo history labels on toolbar buttons', () => {
     />,
   )
 
-  expect(screen.getByRole('button', { name: '撤销 删除 2 个主题' })).toHaveAttribute(
-    'title',
-    '删除 2 个主题',
-  )
-  expect(
-    screen.getByRole('button', { name: '重做 批量移动 2 个主题到其他画布' }),
-  ).toHaveAttribute('title', '批量移动 2 个主题到其他画布')
+  // 撤销/重做改由「编辑」菜单与 ⌘Z / ⇧⌘Z 承担（对标 XMind），工具栏不再放按钮
+  expect(screen.queryByRole('button', { name: /撤销/ })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: /重做/ })).not.toBeInTheDocument()
 })
 
 it('highlights the restored topic in sidebar and canvas after undo', async () => {
@@ -2144,7 +2151,8 @@ it('enters presentation mode, advances slides, and exits via controls', () => {
   renderWithApp(<WorkspaceScreen session={{ ...sessionStub, document: presentationDocument }} />)
 
   // 进入演示模式
-  fireEvent.click(screen.getByRole('button', { name: '演示模式' }))
+  // 工具栏按钮对标 XMind 叫「演说」（演示视图本身的 dialog 名不变）
+  fireEvent.click(screen.getByRole('button', { name: '演说' }))
   const dialog = screen.getByRole('dialog', { name: '演示模式' })
   // 4 个主题 → 4 张幻灯片，首张计数 1 / 4
   expect(within(dialog).getByText('1 / 4')).toBeInTheDocument()
@@ -2165,7 +2173,8 @@ it('enters presentation mode, advances slides, and exits via controls', () => {
 it('supports keyboard navigation in presentation mode', () => {
   renderWithApp(<WorkspaceScreen session={{ ...sessionStub, document: presentationDocument }} />)
 
-  fireEvent.click(screen.getByRole('button', { name: '演示模式' }))
+  // 工具栏按钮对标 XMind 叫「演说」（演示视图本身的 dialog 名不变）
+  fireEvent.click(screen.getByRole('button', { name: '演说' }))
   const dialog = screen.getByRole('dialog', { name: '演示模式' })
   expect(within(dialog).getByText('1 / 4')).toBeInTheDocument()
 
@@ -2279,30 +2288,27 @@ function selectTwoTopicsViaSidebar() {
   fireEvent.click(sidebar.getByRole('button', { name: /复盘主题/ }), { ctrlKey: true })
 }
 
-it('forwards toolbar topic actions (child/sibling/delete) to the session', () => {
+it('forwards toolbar topic actions (child/sibling) to the session', () => {
   const createChildTopic = vi.fn(async () => {})
   const createSiblingTopic = vi.fn(async () => {})
-  const deleteTopic = vi.fn(async () => {})
 
-  renderBatch14Workspace({ createChildTopic, createSiblingTopic, deleteTopic })
+  renderBatch14Workspace({ createChildTopic, createSiblingTopic })
 
   const toolbar = within(screen.getByLabelText('主工具栏'))
-  fireEvent.click(toolbar.getByRole('button', { name: '新建子主题' }))
-  fireEvent.click(toolbar.getByRole('button', { name: '新建同级主题' }))
-  fireEvent.click(toolbar.getByRole('button', { name: '删除主题' }))
+  fireEvent.click(toolbar.getByRole('button', { name: '子主题' }))
+  fireEvent.click(toolbar.getByRole('button', { name: '主题' }))
 
   expect(createChildTopic).toHaveBeenCalledWith('topic_plan')
   expect(createSiblingTopic).toHaveBeenCalledWith('topic_plan')
-  expect(deleteTopic).toHaveBeenCalledWith('topic_plan')
 })
 
-it('disables toolbar sibling and delete actions when only the root topic is selected', () => {
+it('disables the sibling action when only the root topic is selected', () => {
   renderWithApp(<WorkspaceScreen session={sessionStub} />)
 
   const toolbar = within(screen.getByLabelText('主工具栏'))
-  expect(toolbar.getByRole('button', { name: '新建子主题' })).toBeEnabled()
-  expect(toolbar.getByRole('button', { name: '新建同级主题' })).toBeDisabled()
-  expect(toolbar.getByRole('button', { name: '删除主题' })).toBeDisabled()
+  expect(toolbar.getByRole('button', { name: '子主题' })).toBeEnabled()
+  // 根主题没有同级，故「主题」禁用（XMind 同样禁用该按钮）
+  expect(toolbar.getByRole('button', { name: '主题' })).toBeDisabled()
 })
 
 it('notifies instead of creating a relationship when fewer than two topics are selected', () => {
@@ -2318,7 +2324,7 @@ it('notifies instead of creating a relationship when fewer than two topics are s
 
   const toolbar = within(screen.getByLabelText('主工具栏'))
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: '关系线' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '联系' }))
 
   expect(onNotify).toHaveBeenCalledWith('请先选中两个主题')
   expect(createRelationship).not.toHaveBeenCalled()
@@ -2332,7 +2338,7 @@ it('creates a relationship between the two selected topics from the insert menu'
 
   const toolbar = within(screen.getByLabelText('主工具栏'))
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: '关系线' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '联系' }))
 
   expect(createRelationship).toHaveBeenCalledWith('topic_plan', 'topic_review', null)
 })
@@ -2358,17 +2364,17 @@ it('creates boundary and summary for a multi-selection, and notifies otherwise',
 
   const toolbar = within(screen.getByLabelText('主工具栏'))
 
-  // 单选：提示框选至少两个主题
+  // 单选：提示至少选中两个主题
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: '边界' }))
-  expect(onNotify).toHaveBeenCalledWith('请先框选至少两个主题')
+  fireEvent.click(screen.getByRole('menuitem', { name: '外框' }))
+  expect(onNotify).toHaveBeenCalledWith('请先选中至少两个主题')
   expect(createBoundary).not.toHaveBeenCalled()
 
-  // 多选：创建边界与概要
+  // 多选：创建外框与概要
   selectTwoTopicsViaSidebar()
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: '边界' }))
-  expect(createBoundary).toHaveBeenCalledWith('sheet_1', ['topic_plan', 'topic_review'], null)
+  fireEvent.click(screen.getByRole('menuitem', { name: '外框' }))
+  expect(createBoundary).toHaveBeenCalledWith('sheet_1', ['topic_plan', 'topic_review'], '分组')
 
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '概要' }))
@@ -2381,12 +2387,12 @@ it('focuses the inspector style subpage when inserting note/label/link/marker', 
   const inspector = within(screen.getByLabelText('右侧检查器'))
   const toolbar = within(screen.getByLabelText('主工具栏'))
 
-  // 先切到画布子页，再通过插入→备注切回样式子页
+  // 先切到画布子页，再通过插入→笔记切回样式子页
   fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
   expect(inspector.getByRole('tab', { name: '画布' })).toHaveAttribute('aria-selected', 'true')
 
   fireEvent.click(toolbar.getByRole('button', { name: '插入' }))
-  fireEvent.click(screen.getByRole('menuitem', { name: '备注' }))
+  fireEvent.click(screen.getByRole('menuitem', { name: '笔记' }))
 
   expect(inspector.getByRole('tab', { name: '样式' })).toHaveAttribute('aria-selected', 'true')
 })
@@ -2408,23 +2414,25 @@ it('reveals the inspector when inserting rich content while it is hidden', () =>
   expect(inspector.getByRole('tab', { name: '样式' })).toHaveAttribute('aria-selected', 'true')
 })
 
-it('switches the sheet chart type from the structure menu', () => {
+it('switches the sheet chart type from the inspector canvas subpage skeleton picker', () => {
   const setSheetChartType = vi.fn(async () => {})
 
   renderBatch14Workspace({ setSheetChartType })
 
+  // XMind 把骨架放在右侧「画布」子页，工具栏不再有「结构 ▾」下拉
   const toolbar = within(screen.getByLabelText('主工具栏'))
-  const structureButton = toolbar.getByRole('button', { name: '结构' })
-  expect(structureButton).toHaveTextContent('思维导图')
+  expect(toolbar.queryByRole('button', { name: '结构' })).not.toBeInTheDocument()
 
-  fireEvent.click(structureButton)
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
 
-  const options = screen.getAllByRole('menuitemradio')
-  // 9 种结构：思维导图/逻辑图/树形图/组织结构图/鱼骨图/时间轴/括号图/矩阵图/气泡图
-  expect(options).toHaveLength(9)
-  expect(options[0]).toHaveAttribute('aria-checked', 'true')
+  const skeletonButton = inspector.getByRole('button', { name: '骨架：思维导图' })
+  expect(skeletonButton).toHaveTextContent('思维导图')
 
-  fireEvent.click(screen.getByRole('menuitemradio', { name: /鱼骨图/ }))
+  fireEvent.click(skeletonButton)
+  const popover = within(screen.getByRole('dialog', { name: '选择骨架' }))
+  fireEvent.click(popover.getByRole('button', { name: '鱼骨图' }))
+
   expect(setSheetChartType).toHaveBeenCalledWith('sheet_1', 'fishbone')
 })
 
@@ -2525,23 +2533,25 @@ it('clears branch style overrides by clicking default values or reset button', (
   expect(setSheetBranchStyle).toHaveBeenCalledWith('sheet_1', null)
 })
 
-it('switches the document theme from the theme menu', () => {
+it('switches the document theme from the inspector canvas subpage', () => {
   const setDocumentTheme = vi.fn(async () => {})
 
   renderBatch14Workspace({ setDocumentTheme })
 
+  // XMind 的配色同样在右侧「画布」子页，工具栏不再有「主题 ▾」下拉
   const toolbar = within(screen.getByLabelText('主工具栏'))
-  const themeButton = toolbar.getByRole('button', { name: '主题' })
-  expect(themeButton).toHaveTextContent('经典蓝')
+  expect(toolbar.queryByRole('button', { name: '主题 ▾' })).not.toBeInTheDocument()
 
-  fireEvent.click(themeButton)
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  fireEvent.click(inspector.getByRole('tab', { name: '画布' }))
 
-  const current = screen.getAllByRole('menuitemradio').find(
-    (item) => item.getAttribute('aria-checked') === 'true',
+  const themeGroup = within(inspector.getByRole('radiogroup', { name: '文档主题' }))
+  expect(themeGroup.getByRole('radio', { name: '经典蓝' })).toHaveAttribute(
+    'aria-checked',
+    'true',
   )
-  expect(current).toHaveTextContent('经典蓝')
 
-  fireEvent.click(screen.getByRole('menuitemradio', { name: '暗夜' }))
+  fireEvent.click(themeGroup.getByRole('radio', { name: '暗夜' }))
   expect(setDocumentTheme).toHaveBeenCalledWith('dark')
 })
 
@@ -2549,7 +2559,7 @@ it('toggles the inspector via Cmd/Ctrl + I and the toolbar button', () => {
   renderBatch14Workspace()
 
   const toolbar = within(screen.getByLabelText('主工具栏'))
-  const inspectorToggle = toolbar.getByRole('button', { name: '检查器' })
+  const inspectorToggle = toolbar.getByRole('button', { name: '格式' })
 
   expect(screen.getByLabelText('右侧检查器')).toBeInTheDocument()
   expect(inspectorToggle).toHaveAttribute('aria-pressed', 'true')
@@ -2568,13 +2578,15 @@ it('toggles the inspector via Cmd/Ctrl + I and the toolbar button', () => {
   expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
 })
 
-it('opens the canvas search from the toolbar search button', () => {
+it('opens the canvas search with Cmd/Ctrl + F instead of a toolbar button', () => {
   renderBatch14Workspace()
 
+  // XMind 工具栏没有搜索按钮，查找收在「编辑」菜单与 ⌘F
   const toolbar = within(screen.getByLabelText('主工具栏'))
+  expect(toolbar.queryByRole('button', { name: '搜索' })).not.toBeInTheDocument()
   expect(screen.queryByRole('textbox', { name: '搜索主题' })).not.toBeInTheDocument()
 
-  fireEvent.click(toolbar.getByRole('button', { name: '搜索' }))
+  fireEvent.keyDown(window, { key: 'f', metaKey: true })
 
   expect(screen.getByRole('textbox', { name: '搜索主题' })).toBeInTheDocument()
 })

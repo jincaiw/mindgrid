@@ -1185,6 +1185,42 @@ button {
   font-weight: 600;
 }
 
+/* XMind 式竖排动作按钮：图标在上、小字在下（主题/子主题/…/ZEN/演说/格式） */
+.toolbar__action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 46px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.toolbar__action:hover:not(:disabled) {
+  background: var(--color-surface-subtle);
+}
+
+.toolbar__action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar__action[aria-pressed='true'] {
+  background: var(--color-accent-10);
+  color: var(--color-accent-strong);
+}
+
+.toolbar__action-label {
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .toolbar__zen-label,
 .toolbar__zen-exit {
   font-size: 12px;
@@ -3622,6 +3658,123 @@ button {
   color: rgba(26, 26, 46, 0.5);
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+/* ===== 骨架（结构）选择器（对标 XMind 画布子页顶部卡片）===== */
+.structure-picker {
+  position: relative;
+}
+
+.structure-picker__trigger {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.structure-picker__trigger:hover {
+  border-color: var(--color-accent);
+}
+
+.structure-picker__trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.structure-picker__thumb {
+  width: 62px;
+  height: 38px;
+  flex: none;
+  color: var(--color-accent);
+}
+
+.structure-picker__name {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.structure-picker__popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.structure-picker__scroll {
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 10px 12px 14px;
+}
+
+.structure-picker__group + .structure-picker__group {
+  margin-top: 12px;
+}
+
+.structure-picker__group-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+}
+
+.structure-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.structure-picker__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.structure-picker__card:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-06);
+}
+
+.structure-picker__card--selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-10);
+}
+
+.structure-picker__card:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.structure-picker__card-thumb {
+  width: 100%;
+  height: 46px;
+  color: var(--color-accent);
+}
+
+.structure-picker__card-name {
+  font-size: 11px;
+  color: var(--color-text-secondary);
 }
 
 /* ---- 右键上下文菜单（参考 XMind：纯白面板 + 发丝线 + 轻投影）---- */

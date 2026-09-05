@@ -219,6 +219,52 @@ export function GroupIcon(props: IconProps) {
   )
 }
 
+/** 联系（两个主题之间的关联线） */
+export function RelationshipIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="2" y="4" width="8" height="5" rx="1" />
+      <rect x="14" y="15" width="8" height="5" rx="1" />
+      <path d="M10 6.5c4 0 0 10 4 11" />
+    </Svg>
+  )
+}
+
+/** 概要（主题旁的方括号 + 汇总节点） */
+export function SummaryIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 4h5" />
+      <path d="M3 12h5" />
+      <path d="M3 20h5" />
+      <path d="M11 4c4 0 4 16 0 16" />
+      <rect x="15" y="10" width="7" height="4" rx="1" />
+    </Svg>
+  )
+}
+
+/** 标记（旗帜） */
+export function MarkerIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M5 21V4" />
+      <path d="M5 5h11l-2 3.5L16 12H5z" />
+    </Svg>
+  )
+}
+
+/** ZEN 专注模式（四角向外扩张） */
+export function MaximizeIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M4 9V5a1 1 0 0 1 1-1h4" />
+      <path d="M20 9V5a1 1 0 0 0-1-1h-4" />
+      <path d="M4 15v4a1 1 0 0 0 1 1h4" />
+      <path d="M20 15v4a1 1 0 0 1-1 1h-4" />
+    </Svg>
+  )
+}
+
 /** 新建子主题（父节点 → 带 + 的子节点） */
 export function SubTopicIcon(props: IconProps) {
   return (
