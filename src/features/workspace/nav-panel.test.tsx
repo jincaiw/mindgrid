@@ -3,7 +3,7 @@ import { vi } from 'vitest'
 import { renderWithApp } from '../../test/render'
 import type { DocumentSession } from '../document/use-document-session'
 import type { TopicSnapshot } from '../../lib/document/types'
-import { NavPanel } from './nav-panel'
+import { NavPanel, type NavPanelSearchProps } from './nav-panel'
 
 function makeTopic(
   id: string,
@@ -131,12 +131,38 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
   }
 }
 
+/**
+ * 查找替换的受控 props 默认值。
+ * NavPanel 不持有查找状态（由 WorkspaceScreen 统一持有，与画布浮层共享），
+ * 测试里传一组空实现即可，需要验证替换行为时再覆盖。
+ */
+function makeSearchProps(
+  overrides: Partial<NavPanelSearchProps> = {},
+): NavPanelSearchProps {
+  return {
+    searchQuery: '',
+    onSearchQueryChange: vi.fn(),
+    replaceQuery: '',
+    onReplaceQueryChange: vi.fn(),
+    searchResults: [],
+    activeSearchIndex: 0,
+    onActivateSearchResult: vi.fn(),
+    onSearchNext: vi.fn(),
+    onSearchPrevious: vi.fn(),
+    onReplaceCurrent: vi.fn(),
+    onReplaceAll: vi.fn(),
+    replaceAllPlan: { topicCount: 0, occurrenceCount: 0 },
+    ...overrides,
+  }
+}
+
 function renderNavPanel(session: DocumentSession, onSelectedTopicIdsChange = vi.fn()) {
   renderWithApp(
     <NavPanel
       session={session}
       selectedTopicIds={[]}
       onSelectedTopicIdsChange={onSelectedTopicIdsChange}
+      {...makeSearchProps()}
     />,
   )
 

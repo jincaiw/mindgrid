@@ -73,6 +73,7 @@ import {
   searchTopics,
   type TopicSearchEntry,
 } from './topic-search'
+import { planReplaceAll, planReplaceOne } from '../search/replace'
 import { ContextMenu, menuItem, menuSeparator, type ContextMenuItem } from '../workspace/context-menu'
 
 interface CanvasHostProps {
@@ -86,6 +87,21 @@ interface CanvasHostProps {
   // 搜索框开关：可选受控（工具栏搜索按钮与 Cmd/Ctrl + F 共用），缺省内部自管理
   searchOpen?: boolean
   onSearchOpenChange?: (open: boolean) => void
+  /**
+   * 查找替换状态：可选受控，缺省内部自管理。
+   *
+   * 为什么需要受控：左栏「主题」Tab 与画布浮层是同一个查找能力的两个入口，
+   * 若各自持有 query，左栏输入时画布不会高亮、两边结果还会互相打架。
+   * 故由 WorkspaceScreen 统一持有，两边共享同一份查询与当前命中项。
+   */
+  searchQuery?: string
+  onSearchQueryChange?: (query: string) => void
+  replaceQuery?: string
+  onReplaceQueryChange?: (query: string) => void
+  activeSearchIndex?: number
+  /** 接受 SetStateAction：画布内部会把索引向上取整到结果范围内，需要读到当前值 */
+  onActiveSearchIndexChange?: (next: SetStateAction<number>) => void
+  searchResults?: TopicSearchEntry[]
   // 画布线网格显示开关（XMind 默认无网格），由检查器「画布设置」驱动
   showGrid?: boolean
   // 相机变化上报（供外层在状态栏显示缩放比例，对标 XMind 状态条右段）
@@ -203,6 +219,8 @@ function MindMapScene({
   editingText,
   searchOpen,
   searchQuery,
+  replaceQuery,
+  onReplaceQueryChange,
   searchResults,
   activeSearchIndex,
   matchedSearchTopicIds,
@@ -250,6 +268,8 @@ function MindMapScene({
   editingText: string
   searchOpen: boolean
   searchQuery: string
+  replaceQuery: string
+  onReplaceQueryChange: (text: string) => void
   searchResults: TopicSearchEntry[]
   activeSearchIndex: number
   matchedSearchTopicIds: Set<string>
@@ -317,7 +337,8 @@ function MindMapScene({
   } | null>(null)
   const suppressClickRef = useRef(false)
   // 批次 27：查找替换的替换词输入（局部状态，随搜索浮层开关保留）
-  const [replaceQuery, setReplaceQuery] = useState('')
+  // replaceQuery 由上层（TreeWorkspace → WorkspaceScreen）持有：左栏「主题」Tab 的
+  // 查找替换面板与画布浮层共用同一个替换词，避免两处各填各的。
   // 小地图显隐：默认开，localStorage 持久化（对齐 XMind Navigator 开关）
   const [minimapVisible, setMinimapVisible] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true
@@ -339,26 +360,22 @@ function MindMapScene({
       return next
     })
   }, [])
-  // 批次 27：查找替换——按字面量替换（split/join，避免正则转义问题），复用 rename 管道可撤销
+  /**
+   * 查找替换：替换逻辑本身在 src/features/search/replace.ts（纯函数，有单测）。
+   * 这里只负责把规划结果交给 rename 管道，从而自动获得撤销能力。
+   *
+   * 注意不要退回到 `text.split(query).join(replacement)`：检索是大小写不敏感的，
+   * 字面量 split 在大小写不一致时会静默找不到，表现为"点了替换没反应"。
+   */
   const handleReplaceCurrent = useCallback(async () => {
-    const result = searchResults[activeSearchIndex]
-    if (!result || !searchQuery) return
-    const nextText = searchQuery ? result.text.split(searchQuery).join(replaceQuery) : result.text
-    if (nextText !== result.text) {
-      await onRenameTopicText(result.topicId, nextText)
-    }
+    const plan = planReplaceOne(searchResults[activeSearchIndex], searchQuery, replaceQuery)
+    if (!plan) return
+    await onRenameTopicText(plan.topicId, plan.nextText)
   }, [searchResults, activeSearchIndex, searchQuery, replaceQuery, onRenameTopicText])
 
   const handleReplaceAll = useCallback(async () => {
-    if (!searchQuery) return
-    const seen = new Set<string>()
-    for (const result of searchResults) {
-      if (seen.has(result.topicId)) continue
-      seen.add(result.topicId)
-      const nextText = result.text.split(searchQuery).join(replaceQuery)
-      if (nextText !== result.text) {
-        await onRenameTopicText(result.topicId, nextText)
-      }
+    for (const plan of planReplaceAll(searchResults, searchQuery, replaceQuery)) {
+      await onRenameTopicText(plan.topicId, plan.nextText)
     }
   }, [searchResults, searchQuery, replaceQuery, onRenameTopicText])
   // Space 键状态：按下时作为平移修饰键（XMind 式 Space+拖拽平移）；
@@ -1366,7 +1383,7 @@ function MindMapScene({
               aria-label="替换为"
               value={replaceQuery}
               placeholder="替换为（留空即删除匹配文本）"
-              onChange={(event) => setReplaceQuery(event.target.value)}
+              onChange={(event) => onReplaceQueryChange(event.target.value)}
             />
             <button
               className="scene-toolbar__button"
@@ -1906,6 +1923,13 @@ function TreeWorkspace({
   onNotify,
   searchOpen: controlledSearchOpen,
   onSearchOpenChange: controlledOnSearchOpenChange,
+  searchQuery: controlledSearchQuery,
+  onSearchQueryChange: controlledOnSearchQueryChange,
+  replaceQuery: controlledReplaceQuery,
+  onReplaceQueryChange: controlledOnReplaceQueryChange,
+  activeSearchIndex: controlledActiveSearchIndex,
+  onActiveSearchIndexChange: controlledOnActiveSearchIndexChange,
+  searchResults: controlledSearchResults,
   onCameraChange,
   zoomRequest,
   canvasCommand,
@@ -1954,8 +1978,44 @@ function TreeWorkspace({
     },
     [controlledOnSearchOpenChange],
   )
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeSearchIndex, setActiveSearchIndex] = useState(0)
+  // 查找状态：受控（WorkspaceScreen 持有，与左栏「主题」Tab 共享）或非受控二选一。
+  // 受控时画布与左栏是同一份查询，画布高亮与左栏命中列表必然一致。
+  const [localSearchQuery, setLocalSearchQuery] = useState('')
+  const searchQuery = controlledSearchQuery ?? localSearchQuery
+  const setSearchQuery = useCallback(
+    (next: string) => {
+      if (controlledOnSearchQueryChange) {
+        controlledOnSearchQueryChange(next)
+        return
+      }
+      setLocalSearchQuery(next)
+    },
+    [controlledOnSearchQueryChange],
+  )
+  const [localActiveSearchIndex, setLocalActiveSearchIndex] = useState(0)
+  const activeSearchIndex = controlledActiveSearchIndex ?? localActiveSearchIndex
+  const setActiveSearchIndex = useCallback(
+    (next: SetStateAction<number>) => {
+      if (controlledOnActiveSearchIndexChange) {
+        controlledOnActiveSearchIndexChange(next)
+        return
+      }
+      setLocalActiveSearchIndex(next)
+    },
+    [controlledOnActiveSearchIndexChange],
+  )
+  const [localReplaceQuery, setLocalReplaceQuery] = useState('')
+  const replaceQuery = controlledReplaceQuery ?? localReplaceQuery
+  const setReplaceQuery = useCallback(
+    (next: string) => {
+      if (controlledOnReplaceQueryChange) {
+        controlledOnReplaceQueryChange(next)
+        return
+      }
+      setLocalReplaceQuery(next)
+    },
+    [controlledOnReplaceQueryChange],
+  )
   const [historyFocusTopicId, setHistoryFocusTopicId] = useState<string | null>(null)
   // Cmd+R 聚焦根主题的请求 nonce：变化时触发 MindMapScene 相机动画。0 = 初始无请求。
   const [focusRootNonce, setFocusRootNonce] = useState(0)
@@ -1990,10 +2050,11 @@ function TreeWorkspace({
     () => buildDocumentTopicSearchIndex(session.document!),
     [session.document],
   )
-  const searchResults = useMemo(
+  const localSearchResults = useMemo(
     () => searchTopics(searchEntries, searchQuery),
     [searchEntries, searchQuery],
   )
+  const searchResults = controlledSearchResults ?? localSearchResults
   const matchedSearchTopicIds = useMemo(
     () => new Set(searchResults.map((result) => result.topicId)),
     [searchResults],
@@ -2135,7 +2196,9 @@ function TreeWorkspace({
     setSearchOpen(false)
     setSearchQuery('')
     setActiveSearchIndex(0)
-  }, [setSearchOpen])
+    // setSearchQuery / setActiveSearchIndex 是稳定包装（受控时也是外层 setState），
+    // 列入依赖只为满足 lint：它们不会导致本回调重建
+  }, [setSearchOpen, setSearchQuery, setActiveSearchIndex])
 
   const openSearch = useCallback(() => {
     setSearchOpen(true)
@@ -2151,7 +2214,7 @@ function TreeWorkspace({
 
       setActiveSearchIndex(normalizedIndex)
     },
-    [searchResults.length],
+    [searchResults.length, setActiveSearchIndex],
   )
 
   const goToNextSearchResult = useCallback(() => {
@@ -2634,6 +2697,8 @@ function TreeWorkspace({
           editingText={editingText}
           searchOpen={searchOpen}
           searchQuery={searchQuery}
+          replaceQuery={replaceQuery}
+          onReplaceQueryChange={setReplaceQuery}
           onRenameTopicText={renameTopic}
           searchResults={searchResults}
           activeSearchIndex={activeSearchResult ? activeSearchIndex : -1}

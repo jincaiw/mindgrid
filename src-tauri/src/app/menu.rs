@@ -102,6 +102,11 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             "view.present",
             &format!("演示模式{}", combo_shift("P")),
         )?)
+        .item(&item(
+            handle,
+            "view.pitch",
+            "提案简报",
+        )?)
         .item(&item(handle, "view.gantt", "甘特图")?)
         .separator()
         .item(&item(

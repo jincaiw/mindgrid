@@ -31,6 +31,8 @@ export interface MenuCommandContext {
   toggleInspector: () => void
   toggleSidebar: () => void
   startPresentation: () => void
+  /** 提案简报（批次 C6）：与演示并存，按一级分支分幕 */
+  startPitch: () => void
   openSearch: () => void
   resetZoom: () => void
   focusInspectorTopicTab: () => void
@@ -110,6 +112,9 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       return
     case 'view.present':
       ctx.startPresentation()
+      return
+    case 'view.pitch':
+      ctx.startPitch()
       return
     case 'view.gantt':
       ctx.toggleGanttMode()

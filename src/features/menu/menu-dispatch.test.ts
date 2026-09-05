@@ -68,6 +68,7 @@ function makeHarness(options: HarnessOptions = {}) {
     toggleInspector: vi.fn(),
     toggleSidebar: vi.fn(),
     startPresentation: vi.fn(),
+    startPitch: vi.fn(),
     openSearch: vi.fn(),
     resetZoom: vi.fn(),
     focusInspectorTopicTab: vi.fn(),
@@ -185,6 +186,13 @@ describe('视图', () => {
     runMenuCommand('view.recenter', ctx)
     expect(startPresentation).toHaveBeenCalledTimes(1)
     expect(requestCanvasCommand).toHaveBeenCalledWith('view.recenter')
+  })
+
+  it('starts pitch mode independently of presentation (批次 C6：两者并存)', () => {
+    const { ctx, startPitch, startPresentation } = makeHarness()
+    runMenuCommand('view.pitch', ctx)
+    expect(startPitch).toHaveBeenCalledTimes(1)
+    expect(startPresentation).not.toHaveBeenCalled()
   })
 
   it('toggles collapse on the active topic, falling back to the sheet root', () => {

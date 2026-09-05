@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { DocumentSession } from '../document/use-document-session'
+import type { TopicSearchEntry } from '../canvas/topic-search'
+import { SearchReplacePanel } from '../search/search-replace-panel'
 import { MarkerLabelPanel } from './marker-label-panel'
 import { NotesPanel } from './notes-panel'
 import { Sidebar } from './sidebar'
@@ -12,7 +14,23 @@ const NAV_TABS: ReadonlyArray<{ id: NavTab; label: string }> = [
   { id: 'markers', label: '标记 & 标签' },
 ]
 
-interface NavPanelProps {
+/** 查找替换：状态由 WorkspaceScreen 持有，与画布浮层共享同一份查询（批次 C3） */
+export interface NavPanelSearchProps {
+  searchQuery: string
+  onSearchQueryChange: (query: string) => void
+  replaceQuery: string
+  onReplaceQueryChange: (query: string) => void
+  searchResults: readonly TopicSearchEntry[]
+  activeSearchIndex: number
+  onActivateSearchResult: (index: number) => void
+  onSearchNext: () => void
+  onSearchPrevious: () => void
+  onReplaceCurrent: () => void
+  onReplaceAll: () => void
+  replaceAllPlan: { topicCount: number; occurrenceCount: number }
+}
+
+interface NavPanelProps extends NavPanelSearchProps {
   session: DocumentSession
   selectedTopicIds: string[]
   onSelectedTopicIdsChange: (topicIds: string[]) => void
@@ -33,6 +51,18 @@ export function NavPanel({
   session,
   selectedTopicIds,
   onSelectedTopicIdsChange,
+  searchQuery,
+  onSearchQueryChange,
+  replaceQuery,
+  onReplaceQueryChange,
+  searchResults,
+  activeSearchIndex,
+  onActivateSearchResult,
+  onSearchNext,
+  onSearchPrevious,
+  onReplaceCurrent,
+  onReplaceAll,
+  replaceAllPlan,
 }: NavPanelProps) {
   const [activeTab, setActiveTab] = useState<NavTab>('topics')
 
@@ -67,6 +97,20 @@ export function NavPanel({
             aria-labelledby="nav-tab-topics"
             className="panel__tab-panel"
           >
+            <SearchReplacePanel
+              searchQuery={searchQuery}
+              onSearchQueryChange={onSearchQueryChange}
+              replaceQuery={replaceQuery}
+              onReplaceQueryChange={onReplaceQueryChange}
+              results={searchResults}
+              activeIndex={activeSearchIndex}
+              onActivateResult={onActivateSearchResult}
+              onNext={onSearchNext}
+              onPrevious={onSearchPrevious}
+              onReplaceCurrent={onReplaceCurrent}
+              onReplaceAll={onReplaceAll}
+              replaceAllPlan={replaceAllPlan}
+            />
             <Sidebar
               session={session}
               selectedTopicIds={selectedTopicIds}

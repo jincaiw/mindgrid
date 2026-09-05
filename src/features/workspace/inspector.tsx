@@ -18,6 +18,7 @@ import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import { MarkerSelector } from '../canvas/marker-selector'
+import { buildPitchActs } from '../presentation/pitch-controller'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
 
 /**
@@ -242,6 +243,11 @@ interface InspectorProps {
   tabRequest?: { tab: InspectorTab; nonce: number } | null
   /** 「演说」子页的放映入口，与工具栏演示按钮走同一路径。 */
   onStartPresentation?: () => void
+  /**
+   * 「提案简报」入口（对标批次 C6）。
+   * 与演示并存而非合并：演示按节点逐个渐进揭示，简报按一级分支分幕。
+   */
+  onStartPitch?: () => void
 }
 
 export function Inspector({
@@ -249,6 +255,7 @@ export function Inspector({
   selectedTopicIds,
   tabRequest,
   onStartPresentation,
+  onStartPitch,
 }: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const activeTopic =
@@ -263,6 +270,11 @@ export function Inspector({
   // 「演说」子页展示预计幻灯片数：放映按大纲顺序逐主题推进，故等于当前画布主题数
   const activeSheetTopicCount = useMemo(
     () => (activeSheet ? flattenTopicTree(activeSheet.rootTopic).length : 0),
+    [activeSheet],
+  )
+  // 「提案简报」幕数 = 一级分支数 + 1（总览幕），与 pitch-controller 同一套算法
+  const pitchActCount = useMemo(
+    () => (activeSheet ? buildPitchActs(activeSheet.rootTopic).length : 0),
     [activeSheet],
   )
   const [moveTargetSheetId, setMoveTargetSheetId] = useState(movableTargetSheets[0]?.id ?? '')
@@ -1202,6 +1214,28 @@ export function Inspector({
                 <li>→ / 空格 / 回车：下一页</li>
                 <li>← / Backspace：上一页</li>
                 <li>Esc：退出放映</li>
+              </ul>
+            </PanelSection>
+
+            <PanelSection eyebrow="Pitch" title="提案简报">
+              <p className="panel__muted">
+                按一级分支分幕放映：一幕 = 中心主题 + 一个分支的完整子树，
+                开场另有一张总览幕。可比逐页放映更紧凑地讲完一份提案。
+              </p>
+              <div className="accordion-card">
+                <span>预计幕数</span>
+                <span>{pitchActCount} 幕</span>
+              </div>
+              {onStartPitch ? (
+                <button type="button" className="panel__action" onClick={onStartPitch}>
+                  开始简报
+                </button>
+              ) : null}
+              <p className="panel__eyebrow">简报设置</p>
+              <ul className="panel__list">
+                <li>长宽比：16:9 / 4:3 / 1:1 / 铺满</li>
+                <li>主题风格：跟随文档 / 深色 / 浅色</li>
+                <li>→ 下一幕　← 上一幕　Esc 退出</li>
               </ul>
             </PanelSection>
           </div>

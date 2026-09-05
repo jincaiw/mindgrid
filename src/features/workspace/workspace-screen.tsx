@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getActiveSheet } from '../../lib/document/sheets'
+import {
+  buildDocumentTopicSearchIndex,
+  searchTopics,
+  type TopicSearchEntry,
+} from '../canvas/topic-search'
+import { planReplaceAll, planReplaceOne, summarizePlan } from '../search/replace'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import type { CameraState } from '../canvas/camera'
 import type { CanvasCommand } from '../menu/menu-actions'
@@ -10,6 +16,7 @@ import { syncSelectionWithActiveTopic } from '../canvas/interaction-state'
 import { CanvasHost } from '../canvas/canvas-host'
 import { GanttView } from '../gantt/gantt-view'
 import type { DocumentSession } from '../document/use-document-session'
+import { PitchView } from '../presentation/pitch-view'
 import { PresentationView } from '../presentation/presentation-view'
 import { ShortcutsHelp } from '../shortcuts/shortcuts-help'
 import { StatusBar } from '../status/status-bar'
@@ -19,6 +26,9 @@ import { OutlinerView } from './outliner-view'
 import { SheetTabBar } from './sheet-tab-bar'
 import { NavPanel } from './nav-panel'
 import { Toolbar } from './toolbar'
+
+/** 文档未加载时 searchResults 复用同一个空数组，避免每次渲染产生新引用触发下游 effect */
+const EMPTY_SEARCH_RESULTS: readonly TopicSearchEntry[] = []
 
 interface WorkspaceScreenProps {
   session: DocumentSession
@@ -44,9 +54,59 @@ export function WorkspaceScreen({
     session.activeTopicId ? [session.activeTopicId] : activeSheet ? [activeSheet.rootTopic.id] : [],
   )
   const [isPresenting, setIsPresenting] = useState(false)
+  // 批次 C6：提案简报（Pitch）。与演示模式并存——演示逐节点揭示，简报按分支分幕
+  const [isPitching, setIsPitching] = useState(false)
   const [isZenMode, setIsZenMode] = useState(false)
   // 批次 14：搜索框开关提升到本层，工具栏搜索按钮与 Cmd/Ctrl + F 共用
   const [searchOpen, setSearchOpen] = useState(false)
+  // 批次 C3：查找替换状态提升到本层。左栏「主题」Tab 的面板与画布浮层是两个入口，
+  // 必须共享同一份查询，否则左栏输入时画布不高亮、两边命中项还会互相打架。
+  const [searchQuery, setSearchQuery] = useState('')
+  const [replaceQuery, setReplaceQuery] = useState('')
+  const [activeSearchIndex, setActiveSearchIndex] = useState(0)
+  const searchResults = useMemo(
+    () =>
+      session.document
+        ? searchTopics(buildDocumentTopicSearchIndex(session.document), searchQuery)
+        : EMPTY_SEARCH_RESULTS,
+    [session.document, searchQuery],
+  )
+  const replaceAllPlan = useMemo(
+    () => summarizePlan(planReplaceAll(searchResults, searchQuery, replaceQuery)),
+    [searchResults, searchQuery, replaceQuery],
+  )
+  const handleSearchQueryChange = useCallback((next: string) => {
+    setSearchQuery(next)
+    setActiveSearchIndex(0)
+  }, [])
+  // 替换走 session.renameTopic，与画布内联编辑同一管道，因此可撤销
+  const handleReplaceCurrent = useCallback(() => {
+    const plan = planReplaceOne(searchResults[activeSearchIndex], searchQuery, replaceQuery)
+    if (!plan) return
+    void session.renameTopic(plan.topicId, plan.nextText)
+  }, [searchResults, activeSearchIndex, searchQuery, replaceQuery, session])
+  const handleReplaceAll = useCallback(() => {
+    for (const plan of planReplaceAll(searchResults, searchQuery, replaceQuery)) {
+      void session.renameTopic(plan.topicId, plan.nextText)
+    }
+  }, [searchResults, searchQuery, replaceQuery, session])
+  const handleActivateSearchResult = useCallback(
+    (index: number) => {
+      setActiveSearchIndex(index)
+      const result = searchResults[index]
+      if (result) {
+        setSelectedTopicIds([result.topicId])
+      }
+    },
+    [searchResults],
+  )
+  const stepSearchIndex = useCallback(
+    (delta: number) => {
+      if (searchResults.length === 0) return
+      setActiveSearchIndex((current) => (current + delta + searchResults.length) % searchResults.length)
+    },
+    [searchResults.length],
+  )
   // 批次 14：检查器显隐（Cmd/Ctrl + I 或工具栏按钮），默认显示
   const [inspectorVisible, setInspectorVisible] = useState(true)
   // 批次 26：侧栏折叠（工具栏按钮 + Cmd/Ctrl + B），默认展开，sessionStorage 记忆
@@ -80,16 +140,21 @@ export function WorkspaceScreen({
     setInspectorTabRequest((current) => ({ tab: 'style', nonce: (current?.nonce ?? 0) + 1 }))
   }, [])
 
+  // 只把 effect 里真正用到的原始值放进依赖：activeSheet 是每次渲染派生的对象，
+  // 直接依赖它会让本 effect 每渲染重跑一次；取 id 则与文档变更同频
+  const activeSheetId = activeSheet?.id
+  const activeSheetRootTopicId = activeSheet?.rootTopic.id
+
   useEffect(() => {
-    if (!activeSheet) {
+    if (!activeSheetId || !activeSheetRootTopicId) {
       setSelectedTopicIds([])
       return
     }
 
     setSelectedTopicIds((currentSelected) =>
-      syncSelectionWithActiveTopic(currentSelected, session.activeTopicId ?? activeSheet.rootTopic.id),
+      syncSelectionWithActiveTopic(currentSelected, session.activeTopicId ?? activeSheetRootTopicId),
     )
-  }, [activeSheet?.id, activeSheet?.rootTopic.id, session.activeTopicId, session.document?.revision])
+  }, [activeSheetId, activeSheetRootTopicId, session.activeTopicId, session.document?.revision])
 
   // 状态栏右段需显示缩放比例（对标 XMind 状态条），故把缩放提升到本层。
   // 只存 zoom 数值而非整个相机对象：平移时 x/y 每帧都变，若整棵子树跟着重渲染会明显掉帧；
@@ -130,6 +195,7 @@ export function WorkspaceScreen({
         toggleInspector: () => setInspectorVisible((v) => !v),
         toggleSidebar: () => setSidebarVisible((v) => !v),
         startPresentation: () => setIsPresenting(true),
+        startPitch: () => setIsPitching(true),
         openSearch: () => setSearchOpen(true),
         resetZoom: handleResetZoom,
         focusInspectorTopicTab,
@@ -271,6 +337,18 @@ export function WorkspaceScreen({
                 session={session}
                 selectedTopicIds={selectedTopicIds}
                 onSelectedTopicIdsChange={setSelectedTopicIds}
+                searchQuery={searchQuery}
+                onSearchQueryChange={handleSearchQueryChange}
+                replaceQuery={replaceQuery}
+                onReplaceQueryChange={setReplaceQuery}
+                searchResults={searchResults}
+                activeSearchIndex={activeSearchIndex}
+                onActivateSearchResult={handleActivateSearchResult}
+                onSearchNext={() => stepSearchIndex(1)}
+                onSearchPrevious={() => stepSearchIndex(-1)}
+                onReplaceCurrent={handleReplaceCurrent}
+                onReplaceAll={handleReplaceAll}
+                replaceAllPlan={replaceAllPlan}
               />
             ) : null}
             <div className="canvas-column">
@@ -281,6 +359,13 @@ export function WorkspaceScreen({
                 onNotify={onNotify}
                 searchOpen={searchOpen}
                 onSearchOpenChange={setSearchOpen}
+                searchQuery={searchQuery}
+                onSearchQueryChange={handleSearchQueryChange}
+                replaceQuery={replaceQuery}
+                onReplaceQueryChange={setReplaceQuery}
+                activeSearchIndex={activeSearchIndex}
+                onActiveSearchIndexChange={setActiveSearchIndex}
+                searchResults={searchResults as TopicSearchEntry[]}
                 showGrid={session.document?.settings?.['canvas.showGrid'] === true}
                 onCameraChange={handleCameraChange}
                 zoomRequest={zoomRequest}
@@ -294,6 +379,7 @@ export function WorkspaceScreen({
                 onSelectedTopicIdsChange={setSelectedTopicIds}
                 tabRequest={inspectorTabRequest}
                 onStartPresentation={() => setIsPresenting(true)}
+                onStartPitch={() => setIsPitching(true)}
               />
             ) : null}
           </>
@@ -312,6 +398,9 @@ export function WorkspaceScreen({
       />
       {isPresenting && session.document ? (
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />
+      ) : null}
+      {isPitching && session.document ? (
+        <PitchView document={session.document} onExit={() => setIsPitching(false)} />
       ) : null}
       <ShortcutsHelp open={isShortcutsHelpOpen} onClose={() => setIsShortcutsHelpOpen(false)} />
     </div>

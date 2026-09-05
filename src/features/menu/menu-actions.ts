@@ -32,6 +32,7 @@ export type MenuActionId =
   // 视图
   | 'view.zen'
   | 'view.present'
+  | 'view.pitch'
   | 'view.gantt'
   | 'view.inspector'
   | 'view.sidebar'
@@ -84,6 +85,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'edit.select-all',
   'view.zen',
   'view.present',
+  'view.pitch',
   'view.gantt',
   'view.inspector',
   'view.sidebar',
