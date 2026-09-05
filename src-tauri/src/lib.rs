@@ -22,6 +22,20 @@ impl Default for AppState {
     }
 }
 
+/// 当前二进制是否为真正的 release 构建。
+///
+/// `tauri dev` 与 `tauri build --debug` 都返回 false。这两类构建**绝不能**
+/// 下载并覆盖安装正式版：那会用 release 二进制覆写正在运行的可执行文件，
+/// 直接把自身弄坏（表现为下次启动 "Permission denied" 或打不开）。
+///
+/// 判别必须用 `debug_assertions` 而不是前端的 `import.meta.env.DEV`——
+/// `tauri build --debug` 时前端是 Vite 生产模式打包，`DEV` 已经是 false，
+/// 会误判成 release 从而自毁。`debug_assertions` 只在真正的 `--release` 下关闭。
+#[tauri::command]
+fn is_release_build() -> bool {
+    !cfg!(debug_assertions)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -87,7 +101,8 @@ pub fn run() {
             app::commands::copy_topics_to_sheet,
             app::commands::paste_topics,
             app::commands::undo_document_command,
-            app::commands::redo_document_command
+            app::commands::redo_document_command,
+            is_release_build
         ])
         .setup(|app| {
             app.handle().plugin(tauri_plugin_dialog::init())?;
