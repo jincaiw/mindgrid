@@ -59,7 +59,11 @@ import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
 import { computeLayout } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveTopicStyle } from './runtime/style-resolver'
-import { buildScene, type TopicVisualStates } from './runtime/scene-builder'
+import {
+  buildBranchIndexMap,
+  buildScene,
+  type TopicVisualStates,
+} from './runtime/scene-builder'
 import { pickTopicImageUrl, useTopicImageUrls } from './runtime/topic-image-store'
 import { collectClipboardTopics } from './topic-clipboard'
 import { MarkerIcon } from './markers'
@@ -471,6 +475,10 @@ function MindMapScene({
       }),
     [layout, camera, visualStates, viewportSize, relationships, boundaries, summaries, themeId, branchStyle],
   )
+
+  // 分支序号：一级主题在其父下的序号，缤纷主题的分支配色按此取色。
+  // 与导出链路共用 buildBranchIndexMap，确保屏幕 DOM 和 PNG/SVG 取到同一颜色。
+  const branchIndexMap = useMemo(() => buildBranchIndexMap(layout.nodes), [layout.nodes])
 
   // ---- DOM 主题虚拟化：只渲染视口内（含 overscan）的主题 ----
   const visibleLayoutNodes = useMemo(() => {
@@ -1516,6 +1524,7 @@ function MindMapScene({
               offsetX={layout.offsetX}
               offsetY={layout.offsetY}
               themeId={themeId}
+              branchIndex={branchIndexMap.get(node.id) ?? null}
               isActive={node.id === activeTopicId}
               isSelected={selectedTopicIds.includes(node.id)}
               isEditing={editingTopicId === node.id}
@@ -1653,11 +1662,14 @@ function MindMapNode({
   onAppearEnd,
   onOpenLink,
   imageUrl,
+  branchIndex,
 }: {
   node: MindMapNodeLayout
   offsetX: number
   offsetY: number
   themeId: string | undefined
+  /** 在一级分支中的序号，缤纷主题按此取分支色；null 表示不适用（根节点/经典主题）。 */
+  branchIndex: number | null
   isActive: boolean
   isSelected: boolean
   isEditing: boolean
@@ -1693,7 +1705,13 @@ function MindMapNode({
   const inlineEditShouldSkipBlurCommitRef = useRef(false)
   // 解析主题 + 节点覆盖 → 具体颜色与排印，作为内联样式覆盖 CSS 默认配色。
   // 使用 background 简写而非 backgroundColor，以清除 CSS 中的渐变背景。
-  const resolvedStyle = resolveTopicStyle(themeId, node.depth, node.side, node.topic.styleOverrides)
+  const resolvedStyle = resolveTopicStyle(
+    themeId,
+    node.depth,
+    node.side,
+    node.topic.styleOverrides,
+    branchIndex,
+  )
   // 形状 → 圆角：rounded 沿用 CSS 深度分级圆角（不内联），其余形状内联覆盖。
   const isUnderline = resolvedStyle.shape === 'underline'
   const shapeRadius =

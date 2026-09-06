@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { resolveThemeBackground, resolveThemeEdge, resolveTopicStyle } from './style-resolver'
 import { DEFAULT_BORDER_WIDTH, getTitleFontSize, getTitleFontWeight } from './style-constants'
+import { getTheme } from '../../../lib/document/themes'
 
 describe('resolveTopicStyle', () => {
   it('returns root colors for depth 0 without overrides', () => {
@@ -118,6 +119,56 @@ describe('resolveTopicStyle', () => {
       fontSize: 16,
       fontWeight: 600,
       borderWidth: 2,
+    })
+  })
+
+  describe('分支配色（缤纷主题）', () => {
+    const palette = getTheme('rainbow').branchPalette!
+
+    it('按分支序号从色板取填充色，并与边框同源', () => {
+      const first = resolveTopicStyle('rainbow', 1, 'left', undefined, 0)
+      const second = resolveTopicStyle('rainbow', 1, 'left', undefined, 1)
+      expect(first.fill).toBe(palette[0])
+      expect(second.fill).toBe(palette[1])
+      expect(first.fill).not.toBe(second.fill)
+      expect(first.borderColor).toBe(palette[0])
+    })
+
+    it('分支文字固定白色，元信息文字用半透明白', () => {
+      const style = resolveTopicStyle('rainbow', 2, 'right', undefined, 0)
+      expect(style.textColor).toBe('#ffffff')
+      expect(style.metaTextColor).toBe('rgba(255, 255, 255, 0.82)')
+    })
+
+    it('分支数超过色板长度时循环取色', () => {
+      const wrapped = resolveTopicStyle('rainbow', 1, 'left', undefined, palette.length)
+      expect(wrapped.fill).toBe(palette[0])
+    })
+
+    it('根节点不参与分支配色，沿用主题自身配色', () => {
+      const root = resolveTopicStyle('rainbow', 0, 'center', undefined, 0)
+      const rootOfClassic = resolveTopicStyle('rainbow', 0, 'center', undefined)
+      expect(root.fill).toBe(getTheme('rainbow').root.fill)
+      expect(root.fill).not.toBe(palette[0])
+      expect(root).toEqual(rootOfClassic)
+    })
+
+    it('经典主题忽略分支序号，与不传时结果一致', () => {
+      const withIndex = resolveTopicStyle('classic-blue', 1, 'left', undefined, 2)
+      const without = resolveTopicStyle('classic-blue', 1, 'left', undefined)
+      expect(withIndex).toEqual(without)
+    })
+
+    it('不传分支序号时缤纷主题退化为分支单色', () => {
+      const style = resolveTopicStyle('rainbow', 1, 'left', undefined)
+      expect(style.fill).toBe(getTheme('rainbow').branch.fill)
+    })
+
+    it('节点级覆盖优先于分支色', () => {
+      const style = resolveTopicStyle('rainbow', 1, 'left', { fill: '#abcdef' }, 0)
+      expect(style.fill).toBe('#abcdef')
+      // 未覆盖的边框仍走分支色
+      expect(style.borderColor).toBe(palette[0])
     })
   })
 })

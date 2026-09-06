@@ -25,21 +25,32 @@ export type { ResolvedTopicStyle } from './render-tree'
  * @param depth 节点深度（0=根节点，>0=分支节点）
  * @param _side 节点侧（left/right/center，V1 预留，当前不参与解析）
  * @param overrides 节点级样式覆盖（可选）
+ * @param branchIndex 一级分支序号（0 起）。缤纷主题据此从 `branchPalette` 取色，
+ *   经典主题忽略。**两侧渲染必须传同一个来源算出的索引**，否则屏幕与导出会不同色。
  */
 export function resolveTopicStyle(
   themeId: string | undefined,
   depth: number,
   _side: NodeSide,
   overrides: TopicStyleOverrides | undefined,
+  branchIndex: number | null = null,
 ): ResolvedTopicStyle {
   const theme = getTheme(themeId)
   const base = depth === 0 ? theme.root : theme.branch
 
+  // 缤纷主题：分支节点按分支序号取色，填充/文字/边框同源。
+  // 根节点不参与（root 始终用主题自己的配色），节点级覆盖仍优先。
+  const palette = theme.branchPalette
+  const branchColor =
+    depth > 0 && palette && palette.length > 0 && branchIndex !== null
+      ? palette[branchIndex % palette.length]
+      : null
+
   return {
-    fill: overrides?.fill ?? base.fill,
-    textColor: overrides?.textColor ?? base.textColor,
-    metaTextColor: base.metaTextColor,
-    borderColor: overrides?.borderColor ?? base.borderColor,
+    fill: overrides?.fill ?? branchColor ?? base.fill,
+    textColor: overrides?.textColor ?? (branchColor ? '#ffffff' : base.textColor),
+    metaTextColor: branchColor ? 'rgba(255, 255, 255, 0.82)' : base.metaTextColor,
+    borderColor: overrides?.borderColor ?? branchColor ?? base.borderColor,
     shape: overrides?.shape ?? 'rounded',
     fontSize: overrides?.fontSize ?? getTitleFontSize(depth),
     fontWeight: overrides?.fontWeight ?? getTitleFontWeight(depth),

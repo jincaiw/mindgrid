@@ -12,6 +12,7 @@
 import type { MindMapEdgeLayout, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import type { Boundary, Relationship, SheetBranchStyle, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
 import { resolveTopicStyle } from './style-resolver'
+import { getTheme } from '../../../lib/document/themes'
 import { BRANCH_COLORS, getEdgeLineWidth } from './style-constants'
 import {
   expandRect,
@@ -120,10 +121,16 @@ export function buildScene(options: BuildSceneOptions): Scene {
   const branchStyle = options.branchStyle
   const resolvedEdgeType: 'curve' | 'straight' | 'elbow' = branchStyle?.edgeType ?? 'curve'
   const thicknessMultiplier = branchStyle?.thickness ?? 1
+  // 分支色优先级：画布级自定义色板 > 主题自带分支色板（缤纷主题）> 默认 8 色循环。
+  // 主题色板与主题节点的填充色同源，保证连线与所在分支同色。
+  const customPalette = branchStyle?.colorPalette
+  const themeBranchPalette = getTheme(options.themeId).branchPalette
   const palette =
-    branchStyle?.colorPalette && branchStyle.colorPalette.length > 0
-      ? branchStyle.colorPalette
-      : BRANCH_COLORS
+    customPalette && customPalette.length > 0
+      ? customPalette
+      : themeBranchPalette && themeBranchPalette.length > 0
+        ? themeBranchPalette
+        : BRANCH_COLORS
 
   /** 按分支索引取色（支持自定义色板覆盖默认 8 色循环）。 */
   const resolveBranchColor = (branchIndex: number): string =>
@@ -183,7 +190,14 @@ export function buildScene(options: BuildSceneOptions): Scene {
       continue
     }
     nodes.push(
-      topicToRenderNode(layoutNode, bounds, visualStates, options.themeId, options.topicImageUrls),
+      topicToRenderNode(
+        layoutNode,
+        bounds,
+        visualStates,
+        options.themeId,
+        options.topicImageUrls,
+        branchIndexMap,
+      ),
     )
   }
 
@@ -265,6 +279,7 @@ function topicToRenderNode(
   states: TopicVisualStates,
   themeId: string | undefined,
   topicImageUrls: Record<string, string> | undefined,
+  branchIndexMap: Map<string, number>,
 ): TopicRenderNode {
   const id = layoutNode.id
   const visualState: TopicVisualState = {
@@ -283,6 +298,8 @@ function topicToRenderNode(
     layoutNode.depth,
     layoutNode.side,
     layoutNode.topic.styleOverrides,
+    // 分支索引用于缤纷主题的按分支取色；根节点与未知节点传 null 走主题单色
+    branchIndexMap.get(id) ?? null,
   )
 
   // 富内容投影：仅当存在任意 meta 字段时携带，避免空对象污染渲染端判断
@@ -355,8 +372,11 @@ function edgeToRenderNode(
  * 其所有后代继承该索引。用于多色分支编码。
  *
  * 遍历方式：先找到根节点（depth=0），然后按子节点顺序分配索引并 DFS 传播。
+ *
+ * 导出给 canvas-host 复用：**屏幕 DOM 与导出渲染必须用同一个实现算索引**，
+ * 若各算各的，缤纷主题下屏幕与 PNG/SVG 会分到不同的分支色。
  */
-function buildBranchIndexMap(nodes: MindMapNodeLayout[]): Map<string, number> {
+export function buildBranchIndexMap(nodes: MindMapNodeLayout[]): Map<string, number> {
   const map = new Map<string, number>()
   const nodeById = new Map<string, MindMapNodeLayout>()
   for (const node of nodes) {

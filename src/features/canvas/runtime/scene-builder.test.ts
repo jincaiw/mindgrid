@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { Boundary, Relationship, SummaryNode, TopicSnapshot } from '../../../lib/document/types'
 import { computeMindMapLayout } from '../mindmap-layout'
-import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
+import {
+  buildBranchIndexMap,
+  buildScene,
+  type InteractionOverlays,
+  type TopicVisualStates,
+} from './scene-builder'
 import type { CameraProjection, Viewport } from './render-tree'
+import { BRANCH_COLORS } from './style-constants'
+import { getTheme } from '../../../lib/document/themes'
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
@@ -440,5 +447,74 @@ describe('buildScene', () => {
     expect(scene.nodes.filter((n) => n.type === 'relationship')).toHaveLength(1)
     expect(scene.nodes.filter((n) => n.type === 'boundary')).toHaveLength(1)
     expect(scene.nodes.filter((n) => n.type === 'summary')).toHaveLength(1)
+  })
+
+  describe('分支连线配色', () => {
+    /** 按连线终点（子主题 id）查分支色，避免依赖节点数组顺序。 */
+    const branchColorByChild = (options: { themeId?: string; colorPalette?: string[] }) => {
+      const layout = computeMindMapLayout(makeRoot())
+      const scene = buildScene({
+        layout,
+        viewport: defaultViewport,
+        camera: defaultCamera,
+        visualStates: defaultVisualStates,
+        overlays: defaultOverlays,
+        themeId: options.themeId,
+        branchStyle: options.colorPalette ? { colorPalette: options.colorPalette } : undefined,
+        enableCulling: false,
+      })
+      const map = new Map<string, string>()
+      for (const node of scene.nodes) {
+        if (node.type === 'edge') map.set(node.childId, node.branchColor)
+      }
+      return map
+    }
+
+    it('无主题色板时沿用默认 8 色循环', () => {
+      const colors = branchColorByChild({ themeId: 'classic-blue' })
+      expect(colors.get('a')).toBe(BRANCH_COLORS[0])
+      expect(colors.get('b')).toBe(BRANCH_COLORS[1])
+    })
+
+    it('缤纷主题用主题自带色板，且与分支节点填充同色', () => {
+      const palette = getTheme('rainbow').branchPalette!
+      const colors = branchColorByChild({ themeId: 'rainbow' })
+      expect(colors.get('a')).toBe(palette[0])
+      expect(colors.get('b')).toBe(palette[1])
+    })
+
+    it('后代连线继承所在分支的色，不重新计数', () => {
+      const palette = getTheme('rainbow').branchPalette!
+      const colors = branchColorByChild({ themeId: 'rainbow' })
+      // a1、a2 属于分支 0，应与 a 同色而非顺延到 palette[1]
+      expect(colors.get('a1')).toBe(palette[0])
+      expect(colors.get('a2')).toBe(palette[0])
+    })
+
+    it('画布级自定义色板优先于主题色板', () => {
+      const colors = branchColorByChild({
+        themeId: 'rainbow',
+        colorPalette: ['#111111', '#222222'],
+      })
+      expect(colors.get('a')).toBe('#111111')
+      expect(colors.get('b')).toBe('#222222')
+    })
+  })
+
+  describe('buildBranchIndexMap', () => {
+    it('根的直接子节点按序编号，后代继承', () => {
+      const layout = computeMindMapLayout(makeRoot())
+      const map = buildBranchIndexMap(layout.nodes)
+      expect(map.get('a')).toBe(0)
+      expect(map.get('a1')).toBe(0)
+      expect(map.get('a2')).toBe(0)
+      expect(map.get('b')).toBe(1)
+      // 根节点自身不参与分支编码
+      expect(map.get('root')).toBeUndefined()
+    })
+
+    it('没有根节点时返回空映射', () => {
+      expect(buildBranchIndexMap([]).size).toBe(0)
+    })
   })
 })
