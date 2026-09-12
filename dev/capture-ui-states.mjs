@@ -120,6 +120,42 @@ async function main() {
     }
   }
 
+  // 换成逻辑图骨架：导图样式 / 高级布局里只对思维导图生效的项应置灰
+  // 骨架只在「画布」子页挂载，先切回去（否则这一段会被静默跳过）
+  await inspectorTab('画布', '02-inspector-canvas')
+  const picker2 = page.locator('.structure-picker__trigger')
+  if ((await picker2.count()) > 0) {
+    await picker2.first().click()
+    await page.waitForTimeout(300)
+    const logicCard = page.locator('.structure-picker__card', { hasText: '逻辑图' })
+    if ((await logicCard.count()) > 0) {
+      await logicCard.first().click()
+      await page.waitForTimeout(700)
+      await shot(page, '15-logic-structure-greyed-options')
+
+      // 置灰的布局选项在面板下方，需要滚到可见位置再拍
+      await page.evaluate(() => {
+        const panel = document.querySelector('.panel--inspector')
+        const scrollable = panel?.querySelector('.panel__tab-body')
+        if (scrollable) scrollable.scrollTop = scrollable.scrollHeight
+        // 兜底：不同版本的面板可能把 overflow 放在 panel 自身上
+        if (panel) panel.scrollTop = panel.scrollHeight
+      })
+      await page.waitForTimeout(400)
+      await shot(page, '15b-logic-greyed-scrolled')
+    }
+    // 切回思维导图，后面的截图保持默认骨架
+    await picker2.first().click()
+    await page.waitForTimeout(300)
+    const mindmapCard = page.locator('.structure-picker__card', { hasText: '思维导图' })
+    if ((await mindmapCard.count()) > 0) {
+      await mindmapCard.first().click()
+      await page.waitForTimeout(600)
+    }
+  } else {
+    console.log('skip: 画布页里没有骨架选择器')
+  }
+
   // 深度分级：给一级分支加两个子主题，看二级是否呈"淡底 + 深字"
   const branch = page.locator('.mindmap-node', { hasText: '关键洞察' }).first()
   if ((await branch.count()) > 0) {

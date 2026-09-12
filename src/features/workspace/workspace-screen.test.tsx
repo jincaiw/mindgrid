@@ -2312,6 +2312,36 @@ function selectTwoTopicsViaSidebar() {
   fireEvent.click(sidebar.getByRole('button', { name: /复盘主题/ }), { ctrlKey: true })
 }
 
+it('greys out mindmap-only layout options for other structures', () => {
+  // XMind 同样按当前骨架灰掉不适用的项：布局引擎不消费这些选项时，置灰比"点了没反应"诚实
+  const logicDocument: typeof twoChildDocument = {
+    ...twoChildDocument,
+    sheets: [{ ...twoChildDocument.sheets[0], chartType: 'logic' }],
+  }
+  renderBatch14Workspace({ document: logicDocument })
+
+  fireEvent.click(screen.getByRole('tab', { name: '画布' }))
+
+  for (const label of [
+    '自动平衡布局',
+    '紧凑型布局',
+    '同级主题对齐',
+    '分支自由布局',
+    '主题层叠',
+  ]) {
+    expect(screen.getByLabelText(label)).toBeDisabled()
+  }
+})
+
+it('keeps mindmap layout options enabled on the mindmap structure', () => {
+  renderBatch14Workspace()
+  fireEvent.click(screen.getByRole('tab', { name: '画布' }))
+
+  for (const label of ['自动平衡布局', '分支自由布局', '主题层叠']) {
+    expect(screen.getByLabelText(label)).toBeEnabled()
+  }
+})
+
 it('selecting a colour scheme also turns rainbow branches on', async () => {
   // 否则在「彩虹分支」未显式开启时选配色方案，画布仍用主题色板 —— 看起来像点了没反应
   const setDocumentSetting = vi.fn(async () => {})

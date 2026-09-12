@@ -2059,6 +2059,13 @@ button {
   align-items: center;
 }
 
+/* 按骨架置灰的选项：整行降透明度并禁止点击（XMind 同样会按骨架灰掉不适用的项） */
+.panel__section .accordion-card--disabled,
+.panel__section .accordion-card--disabled span {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .panel__section .accordion-card input[type='checkbox'] {
   width: 14px;
   height: 14px;

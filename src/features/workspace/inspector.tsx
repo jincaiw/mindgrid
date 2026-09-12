@@ -518,6 +518,15 @@ export function Inspector({
     setEditingPalette(null)
   }
 
+  /**
+   * 导图样式 / 高级布局这几项**只对思维导图骨架生效**（其它骨架的布局引擎不消费这些选项）。
+   * XMind 同样会按当前骨架把不适用的选项置灰——比"点了没反应"诚实得多。
+   */
+  const layoutOptionsApply = (activeSheet?.chartType ?? 'mindmap') === 'mindmap'
+  const layoutOptionHint = layoutOptionsApply
+    ? undefined
+    : '仅对「思维导图」骨架生效，当前骨架不使用这些布局选项'
+
   const activeBranchStyle = activeSheet?.branchStyle
   const [branchThicknessDraft, setBranchThicknessDraft] = useState<number | ''>(
     activeBranchStyle?.thickness ?? '',
@@ -1753,10 +1762,17 @@ export function Inspector({
                 [CANVAS_SETTINGS_KEYS.compact, '紧凑型布局'],
                 [CANVAS_SETTINGS_KEYS.alignSiblings, '同级主题对齐'],
               ].map(([key, label]) => (
-                <label className="accordion-card" key={key}>
+                <label
+                  className={`accordion-card${
+                    layoutOptionsApply ? '' : ' accordion-card--disabled'
+                  }`}
+                  key={key}
+                  title={layoutOptionHint}
+                >
                   <input
                     type="checkbox"
                     checked={canvasSettings[key as 'balance' | 'compact' | 'alignSiblings']}
+                    disabled={!layoutOptionsApply}
                     onChange={(event) =>
                       void session.setDocumentSetting(key, event.target.checked)
                     }
@@ -1768,10 +1784,16 @@ export function Inspector({
             </PanelSection>
 
             <PanelSection title="高级布局">
-              <label className="accordion-card">
+              <label
+                className={`accordion-card${
+                  layoutOptionsApply ? '' : ' accordion-card--disabled'
+                }`}
+                title={layoutOptionHint}
+              >
                 <input
                   type="checkbox"
                   checked={canvasSettings.freeBranchLayout}
+                  disabled={!layoutOptionsApply}
                   onChange={(event) =>
                     void session.setDocumentSetting(
                       CANVAS_SETTINGS_KEYS.freeBranchLayout,
@@ -1786,10 +1808,16 @@ export function Inspector({
                 打开后拖动一级分支会把它摆到指定位置（记进该分支的位置提示），
                 其子树跟随移动；关闭后拖动仍然是改结构（吸附为子主题）。
               </p>
-              <label className="accordion-card">
+              <label
+                className={`accordion-card${
+                  layoutOptionsApply ? '' : ' accordion-card--disabled'
+                }`}
+                title={layoutOptionHint}
+              >
                 <input
                   type="checkbox"
                   checked={canvasSettings.stackTopics}
+                  disabled={!layoutOptionsApply}
                   onChange={(event) =>
                     void session.setDocumentSetting(
                       CANVAS_SETTINGS_KEYS.stackTopics,
