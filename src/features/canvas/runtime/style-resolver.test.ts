@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolveThemeBackground, resolveThemeEdge, resolveTopicStyle } from './style-resolver'
+import { mixWithWhite } from './color-utils'
 import { DEFAULT_BORDER_WIDTH, getTitleFontSize, getTitleFontWeight } from './style-constants'
 import { getTheme } from '../../../lib/document/themes'
 
@@ -134,10 +135,29 @@ describe('resolveTopicStyle', () => {
       expect(first.borderColor).toBe(palette[0])
     })
 
-    it('分支文字固定白色，元信息文字用半透明白', () => {
-      const style = resolveTopicStyle('rainbow', 2, 'right', undefined, 0)
+    it('一级分支是实色 + 白字', () => {
+      const style = resolveTopicStyle('rainbow', 1, 'right', undefined, 0)
+      expect(style.fill).toBe(palette[0])
       expect(style.textColor).toBe('#ffffff')
       expect(style.metaTextColor).toBe('rgba(255, 255, 255, 0.82)')
+    })
+
+    it('二级及更深是同一色的淡底 + 深色字（XMind 的层级表现）', () => {
+      const level1 = resolveTopicStyle('rainbow', 1, 'right', undefined, 0)
+      const level2 = resolveTopicStyle('rainbow', 2, 'right', undefined, 0)
+      const level3 = resolveTopicStyle('rainbow', 3, 'right', undefined, 0)
+
+      expect(level2.fill).not.toBe(level1.fill)
+      // 淡底：与白混合后比一级明显更亮
+      expect(level2.fill).toBe(mixWithWhite(palette[0], 0.86))
+      expect(level3.fill).toBe(level2.fill)
+      expect(level2.textColor).toBe('#1f2937')
+      expect(level2.borderColor).toBe(mixWithWhite(palette[0], 0.62))
+    })
+
+    it('节点级覆盖仍然优先于深度分级', () => {
+      const style = resolveTopicStyle('rainbow', 2, 'right', { fill: '#123456' }, 0)
+      expect(style.fill).toBe('#123456')
     })
 
     it('分支数超过色板长度时循环取色', () => {

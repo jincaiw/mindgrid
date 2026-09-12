@@ -3033,15 +3033,47 @@ button {
  */
 
 .mindmap-node--active {
-  /* XMind 式：2px 描边取代大发光阴影，与 selected 同一语言 */
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  /* XMind 式选中态：1.5px 细边框**贴着节点边**（不是外扩的发光环），四角另加小方块手柄 */
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 0;
   border-color: transparent;
 }
 
+/* 多选中的非活动项：同样细边框但不给手柄，避免一屏都是手柄 */
 .mindmap-node--selected {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 0;
+}
+
+.mindmap-node__handle {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-accent);
+  border-radius: 1px;
+  /* 手柄不吃事件：点角上仍然是点节点 */
+  pointer-events: none;
+}
+
+.mindmap-node__handle--nw {
+  top: -4px;
+  left: -4px;
+}
+
+.mindmap-node__handle--ne {
+  top: -4px;
+  right: -4px;
+}
+
+.mindmap-node__handle--sw {
+  bottom: -4px;
+  left: -4px;
+}
+
+.mindmap-node__handle--se {
+  bottom: -4px;
+  right: -4px;
 }
 
 .mindmap-node--search-match {

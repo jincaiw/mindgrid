@@ -15,6 +15,11 @@ import { getTheme, type ThemePalette } from '../../../lib/document/themes'
 import type { TopicStyleOverrides } from '../../../lib/document/types'
 import type { NodeSide, ResolvedTopicStyle } from './render-tree'
 import { DEFAULT_BORDER_WIDTH, getTitleFontSize, getTitleFontWeight } from './style-constants'
+import { mixWithWhite } from './color-utils'
+
+/** 淡底分支节点的文字色（XMind 的二级主题是浅底深字）。 */
+const DEEP_BRANCH_TEXT_COLOR = '#1f2937'
+const DEEP_BRANCH_META_TEXT_COLOR = 'rgba(31, 41, 55, 0.62)'
 
 export type { ResolvedTopicStyle } from './render-tree'
 
@@ -46,11 +51,30 @@ export function resolveTopicStyle(
       ? palette[branchIndex % palette.length]
       : null
 
+  /**
+   * 深度分级：对齐 XMind —— 一级分支是**饱和实色 + 白字**，
+   * 二级及更深用**同一分支色的淡底 + 深色字**（否则整幅图全是实色块，深层层级看不出来）。
+   * 淡底由分支色与白混合得到，边框取稍深一点的同色，保证三端同源。
+   */
+  const isDeepBranch = branchColor !== null && depth >= 2
+
+  const baseFill = branchColor ? (isDeepBranch ? mixWithWhite(branchColor, 0.86) : branchColor) : base.fill
+  const baseText = branchColor
+    ? isDeepBranch
+      ? DEEP_BRANCH_TEXT_COLOR
+      : '#ffffff'
+    : base.textColor
+  const baseMetaText = branchColor
+    ? isDeepBranch
+      ? DEEP_BRANCH_META_TEXT_COLOR
+      : 'rgba(255, 255, 255, 0.82)'
+    : base.metaTextColor
+
   return {
-    fill: overrides?.fill ?? branchColor ?? base.fill,
-    textColor: overrides?.textColor ?? (branchColor ? '#ffffff' : base.textColor),
-    metaTextColor: branchColor ? 'rgba(255, 255, 255, 0.82)' : base.metaTextColor,
-    borderColor: overrides?.borderColor ?? branchColor ?? base.borderColor,
+    fill: overrides?.fill ?? baseFill,
+    textColor: overrides?.textColor ?? baseText,
+    metaTextColor: baseMetaText,
+    borderColor: overrides?.borderColor ?? (isDeepBranch ? mixWithWhite(branchColor!, 0.62) : branchColor) ?? base.borderColor,
     shape: overrides?.shape ?? 'rounded',
     fontSize: overrides?.fontSize ?? getTitleFontSize(depth),
     fontWeight: overrides?.fontWeight ?? getTitleFontWeight(depth),

@@ -1963,6 +1963,16 @@ function MindMapNode({
           {numberText ? <span className="mindmap-node__number">{numberText}</span> : null}
           {node.topic.text}
         </span>
+        {isActive ? (
+          // XMind 的选中态：节点上是**细边框**，四角各一个小方块手柄。
+          // 手柄只是视觉提示，不参与命中（pointer-events: none），否则点角上会变成点手柄。
+          <>
+            <span className="mindmap-node__handle mindmap-node__handle--nw" aria-hidden="true" />
+            <span className="mindmap-node__handle mindmap-node__handle--ne" aria-hidden="true" />
+            <span className="mindmap-node__handle mindmap-node__handle--sw" aria-hidden="true" />
+            <span className="mindmap-node__handle mindmap-node__handle--se" aria-hidden="true" />
+          </>
+        ) : null}
         {task ? (
           <span
             className="mindmap-node__task"

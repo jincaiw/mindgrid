@@ -120,6 +120,24 @@ async function main() {
     }
   }
 
+  // 深度分级：给一级分支加两个子主题，看二级是否呈"淡底 + 深字"
+  const branch = page.locator('.mindmap-node', { hasText: '关键洞察' }).first()
+  if ((await branch.count()) > 0) {
+    await branch.click()
+    await page.waitForTimeout(200)
+    const childButton = page.getByRole('button', { name: '子主题' })
+    if ((await childButton.count()) > 0) {
+      await childButton.first().click()
+      await page.waitForTimeout(250)
+      await page.keyboard.press('Escape')
+      await childButton.first().click()
+      await page.waitForTimeout(250)
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(400)
+      await shot(page, '14-depth-hierarchy')
+    }
+  }
+
   // 模式视图：ZEN 与大纲（工具栏 / 状态条入口）
   for (const [buttonName, file] of [
     ['ZEN', '10-zen-mode'],

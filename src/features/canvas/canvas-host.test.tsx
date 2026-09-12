@@ -944,6 +944,18 @@ it('renders only the scene without debug scaffolding', () => {
   expect(screen.queryByText('修订号')).not.toBeInTheDocument()
 })
 
+it('marks only the active topic with XMind-style corner handles', () => {
+  const session = createSessionStub()
+  const { container } = renderWithApp(<CanvasHost session={session} />)
+
+  const activeNode = container.querySelector('.mindmap-node--active')
+  expect(activeNode).toBeTruthy()
+
+  // 四个角各一个手柄，且只有活动节点有
+  expect(activeNode!.querySelectorAll('.mindmap-node__handle')).toHaveLength(4)
+  expect(container.querySelectorAll('.mindmap-node__handle')).toHaveLength(4)
+})
+
 it('does not create a floating topic when the free-topic setting is off', async () => {
   const createFloatingTopic = vi.fn(async (_text: string, _ox: number, _oy: number) => {})
   const session = createSessionStub({ createFloatingTopic })
