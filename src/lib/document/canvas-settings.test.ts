@@ -30,6 +30,14 @@ describe('resolveCanvasSettings', () => {
     expect(settings.alignSiblings).toBe(true)
   })
 
+  it('分支自由布局默认关闭，可显式打开', () => {
+    expect(DEFAULT_CANVAS_SETTINGS.freeBranchLayout).toBe(false)
+    expect(
+      resolveCanvasSettings({ [CANVAS_SETTINGS_KEYS.freeBranchLayout]: true })
+        .freeBranchLayout,
+    ).toBe(true)
+  })
+
   it('关闭自由主题后 freeTopic 为 false（默认 true）', () => {
     expect(DEFAULT_CANVAS_SETTINGS.freeTopic).toBe(true)
     expect(

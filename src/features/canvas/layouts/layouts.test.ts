@@ -256,6 +256,61 @@ describe('computeLayout with floating topics', () => {
     ).toBe(true)
   })
 
+  it('honours stored branch positions when free branch layout is on', () => {
+    const root = makeRoot()
+    const branch = root.children[0]
+    const moved = {
+      ...root,
+      children: [
+        {
+          ...branch,
+          layoutHints: { offsetX: 600, offsetY: -240 },
+        },
+        ...root.children.slice(1),
+      ],
+    }
+
+    const auto = computeLayout(root, 'mindmap')
+    const free = computeLayout(moved, 'mindmap', undefined, { freeBranch: true })
+
+    const autoNode = auto.nodes.find((n) => n.id === branch.id)!
+    const freeNode = free.nodes.find((n) => n.id === branch.id)!
+    expect(freeNode.x).toBeCloseTo(600, 5)
+    expect(freeNode.y).toBeCloseTo(-240, 5)
+    expect(freeNode.x).not.toBeCloseTo(autoNode.x, 1)
+
+    // 子树整体跟随：父与子的相对位置不变
+    const childId = branch.children[0].id
+    const autoChild = auto.nodes.find((n) => n.id === childId)!
+    const freeChild = free.nodes.find((n) => n.id === childId)!
+    expect(freeChild.x - freeNode.x).toBeCloseTo(autoChild.x - autoNode.x, 5)
+    expect(freeChild.y - freeNode.y).toBeCloseTo(autoChild.y - autoNode.y, 5)
+
+    // 连线跟着分支走：端点仍在子节点边框上
+    const freeEdge = free.edges.find((e) => e.childId === branch.id)!
+    expect(freeEdge.end.x).toBeCloseTo(freeNode.x - freeNode.width / 2, 5)
+  })
+
+  it('ignores stored branch positions when free branch layout is off', () => {
+    const root = makeRoot()
+    const branch = root.children[0]
+    const moved = {
+      ...root,
+      children: [
+        { ...branch, layoutHints: { offsetX: 600, offsetY: -240 } },
+        ...root.children.slice(1),
+      ],
+    }
+
+    const auto = computeLayout(root, 'mindmap')
+    const withHints = computeLayout(moved, 'mindmap')
+    const autoNode = auto.nodes.find((n) => n.id === branch.id)!
+    const hintedNode = withHints.nodes.find((n) => n.id === branch.id)!
+
+    expect(hintedNode.x).toBeCloseTo(autoNode.x, 5)
+    expect(hintedNode.y).toBeCloseTo(autoNode.y, 5)
+  })
+
   it('keeps the alternating default when direction is omitted', () => {
     const root = makeRoot()
     const layout = computeLayout(root, 'mindmap')

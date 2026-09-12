@@ -728,6 +728,37 @@ export async function invokeBrowserCommand<TResult>(
           : getActiveSheet(draft).rootTopic.id
       }) as TResult
     }
+    case 'set_topic_position': {
+      const topicId = String(payload.topic_id)
+      const rawX = payload.offset_x
+      const rawY = payload.offset_y
+
+      return applyMutation('摆放主题位置', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((t) => t.id === topicId)
+
+        if (!topic) {
+          throw new Error('找不到需要摆放位置的主题')
+        }
+
+        // 两个坐标都要有才写入；否则视为清除位置提示（回到自动布局）
+        if (rawX == null || rawY == null) {
+          topic.layoutHints = undefined
+          return topicId
+        }
+
+        topic.layoutHints = {
+          ...(topic.layoutHints ?? {}),
+          offsetX: Number(rawX),
+          offsetY: Number(rawY),
+        }
+
+        return topicId
+      }) as TResult
+    }
     case 'apply_topic_style_to_siblings': {
       const topicId = String(payload.topic_id)
 

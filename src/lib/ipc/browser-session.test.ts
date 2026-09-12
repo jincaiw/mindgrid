@@ -569,6 +569,26 @@ describe('invokeBrowserCommand', () => {
     expect(findTopicById(undoneRoot, source.id)?.styleOverrides).toEqual({ fill: '#22c55e' })
   })
 
+  it('stores a free branch position and clears it on undo', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const branchId = created.document.sheets[0].rootTopic.children[0].id
+
+    const placed = await invokeBrowserCommand<DocumentSessionSnapshot>('set_topic_position', {
+      topic_id: branchId,
+      offset_x: 360,
+      offset_y: -120,
+    })
+    const placedTopic = findTopicById(placed.document.sheets[0].rootTopic, branchId)
+    expect(placedTopic?.layoutHints?.offsetX).toBe(360)
+    expect(placedTopic?.layoutHints?.offsetY).toBe(-120)
+    expect(placed.canUndo).toBe(true)
+
+    const undone = await invokeBrowserCommand<DocumentSessionSnapshot>('undo_document_command')
+    expect(
+      findTopicById(undone.document.sheets[0].rootTopic, branchId)?.layoutHints,
+    ).toBeUndefined()
+  })
+
   it('rejects applying style to siblings on the root topic', async () => {
     const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
     const rootId = created.document.sheets[0].rootTopic.id

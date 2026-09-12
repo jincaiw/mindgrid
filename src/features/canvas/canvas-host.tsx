@@ -258,6 +258,7 @@ function MindMapScene({
   onToggleTopicCollapsed,
   onSelect,
   onMoveTopic,
+  onPlaceTopicFreely,
   onCreateChildTopic,
   onCreateSiblingTopic,
   onDeleteTopics,
@@ -321,6 +322,8 @@ function MindMapScene({
   onToggleTopicCollapsed: (topicId: string) => Promise<void>
   onSelect: (topicId: string) => void
   onMoveTopic: (topicId: string, targetParentId: string) => Promise<void>
+  /** 分支自由布局下把一级分支摆到指定位置（相对中心主题的世界坐标）。 */
+  onPlaceTopicFreely: (topicId: string, offsetX: number, offsetY: number) => Promise<void>
   // 右键上下文菜单动作（由 TreeWorkspace 注入）
   onCreateChildTopic: (topicId: string) => Promise<void>
   onCreateSiblingTopic: (topicId: string) => Promise<void>
@@ -341,6 +344,7 @@ function MindMapScene({
         compact: canvasSettings.compact,
         alignSiblings: canvasSettings.alignSiblings,
         direction: layoutDirection,
+        freeBranch: canvasSettings.freeBranchLayout,
       }),
     [
       rootTopic,
@@ -349,6 +353,7 @@ function MindMapScene({
       canvasSettings.balance,
       canvasSettings.compact,
       canvasSettings.alignSiblings,
+      canvasSettings.freeBranchLayout,
       layoutDirection,
     ],
   )
@@ -390,6 +395,9 @@ function MindMapScene({
   // 小地图显隐：**默认关**，localStorage 持久化。
   // XMind 桌面端默认没有小地图，常驻一块缩略图属于额外视觉噪声；
   // 能力保留，用户需要时从右下角缩放条打开。
+  // 分支自由布局开关（来自画布设置）
+  const freeBranchLayout = canvasSettings.freeBranchLayout
+
   const [minimapVisible, setMinimapVisible] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     try {
@@ -1044,7 +1052,20 @@ function MindMapScene({
         }
       }
 
-      if (interaction.kind === 'drag' && dragPreview?.dropTargetId) {
+      // 分支自由布局：拖一级分支时写"自由位置"而不是改结构。
+      // 判据是「开关打开 + 被拖的是根的直接子节点」，不满足则退回结构移动/吸附。
+      const draggedNode = dragPreview ? nodeMap.get(dragPreview.topicId) : null
+      const isFirstLevelBranch =
+        !!draggedNode && rootTopic.children.some((child) => child.id === draggedNode.id)
+
+      if (interaction.kind === 'drag' && dragPreview && freeBranchLayout && isFirstLevelBranch) {
+        suppressClickRef.current = true
+        await onPlaceTopicFreely(
+          dragPreview.topicId,
+          draggedNode!.x + dragPreview.deltaX,
+          draggedNode!.y + dragPreview.deltaY,
+        )
+      } else if (interaction.kind === 'drag' && dragPreview?.dropTargetId) {
         suppressClickRef.current = true
         await onMoveTopic(dragPreview.topicId, dragPreview.dropTargetId)
       }
@@ -1064,6 +1085,10 @@ function MindMapScene({
       layout.offsetX,
       layout.offsetY,
       onMoveTopic,
+      onPlaceTopicFreely,
+      freeBranchLayout,
+      nodeMap,
+      rootTopic,
       onSelect,
       onSelectedTopicIdsChange,
       selectionBox,
@@ -2074,6 +2099,7 @@ function TreeWorkspace({
     deleteTopic,
     deleteTopics,
     moveTopic,
+    moveTopicFreely,
     moveTopicInParent,
     pasteTopics,
     redo,
@@ -2883,6 +2909,9 @@ function TreeWorkspace({
           onToggleTopicCollapsed={toggleTopicCollapsed}
           onSelect={(topicId) => void selectTopic(topicId)}
           onMoveTopic={(topicId, targetParentId) => moveTopic(topicId, targetParentId)}
+          onPlaceTopicFreely={(topicId, offsetX, offsetY) =>
+            moveTopicFreely(topicId, offsetX, offsetY)
+          }
           onCreateChildTopic={(parentId) => createChildTopic(parentId)}
           onCreateSiblingTopic={(topicId) => createSiblingTopic(topicId)}
           onDeleteTopics={(topicIds) => deleteTopics(topicIds, `删除 ${topicIds.length} 个主题`)}

@@ -149,6 +149,18 @@ export function applyTopicStyleToSiblings(topicId: string) {
   })
 }
 
+export function setTopicPosition(
+  topicId: string,
+  offsetX: number | null,
+  offsetY: number | null,
+) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_position', {
+    topic_id: topicId,
+    offset_x: offsetX,
+    offset_y: offsetY,
+  })
+}
+
 export function selectTopic(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('select_topic', { topic_id: topicId })
 }

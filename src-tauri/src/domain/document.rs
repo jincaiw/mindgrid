@@ -798,6 +798,18 @@ impl DocumentSession {
         })
     }
 
+    /// 分支自由布局：写入主题的自由位置（相对中心主题的世界坐标，None 清除）。
+    pub fn set_topic_position(
+        &mut self,
+        topic_id: &str,
+        offset_x: Option<f64>,
+        offset_y: Option<f64>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("摆放主题位置", |editor| {
+            editor.set_topic_position(topic_id, offset_x, offset_y)
+        })
+    }
+
     pub fn create_child_topic(&mut self, parent_id: &str) -> Result<DocumentSessionSnapshot, String> {
         self.apply_change_set("创建子主题", |editor| {
             editor.create_child_topic(parent_id, "新建子主题")

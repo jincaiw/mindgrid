@@ -36,6 +36,8 @@ export const CANVAS_SETTINGS_KEYS = {
   alignSiblings: 'canvas.alignSiblings',
   /** 布尔：允许双击空白画布创建自由主题。缺省 true。 */
   freeTopic: 'canvas.freeTopic',
+  /** 布尔：分支自由布局（拖拽一级分支可自由摆放，位置记进 layoutHints）。缺省 false。 */
+  freeBranchLayout: 'canvas.freeBranchLayout',
 } as const
 
 // ---- 全局字体 ----
@@ -190,6 +192,8 @@ export interface DocumentCanvasSettings {
   compact: boolean
   alignSiblings: boolean
   freeTopic: boolean
+  /** 分支自由布局：拖拽一级分支可自由摆放（位置存进该分支的 layoutHints）。 */
+  freeBranchLayout: boolean
 }
 
 /** 全默认配置。所有字段缺省即"跟随主题 / XMind 默认行为"。 */
@@ -205,6 +209,7 @@ export const DEFAULT_CANVAS_SETTINGS: DocumentCanvasSettings = {
   compact: false,
   alignSiblings: false,
   freeTopic: true,
+  freeBranchLayout: false,
 }
 
 const FONT_IDS = GLOBAL_FONT_OPTIONS.map((option) => option.id)
@@ -245,6 +250,7 @@ export function resolveCanvasSettings(
     compact: readBool(settings, CANVAS_SETTINGS_KEYS.compact, false),
     alignSiblings: readBool(settings, CANVAS_SETTINGS_KEYS.alignSiblings, false),
     freeTopic: readBool(settings, CANVAS_SETTINGS_KEYS.freeTopic, true),
+    freeBranchLayout: readBool(settings, CANVAS_SETTINGS_KEYS.freeBranchLayout, false),
   }
 }
 

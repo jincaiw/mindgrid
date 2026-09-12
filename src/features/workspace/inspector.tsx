@@ -1691,6 +1691,24 @@ export function Inspector({
               <label className="accordion-card">
                 <input
                   type="checkbox"
+                  checked={canvasSettings.freeBranchLayout}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.freeBranchLayout,
+                      event.target.checked,
+                    )
+                  }
+                  aria-label="分支自由布局"
+                />
+                <span>分支自由布局</span>
+              </label>
+              <p className="panel__muted">
+                打开后拖动一级分支会把它摆到指定位置（记进该分支的位置提示），
+                其子树跟随移动；关闭后拖动仍然是改结构（吸附为子主题）。
+              </p>
+              <label className="accordion-card">
+                <input
+                  type="checkbox"
                   checked={canvasSettings.freeTopic}
                   onChange={(event) =>
                     void session.setDocumentSetting(

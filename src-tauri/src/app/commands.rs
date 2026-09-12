@@ -612,6 +612,24 @@ pub fn apply_topic_style_to_siblings(
 }
 
 #[tauri::command]
+pub fn set_topic_position(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    offset_x: Option<f64>,
+    offset_y: Option<f64>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_position(&topic_id, offset_x, offset_y)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
 pub fn select_topic(
     state: State<'_, AppState>,
     topic_id: String,

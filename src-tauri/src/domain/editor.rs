@@ -113,6 +113,13 @@ pub enum Operation {
         old_branch_style: Option<SheetBranchStyle>,
         new_branch_style: Option<SheetBranchStyle>,
     },
+    /// 主题位置变更（分支自由布局：把一级分支摆到指定位置）。逆操作交换 old/new。
+    SetTopicPosition {
+        sheet_id: String,
+        topic_id: String,
+        old_hints: Option<TopicLayoutHints>,
+        new_hints: Option<TopicLayoutHints>,
+    },
     /// 画布级主题编号配置变更。逆操作交换 old/new。
     SetSheetNumbering {
         sheet_id: String,
@@ -288,6 +295,17 @@ pub fn invert_operation(op: &Operation) -> Operation {
             sheet_id: sheet_id.clone(),
             old_branch_style: new_branch_style.clone(),
             new_branch_style: old_branch_style.clone(),
+        },
+        Operation::SetTopicPosition {
+            sheet_id,
+            topic_id,
+            old_hints,
+            new_hints,
+        } => Operation::SetTopicPosition {
+            sheet_id: sheet_id.clone(),
+            topic_id: topic_id.clone(),
+            old_hints: new_hints.clone(),
+            new_hints: old_hints.clone(),
         },
         Operation::SetSheetNumbering {
             sheet_id,
@@ -484,6 +502,24 @@ fn do_set_sheet_branch_style(
     }
 }
 
+/// 写入主题的位置提示（分支自由布局用），None 表示清除。
+fn do_set_topic_position(
+    document: &mut DocumentSnapshot,
+    sheet_id: &str,
+    topic_id: &str,
+    hints: Option<TopicLayoutHints>,
+) {
+    if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+        if let Some(topic) = find_topic_mut(&mut sheet.root_topic, topic_id) {
+            topic.layout_hints = hints;
+            return;
+        }
+        if let Some(topic) = sheet.floating_topics.iter_mut().find(|t| t.id == topic_id) {
+            topic.layout_hints = hints;
+        }
+    }
+}
+
 fn do_set_sheet_numbering(
     document: &mut DocumentSnapshot,
     sheet_id: &str,
@@ -563,6 +599,14 @@ pub fn apply_operation(document: &mut DocumentSnapshot, op: &Operation) {
         }
         Operation::SetSheetBranchStyle { sheet_id, new_branch_style, .. } => {
             do_set_sheet_branch_style(document, sheet_id, new_branch_style.clone())
+        }
+        Operation::SetTopicPosition {
+            sheet_id,
+            topic_id,
+            new_hints,
+            ..
+        } => {
+            do_set_topic_position(document, sheet_id, topic_id, new_hints.clone())
         }
         Operation::SetSheetNumbering {
             sheet_id,
@@ -1586,6 +1630,54 @@ impl<'a> DocumentEditor<'a> {
         Ok(topic_id.to_string())
     }
 
+    /// 写入主题的自由位置（分支自由布局）。
+    ///
+    /// `offset_x/offset_y` 为**相对中心主题**的世界坐标，与浮动主题同一坐标系；
+    /// 传 None 清除位置提示，回到自动布局。只有一级分支与浮动主题该被自由摆放，
+    /// 但这里不额外设限——限制放在 UI 层，数据层保持通用。
+    pub fn set_topic_position(
+        &mut self,
+        topic_id: &str,
+        offset_x: Option<f64>,
+        offset_y: Option<f64>,
+    ) -> Result<String, String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "摆放位置的")?;
+
+        let old_hints = self
+            .document
+            .find_sheet(&sheet_id)
+            .ok_or_else(|| "找不到需要摆放位置的主题".to_string())
+            .and_then(|sheet| {
+                find_topic(&sheet.root_topic, topic_id)
+                    .or_else(|| sheet.floating_topics.iter().find(|t| t.id == topic_id))
+                    .map(|t| t.layout_hints.clone())
+                    .ok_or_else(|| "找不到需要摆放位置的主题".to_string())
+            })?;
+
+        let new_hints = match (offset_x, offset_y) {
+            (Some(x), Some(y)) => Some(TopicLayoutHints {
+                direction: old_hints.as_ref().and_then(|h| h.direction),
+                offset_x: Some(x),
+                offset_y: Some(y),
+            }),
+            _ => None,
+        };
+
+        if old_hints == new_hints {
+            return Ok(topic_id.to_string());
+        }
+
+        do_set_topic_position(self.document, &sheet_id, topic_id, new_hints.clone());
+        self.record(Operation::SetTopicPosition {
+            sheet_id,
+            topic_id: topic_id.to_string(),
+            old_hints,
+            new_hints,
+        });
+
+        Ok(topic_id.to_string())
+    }
+
     /// 设置/移除主题图片。`image` 为 None 时移除（XMind 图片主题的对标行为）。
     pub fn set_topic_image(&mut self, topic_id: &str, image: Option<TopicImage>) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑图片")?;
@@ -2326,6 +2418,54 @@ mod tests {
         apply_inverse(&mut document, &ops);
         let sheet = document.find_sheet(&sheet_id).unwrap();
         assert!(sheet.branch_style.is_none());
+    }
+
+    #[test]
+    fn set_topic_position_round_trips_and_inverts() {
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let mut editor = DocumentEditor::new(&mut document);
+        let returned = editor.set_topic_position(&child_a, Some(420.0), Some(-180.0)).unwrap();
+        assert_eq!(returned, child_a);
+
+        let ops = editor.into_ops();
+        assert_eq!(ops.len(), 1);
+        let topic = find_topic(&document.root_topic(), &child_a).unwrap();
+        let hints = topic.layout_hints.as_ref().unwrap();
+        assert_eq!(hints.offset_x, Some(420.0));
+        assert_eq!(hints.offset_y, Some(-180.0));
+
+        // 逆操作清除位置提示
+        apply_inverse(&mut document, &ops);
+        assert!(find_topic(&document.root_topic(), &child_a)
+            .unwrap()
+            .layout_hints
+            .is_none());
+    }
+
+    #[test]
+    fn set_topic_position_clears_with_none_and_is_noop_for_same_value() {
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_position(&child_a, Some(100.0), Some(50.0)).unwrap();
+        assert_eq!(editor.into_ops().len(), 1);
+
+        // 相同坐标不产生新操作
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_position(&child_a, Some(100.0), Some(50.0)).unwrap();
+        assert!(editor.into_ops().is_empty());
+
+        // 传 None 清除位置提示
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_topic_position(&child_a, None, None).unwrap();
+        assert_eq!(editor.into_ops().len(), 1);
+        assert!(find_topic(&document.root_topic(), &child_a)
+            .unwrap()
+            .layout_hints
+            .is_none());
     }
 
     #[test]

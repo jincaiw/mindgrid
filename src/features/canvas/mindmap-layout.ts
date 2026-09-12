@@ -36,6 +36,11 @@ export interface MindMapLayoutOptions {
   balance?: boolean
   alignSiblings?: boolean
   /**
+   * 分支自由布局：一级分支若带 layoutHints.offsetX/offsetY，就按存的坐标摆放
+   * （不再走自动纵向分配），其子树整体跟随。对应画布设置 `canvas.freeBranchLayout`。
+   */
+  freeBranch?: boolean
+  /**
    * 分支方向（来自画布 layoutConfig.direction）：
    * - left：根的所有直接子分支放左侧
    * - right：根的所有直接子分支放右侧
@@ -316,6 +321,48 @@ export function computeMindMapLayout(
   rightGroups.forEach(({ topic, centerY }) => {
     placeSubtree(topic, rootNode, 'right', centerY, 1)
   })
+
+  // 分支自由布局：把带位置提示的一级分支（及其子树）整体平移到存的坐标。
+  // 位置提示以**中心主题为原点**（与浮动主题同一坐标系），rootNode 就在 (0,0)，
+  // 所以目标点直接就是 offsets 本身。
+  if (options.freeBranch && !rootTopic.collapsed) {
+    const nodeById = new Map(nodes.map((node) => [node.id, node]))
+
+    for (const branch of rootTopic.children) {
+      const hints = branch.layoutHints
+      if (hints?.offsetX == null || hints.offsetY == null) {
+        continue
+      }
+
+      const pivot = nodeById.get(branch.id)
+      if (!pivot) continue
+
+      const deltaX = hints.offsetX - pivot.x
+      const deltaY = hints.offsetY - pivot.y
+      if (deltaX === 0 && deltaY === 0) continue
+
+      const subtreeIds = new Set<string>()
+      const collect = (topic: TopicSnapshot) => {
+        subtreeIds.add(topic.id)
+        for (const child of topic.children) collect(child)
+      }
+      collect(branch)
+
+      for (const node of nodes) {
+        if (subtreeIds.has(node.id)) {
+          node.x += deltaX
+          node.y += deltaY
+        }
+      }
+      for (const edge of edges) {
+        if (!subtreeIds.has(edge.childId)) continue
+        edge.start = { x: edge.start.x + deltaX, y: edge.start.y + deltaY }
+        edge.end = { x: edge.end.x + deltaX, y: edge.end.y + deltaY }
+        edge.control1 = { x: edge.control1.x + deltaX, y: edge.control1.y + deltaY }
+        edge.control2 = { x: edge.control2.x + deltaX, y: edge.control2.y + deltaY }
+      }
+    }
+  }
 
   const minX = Math.min(...nodes.map((node) => node.x - node.width / 2))
   const maxX = Math.max(...nodes.map((node) => node.x + node.width / 2))

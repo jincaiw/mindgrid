@@ -61,6 +61,7 @@ import {
   setTopicNotes,
   setTopicStyleOverrides,
   applyTopicStyleToSiblings,
+  setTopicPosition,
   setTopicStyleRef,
   setTopicTask,
   toggleTopicCollapsed,
@@ -162,6 +163,7 @@ export interface DocumentSession extends DocumentSessionState {
   setTopicTask: (topicId: string, task: TopicTask | null) => Promise<void>
   setTopicStyleRef: (topicId: string, styleRef: string | null) => Promise<void>
   applyTopicStyleToSiblings: (topicId: string) => Promise<void>
+  moveTopicFreely: (topicId: string, offsetX: number, offsetY: number) => Promise<void>
   setTopicStyleOverrides: (
     topicId: string,
     styleOverrides: TopicStyleOverrides | null,
@@ -407,6 +409,7 @@ async function buildExportScene(document: DocumentSnapshot) {
     compact: canvasSettings.compact,
     alignSiblings: canvasSettings.alignSiblings,
     direction: sheet.layoutConfig?.direction,
+    freeBranch: canvasSettings.freeBranchLayout,
   })
   const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
 
@@ -1200,6 +1203,16 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  /** 分支自由布局：把主题摆到指定位置（相对中心主题的世界坐标）。 */
+  const moveTopicFreely = useCallback(
+    async (topicId: string, offsetX: number, offsetY: number) => {
+      await runCommand('摆放主题位置', () =>
+        setTopicPosition(topicId, offsetX, offsetY),
+      )
+    },
+    [runCommand],
+  )
+
   const selectActiveTopic = useCallback(
     async (topicId: string) => {
       await runCommand('切换选中主题', () => selectTopic(topicId))
@@ -1595,6 +1608,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicStyleRef: updateTopicStyleRef,
       setTopicStyleOverrides: updateTopicStyleOverrides,
       applyTopicStyleToSiblings: applyTopicStyleToSiblingsAction,
+      moveTopicFreely,
       setDocumentTheme: updateDocumentTheme,
       setDocumentSetting: updateDocumentSetting,
       createRelationship: createDocumentRelationship,
@@ -1637,6 +1651,7 @@ export function useDocumentSession(): DocumentSession {
       updateTopicStyleRef,
       updateTopicStyleOverrides,
       applyTopicStyleToSiblingsAction,
+      moveTopicFreely,
       updateDocumentTheme,
       updateDocumentSetting,
       createDocumentRelationship,
