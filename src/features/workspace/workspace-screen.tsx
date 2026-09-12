@@ -212,6 +212,19 @@ export function WorkspaceScreen({
     setZoomRequest((current) => ({ zoom: 1, nonce: (current?.nonce ?? 0) + 1 }))
   }, [])
 
+  // 状态栏上下箭头：按当前比例步进（XMind 每档约 1.2 倍），仍走绝对缩放通道
+  const handleZoomStep = useCallback(
+    (direction: 1 | -1) => {
+      setZoomRequest((current) => {
+        const base = zoom ?? 1
+        const next = direction === 1 ? base * 1.2 : base / 1.2
+        const clamped = Math.min(8, Math.max(0.1, next))
+        return { zoom: clamped, nonce: (current?.nonce ?? 0) + 1 }
+      })
+    },
+    [zoom],
+  )
+
   // 浏览器环境下没有原生菜单栏，文件动作也不可用（与 AppShell 的快捷键同款约束）。
   // 菜单栏命令在浏览器里不会被触发，但这些动作也可能由其它入口走到，故统一拦一层。
   const desktopFileActionsEnabled = hasTauriRuntime()
@@ -527,6 +540,7 @@ export function WorkspaceScreen({
         selectedTopicCount={selectedTopicIds.length}
         zoom={zoom ?? undefined}
         onResetZoom={handleResetZoom}
+        onZoomStep={handleZoomStep}
         isOutlinerMode={isOutlinerMode}
         onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
         sheetTabs={

@@ -1315,45 +1315,43 @@ button {
   background: var(--color-surface);
 }
 
+/* XMind 式分区：上方发丝分隔线 + 一行中文小灰标题（无大写英文 eyebrow、无折叠箭头） */
 .panel__section + .panel__section {
-  margin-top: var(--space-4);
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border-subtle, rgba(15, 23, 42, 0.07));
 }
 
-/* XMind 格式面板式折叠分区标题 */
-.panel__section-header {
-  display: flex;
+.status-bar__zoom {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 2px 0 8px;
+  gap: 1px;
+}
+
+.status-bar__zoom-stepper {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 0.8;
+}
+
+.status-bar__zoom-arrow {
   border: none;
   background: transparent;
+  color: var(--color-text-muted);
+  font-size: 8px;
+  line-height: 1;
+  padding: 0 2px;
   cursor: pointer;
-  text-align: left;
-  border-radius: 6px;
 }
 
-.panel__section-header:hover .panel__title {
-  color: var(--color-accent);
+.status-bar__zoom-arrow:hover {
+  color: var(--color-text-primary);
 }
 
-.panel__section-chevron {
-  color: var(--color-text-secondary);
-  font-size: 10px;
-  width: 12px;
-  flex-shrink: 0;
-}
-
-.panel__section--collapsed {
-  padding-bottom: 6px;
-}
-
-.panel__eyebrow {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+.panel__section-label {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--color-text-secondary);
 }
 
@@ -1993,18 +1991,40 @@ button {
 }
 
 /* ---- 分支色板预设（画布 Tab）---- */
+/*
+ * 面板内的勾选行：XMind 是「紧凑的一行复选框 + 文字」，没有圆角卡片外壳。
+ * 只作用于面板内，避免影响别处的 .accordion-card（修复提示等仍保留卡片样式）。
+ */
+.panel__section .accordion-card {
+  padding: 5px 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  justify-content: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  align-items: center;
+}
+
+.panel__section .accordion-card input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent-strong, #2f6df6);
+}
+
 .panel__palette-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 8px;
+  /* XMind 的调色板是 3 列小卡：卡片更小、一行看得下 3 套方案，便于横向比较 */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
 }
 
 .panel__palette-swatch {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 6px;
-  padding: 8px 6px 6px;
+  gap: 4px;
+  padding: 5px 4px 4px;
   border: 2px solid transparent;
   border-radius: 10px;
   background: var(--color-surface-subtle);
@@ -2905,7 +2925,7 @@ button {
 
 /* 深度分级：根节点 */
 .mindmap-node--depth-0 {
-  padding: 10px 16px;
+  padding: 20px 22px;
   border-radius: 12px;
   border-color: transparent;
   /* 只有中心主题投影：XMind 的分支节点是纯色块，逐个投影会让整幅图显脏。
@@ -2923,19 +2943,19 @@ button {
 
 /* 深度分级：一级分支 */
 .mindmap-node--depth-1 {
-  padding: 8px 12px;
+  padding: 11px 14px;
   border-radius: 8px;
 }
 
 /* 深度分级：二级 */
 .mindmap-node--depth-2 {
-  padding: 6px 10px;
+  padding: 9px 12px;
   border-radius: 6px;
 }
 
 /* 深度分级：叶子（3+） */
 .mindmap-node--depth-3 {
-  padding: 4px 8px;
+  padding: 9px 10px;
   border-radius: 6px;
   border-color: transparent;
   background: transparent;

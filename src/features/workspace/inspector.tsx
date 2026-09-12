@@ -48,34 +48,23 @@ import {
 } from '../../lib/document/canvas-settings'
 
 /**
- * XMind 格式面板式分区：可折叠（默认展开），标题行点击切换。
- * 与 panel__section 视觉一致，增加 chevron 与折叠行为。
+ * 右侧格式面板分区标题。
+ *
+ * 对齐 XMind：**只有一行中文小灰标题 + 上方一条发丝分隔线**——没有大写英文 eyebrow、
+ * 没有折叠 chevron、没有可点击的标题行。此前那套「EYEBROW + 中文标题 + 折叠箭头」
+ * 是本项目自创的样式，在实机对照里一眼就能看出和 XMind 不是一家。
  */
 function PanelSection({
-  eyebrow,
   title,
   children,
 }: {
-  eyebrow: string
   title: string
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(true)
   return (
-    <div className={`panel__section${open ? ' panel__section--open' : ' panel__section--collapsed'}`}>
-      <button
-        type="button"
-        className="panel__section-header"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="panel__section-chevron" aria-hidden="true">
-          {open ? '▾' : '▸'}
-        </span>
-        <span className="panel__eyebrow">{eyebrow}</span>
-        <span className="panel__title">{title}</span>
-      </button>
-      {open ? children : null}
+    <div className="panel__section">
+      <h3 className="panel__section-label">{title}</h3>
+      {children}
     </div>
   )
 }
@@ -731,7 +720,7 @@ export function Inspector({
             aria-labelledby="inspector-tab-style"
             className="panel__tab-panel"
           >
-            <PanelSection eyebrow="Topic" title="主题属性">
+            <PanelSection title="主题属性">
               <div className="accordion-card">
                 <span>{hasMultipleSelectedTopics ? '当前选择' : '当前主题'}</span>
                 <span>
@@ -747,7 +736,7 @@ export function Inspector({
             </PanelSection>
 
             {activeTopic && !hasMultipleSelectedTopics ? (
-              <PanelSection eyebrow="Rich Content" title="富内容编辑">
+              <PanelSection title="富内容编辑">
                 <p className="panel__muted">
                   编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
                 </p>
@@ -1143,7 +1132,7 @@ export function Inspector({
             )}
 
             {activeTopic && !hasMultipleSelectedTopics ? (
-              <PanelSection eyebrow="Image" title="主题图片">
+              <PanelSection title="主题图片">
                 <p className="panel__muted">
                   为选中主题插入一张本地图片，图片显示在节点标题上方并参与节点尺寸计算；插入与移除均可撤销。
                 </p>
@@ -1209,7 +1198,7 @@ export function Inspector({
               </PanelSection>
             ) : null}
 
-            <PanelSection eyebrow="Branch Style" title="分支样式">
+            <PanelSection title="分支样式">
               <p className="panel__muted">
                 调整当前画布所有连线的形状、粗细与分支配色（写入画布级覆盖，节点级颜色优先）。
               </p>
@@ -1338,7 +1327,7 @@ export function Inspector({
               ) : null}
             </PanelSection>
 
-            <PanelSection eyebrow="Direction" title="分支方向">
+            <PanelSection title="分支方向">
               <div className="panel__field">
                 <span>一级分支布局</span>
                 <div className="panel__segmented" role="group" aria-label="分支方向">
@@ -1367,7 +1356,7 @@ export function Inspector({
               </p>
             </PanelSection>
 
-            <PanelSection eyebrow="Numbering" title="主题编号">
+            <PanelSection title="主题编号">
               <div className="panel__field">
                 <span>启用编号</span>
                 <label className="panel__switch">
@@ -1444,7 +1433,7 @@ export function Inspector({
             aria-labelledby="inspector-tab-pitch"
             className="panel__tab-panel"
           >
-            <PanelSection eyebrow="Pitch" title="演说放映">
+            <PanelSection title="演说放映">
               <p className="panel__muted">
                 按当前画布的大纲顺序逐主题全屏放映。演讲词写在主题的备注里，放映时不会显示。
               </p>
@@ -1469,7 +1458,7 @@ export function Inspector({
               </ul>
             </PanelSection>
 
-            <PanelSection eyebrow="Pitch" title="提案简报">
+            <PanelSection title="提案简报">
               <p className="panel__muted">
                 按一级分支分幕放映：一幕 = 中心主题 + 一个分支的完整子树，
                 开场另有一张总览幕。可比逐页放映更紧凑地讲完一份提案。
@@ -1525,7 +1514,7 @@ export function Inspector({
             aria-labelledby="inspector-tab-canvas"
             className="panel__tab-panel"
           >
-            <PanelSection eyebrow="Structure" title="骨架">
+            <PanelSection title="骨架">
               <StructurePicker
                 value={activeSheet?.chartType ?? 'mindmap'}
                 onChange={(chartType) => {
@@ -1537,7 +1526,7 @@ export function Inspector({
               />
             </PanelSection>
 
-            <PanelSection eyebrow="Palette" title="配色方案">
+            <PanelSection title="配色方案">
               <div className="panel__field">
                 <span>分支色板</span>
                 <SwatchPicker
@@ -1600,25 +1589,10 @@ export function Inspector({
                 </div>
               </div>
 
-              <label className="accordion-card">
-                <input
-                  type="checkbox"
-                  checked={canvasSettings.rainbowBranch !== false}
-                  onChange={(event) =>
-                    void session.setDocumentSetting(
-                      CANVAS_SETTINGS_KEYS.rainbowBranch,
-                      event.target.checked,
-                    )
-                  }
-                  aria-label="彩虹分支"
-                />
-                <span>彩虹分支</span>
-              </label>
             </PanelSection>
 
-            <PanelSection eyebrow="Appearance" title="画布外观">
+            <PanelSection title="背景颜色">
               <div className="panel__field">
-                <span>背景颜色</span>
                 <SwatchPicker
                   label="背景颜色"
                   value={canvasSettings.background}
@@ -1634,8 +1608,10 @@ export function Inspector({
                   }
                 />
               </div>
+            </PanelSection>
+
+            <PanelSection title="全局字体">
               <label className="panel__field">
-                <span>全局字体</span>
                 <select
                   value={canvasSettings.fontFamily}
                   onChange={(event) =>
@@ -1652,8 +1628,10 @@ export function Inspector({
                   ))}
                 </select>
               </label>
+            </PanelSection>
+
+            <PanelSection title="分支线粗细">
               <label className="panel__field">
-                <span>分支线粗细</span>
                 <select
                   value={canvasSettings.branchThickness}
                   onChange={(event) =>
@@ -1670,27 +1648,26 @@ export function Inspector({
                   ))}
                 </select>
               </label>
-              <label className="panel__field">
-                <span>中日韩字体</span>
-                <select
-                  value={canvasSettings.cjkFont}
+            </PanelSection>
+
+            <PanelSection title="彩虹分支">
+              <label className="accordion-card">
+                <input
+                  type="checkbox"
+                  checked={canvasSettings.rainbowBranch !== false}
                   onChange={(event) =>
                     void session.setDocumentSetting(
-                      CANVAS_SETTINGS_KEYS.cjkFont,
-                      event.target.value,
+                      CANVAS_SETTINGS_KEYS.rainbowBranch,
+                      event.target.checked,
                     )
                   }
-                >
-                  {CJK_FONT_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  aria-label="彩虹分支"
+                />
+                <span>按分支配色</span>
               </label>
             </PanelSection>
 
-            <PanelSection eyebrow="Layout" title="导图样式">
+            <PanelSection title="导图样式">
               {[
                 [CANVAS_SETTINGS_KEYS.balance, '自动平衡布局'],
                 [CANVAS_SETTINGS_KEYS.compact, '紧凑型布局'],
@@ -1710,7 +1687,7 @@ export function Inspector({
               ))}
             </PanelSection>
 
-            <PanelSection eyebrow="Advanced" title="高级布局">
+            <PanelSection title="高级布局">
               <label className="accordion-card">
                 <input
                   type="checkbox"
@@ -1727,7 +1704,27 @@ export function Inspector({
               </label>
             </PanelSection>
 
-            <PanelSection eyebrow="Move" title="跨画布移动">
+            <PanelSection title="中日韩字体">
+              <label className="panel__field">
+                <select
+                  value={canvasSettings.cjkFont}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.cjkFont,
+                      event.target.value,
+                    )
+                  }
+                >
+                  {CJK_FONT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </PanelSection>
+
+            <PanelSection title="跨画布移动">
               <p className="panel__muted">
                 把当前主题分支移动或复制到另一张画布，并可指定目标父主题；完成后会自动切换过去。
               </p>
@@ -1857,7 +1854,7 @@ export function Inspector({
               </button>
             </PanelSection>
 
-            <PanelSection eyebrow="Canvas" title="画布信息">
+            <PanelSection title="画布信息">
               <div className="accordion-card">
                 <span>当前画布</span>
                 <span>{activeSheet?.title ?? '未命名画布'}</span>
@@ -1872,7 +1869,7 @@ export function Inspector({
               </div>
             </PanelSection>
 
-            <PanelSection eyebrow="Canvas Settings" title="画布设置">
+            <PanelSection title="画布设置">
               <p className="panel__muted">视图偏好随文档保存，不影响画布内容。</p>
               <label className="accordion-card">
                 <input
@@ -1888,7 +1885,7 @@ export function Inspector({
               </label>
             </PanelSection>
 
-            <PanelSection eyebrow="Theme" title="文档主题">
+            <PanelSection title="文档主题">
               <p className="panel__muted">
                 一键切换整篇文档的配色方案。节点级颜色覆盖会优先生效。
               </p>
@@ -1929,7 +1926,7 @@ export function Inspector({
               ) : null}
             </PanelSection>
 
-            <PanelSection eyebrow="Relationships" title="关系线">
+            <PanelSection title="关系线">
               <p className="panel__muted">
                 在任意两个主题之间建立非父子连接，用于表达跨分支或跨画布的关联。关系线保存在文档级别。
               </p>
@@ -2012,7 +2009,7 @@ export function Inspector({
               </button>
             </PanelSection>
 
-            <PanelSection eyebrow="Grouping" title="边界与概要">
+            <PanelSection title="边界与概要">
               <p className="panel__muted">
                 为当前画布中的若干主题添加视觉分组（边界）或归纳说明（概要）。先在画布上选中至少 2 个主题，再创建。
               </p>

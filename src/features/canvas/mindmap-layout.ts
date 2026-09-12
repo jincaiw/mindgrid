@@ -53,8 +53,11 @@ export interface MindMapLayoutResult {
   offsetY: number
 }
 
-const ROOT_HORIZONTAL_GAP = 160
-const DEPTH_HORIZONTAL_GAP = 120
+// 中心→一级、以及层间的水平间距（节点中心距）。
+// 节点尺寸按 XMind 实机量出来的值调大后，原来 160/120 会让分支贴到中心主题上，
+// 这里一并放宽，保持 XMind 那种疏朗的分支间距。
+const ROOT_HORIZONTAL_GAP = 210
+const DEPTH_HORIZONTAL_GAP = 150
 const VERTICAL_GAP = 18
 const LEAF_BLOCK = 80
 const SCENE_PADDING_X = 220
@@ -62,12 +65,33 @@ const SCENE_PADDING_Y = 140
 // 主题图片尺寸常量统一来自 runtime/topic-image-constants.ts：
 // 布局估算、DOM 样式、三端导出必须引用同一组值，否则图片位置会漂移。
 
+/**
+ * 估算节点尺寸。
+ *
+ * 尺寸口径与 `style-constants` 的字号/内边距一致，且与 DOM 的 CSS padding 对齐：
+ *   height = 上下内边距 × 2 + 行数 × 行高
+ *   width  = clamp(文本宽 + 左右内边距 × 2, 最小宽, 最大宽)
+ *
+ * 这套数值是按 XMind 实机截图量出来的（中心主题约 168×72、一级分支约 112×41），
+ * 早期版本只有"上方偏移"没有下方内边距，节点显得又扁又宽。
+ */
+function nodeMetrics(depth: number) {
+  if (depth === 0) {
+    return { fontSize: 20, lineHeight: 27, padX: 22, padY: 20, minW: 160, maxW: 320, charW: 19 }
+  }
+  if (depth === 1) {
+    return { fontSize: 14, lineHeight: 19, padX: 14, padY: 11, minW: 100, maxW: 250, charW: 13 }
+  }
+  return { fontSize: 13, lineHeight: 18, padX: 12, padY: 9, minW: 90, maxW: 220, charW: 12 }
+}
+
 export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
-  const widthBase = depth === 0 ? 180 : 140
-  const width = Math.min(widthBase + textLength * 12, depth === 0 ? 300 : 250)
-  const lineCount = Math.max(1, Math.ceil(textLength / (depth === 0 ? 14 : 16)))
-  const height = 44 + (lineCount - 1) * 18
+  const m = nodeMetrics(depth)
+  const width = Math.min(m.maxW, Math.max(m.minW, Math.round(textLength * m.charW + m.padX * 2)))
+  const usable = Math.max(1, width - m.padX * 2)
+  const lineCount = Math.max(1, Math.ceil((textLength * m.charW) / usable))
+  const height = m.padY * 2 + lineCount * m.lineHeight
 
   if (topic.image) {
     return {

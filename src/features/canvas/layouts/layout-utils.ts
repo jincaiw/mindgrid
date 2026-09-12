@@ -14,13 +14,28 @@ export interface SubtreeMetrics {
   leafCount: number
 }
 
-/** 估算节点尺寸（与 mindmap-layout 一致，保证视觉统一）。 */
+/**
+ * 估算节点尺寸。
+ *
+ * **必须与 `../mindmap-layout` 的同名实现保持完全一致**——两处各写一份是历史遗留，
+ * 一旦漂移，思维导图与其它骨架的节点尺寸就会不一样。数值口径见那边的注释。
+ */
 export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
-  const widthBase = depth === 0 ? 180 : 140
-  const width = Math.min(widthBase + textLength * 12, depth === 0 ? 300 : 250)
-  const lineCount = Math.max(1, Math.ceil(textLength / (depth === 0 ? 14 : 16)))
-  const height = 44 + (lineCount - 1) * 18
+  const metrics =
+    depth === 0
+      ? { lineHeight: 27, padX: 22, padY: 20, minW: 160, maxW: 320, charW: 19 }
+      : depth === 1
+        ? { lineHeight: 19, padX: 14, padY: 11, minW: 100, maxW: 250, charW: 13 }
+        : { lineHeight: 18, padX: 12, padY: 9, minW: 90, maxW: 220, charW: 12 }
+
+  const width = Math.min(
+    metrics.maxW,
+    Math.max(metrics.minW, Math.round(textLength * metrics.charW + metrics.padX * 2)),
+  )
+  const usable = Math.max(1, width - metrics.padX * 2)
+  const lineCount = Math.max(1, Math.ceil((textLength * metrics.charW) / usable))
+  const height = metrics.padY * 2 + lineCount * metrics.lineHeight
 
   return { width, height }
 }

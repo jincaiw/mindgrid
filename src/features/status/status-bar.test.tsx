@@ -185,6 +185,25 @@ it('switches to "已选 n/总数" for a multi-selection', () => {
   expect(screen.getByText('已选 3/1')).toBeInTheDocument()
 })
 
+it('reports zoom steps from the percentage arrows', () => {
+  const onZoomStep = vi.fn()
+
+  renderWithApp(
+    <StatusBar
+      session={sessionStub}
+      zoom={1}
+      onResetZoom={vi.fn()}
+      onZoomStep={onZoomStep}
+    />,
+  )
+
+  fireEvent.click(screen.getByRole('button', { name: '放大' }))
+  expect(onZoomStep).toHaveBeenLastCalledWith(1)
+
+  fireEvent.click(screen.getByRole('button', { name: '缩小' }))
+  expect(onZoomStep).toHaveBeenLastCalledWith(-1)
+})
+
 it('numbers the selected topic by visible outline order', () => {
   // 根主题 3 个子节点，选中第 2 个 → 主题: 3/4（根占第 1 位）
   const session: DocumentSession = {

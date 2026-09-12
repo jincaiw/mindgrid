@@ -10,6 +10,8 @@ interface StatusBarProps {
   selectedTopicCount?: number
   /** 当前画布缩放比例（1 = 100%），由 WorkspaceScreen 提升的相机状态提供 */
   zoom?: number
+  /** 缩放步进：+1 放大一档、-1 缩小一档（XMind 状态条百分比右侧的上下箭头） */
+  onZoomStep?: (direction: 1 | -1) => void
   /** 点击缩放比例复位到 100% */
   onResetZoom?: () => void
   isOutlinerMode?: boolean
@@ -27,6 +29,7 @@ export function StatusBar({
   selectedTopicCount,
   zoom,
   onResetZoom,
+  onZoomStep,
   isOutlinerMode = false,
   onToggleOutliner,
   sheetTabs,
@@ -78,14 +81,39 @@ export function StatusBar({
         </span>
 
         {onResetZoom ? (
-          <button
-            type="button"
-            className="status-bar__button"
-            onClick={onResetZoom}
-            title="点击复位到 100%"
-          >
-            {Math.round((zoom ?? 1) * 100)}%
-          </button>
+          <span className="status-bar__zoom">
+            <button
+              type="button"
+              className="status-bar__button"
+              onClick={onResetZoom}
+              title="点击复位到 100%"
+            >
+              {Math.round((zoom ?? 1) * 100)}%
+            </button>
+            {onZoomStep ? (
+              // XMind 是在百分比右侧放一对极小的上下箭头，而不是独立按钮
+              <span className="status-bar__zoom-stepper">
+                <button
+                  type="button"
+                  className="status-bar__zoom-arrow"
+                  aria-label="放大"
+                  title="放大"
+                  onClick={() => onZoomStep(1)}
+                >
+                  ⌃
+                </button>
+                <button
+                  type="button"
+                  className="status-bar__zoom-arrow"
+                  aria-label="缩小"
+                  title="缩小"
+                  onClick={() => onZoomStep(-1)}
+                >
+                  ⌄
+                </button>
+              </span>
+            ) : null}
+          </span>
         ) : null}
 
         {onToggleOutliner ? (

@@ -160,10 +160,17 @@ export function getTitleFontWeight(depth: number): number {
  * Canvas Renderer 与 SVG Renderer 必须共用此函数。历史上 SVG 端硬编码了
  * 20/14/12 的旧值，导致 SVG/PDF 导出与屏幕显示不一致，因此统一收敛到这里。
  */
+/**
+ * 节点内边距（px）。
+ *
+ * 与 `mindmap-layout.estimateNodeSize` 的 padX/padY 必须一致：
+ * 高度口径是 `padY × 2 + 行高`，DOM 的 CSS padding 也照这个来，
+ * 否则屏幕上的节点会比导出图更高或更矮。
+ */
 export function getNodePadding(depth: number): number {
-  if (depth === 0) return 16
-  if (depth === 1) return 12
-  return 10
+  if (depth === 0) return 22
+  if (depth === 1) return 14
+  return 12
 }
 
 // ---- 分支色板（8 色循环，参考 XMind）----
