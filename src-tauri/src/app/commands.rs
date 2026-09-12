@@ -1,7 +1,8 @@
 use crate::app::assets::AssetStore;
 use crate::domain::document::{
     DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
-    SheetBranchStyle, TopicImage, TopicLink, TopicMarker, TopicStyleOverrides, TopicTask,
+    SheetBranchStyle, SheetNumbering, TopicImage, TopicLink, TopicMarker, TopicStyleOverrides,
+    TopicTask,
 };
 use crate::AppState;
 use std::fs;
@@ -556,6 +557,40 @@ pub fn set_sheet_branch_style(
         .map_err(|_| "unable to acquire document state".to_string())?;
 
     guard.set_sheet_branch_style(&sheet_id, branch_style)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
+pub fn set_sheet_numbering(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sheet_id: String,
+    numbering: Option<SheetNumbering>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_sheet_numbering(&sheet_id, numbering)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
+pub fn set_sheet_layout_direction(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sheet_id: String,
+    direction: String,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_sheet_layout_direction(&sheet_id, &direction)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }

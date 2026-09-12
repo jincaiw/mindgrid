@@ -17,10 +17,19 @@ import { computeNodesBounds, type CameraProjection, type Scene, type Viewport } 
 export interface PngExportOptions {
   /** 缩放倍数（2 = 2x 高 DPI，3 = 3x）。默认 2。 */
   scale?: number
-  /** 是否绘制白色背景（默认 false，透明 PNG）。 */
+  /** 是否绘制背景（默认 false，透明 PNG）。绘制时用主题背景色，非固定白色。 */
   drawBackground?: boolean
   /** 画布外边距（世界坐标，默认 32）。 */
   padding?: number
+  /**
+   * 文档主题 ID。**导出必须传**：不传会回退到默认主题的背景色，
+   * 暗色主题文档导出成浅底。
+   */
+  themeId?: string
+  /** 画布级背景色覆盖（`canvas.background` 设置）。空值 = 跟随主题。 */
+  background?: string | null
+  /** 画布级字体栈；未提供时使用默认字体栈。 */
+  fontFamily?: string
 }
 
 const DEFAULT_SCALE = 2
@@ -37,7 +46,14 @@ export async function renderSceneToPngBytes(
   scene: Scene,
   options: PngExportOptions = {},
 ): Promise<Uint8Array> {
-  const { scale = DEFAULT_SCALE, drawBackground = false, padding = DEFAULT_PADDING } = options
+  const {
+    scale = DEFAULT_SCALE,
+    drawBackground = false,
+    padding = DEFAULT_PADDING,
+    themeId,
+    background,
+    fontFamily,
+  } = options
 
   // 过滤掉 overlay 节点（与 SVG 导出一致）
   const exportableNodes = scene.nodes.filter(
@@ -83,6 +99,9 @@ export async function renderSceneToPngBytes(
     drawOverlays: false,
     drawDecorations: true,
     topicImages,
+    themeId,
+    background,
+    fontFamily,
   }
 
   renderScene(ctx, scene, viewport, camera, scale, renderOptions)

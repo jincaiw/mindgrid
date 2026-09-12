@@ -58,12 +58,22 @@ export function resolveTopicStyle(
   }
 }
 
-/** 解析主题的画布背景色（对齐 XMind：纯色背景，无网格）。 */
+/**
+ * 解析画布背景色。
+ *
+ * @param themeId 文档主题 ID（undefined 回退到默认主题）
+ * @param override 画布级背景覆盖（`canvas.background` 设置）。空值 = 跟随主题。
+ *
+ * 屏幕 DOM / PNG / SVG 都必须走这里：历史上屏幕用的是 UI 令牌
+ * `--color-background-canvas`、导出用主题背景，切到暗色主题后
+ * 「屏幕是浅的、导出是深的」。三端同源于此后不再分叉。
+ */
 export function resolveThemeBackground(
   themeId: string | undefined,
+  override?: string | null,
 ): Pick<ThemePalette, 'background'> {
   const theme = getTheme(themeId)
-  return { background: theme.background }
+  return { background: override && override.length > 0 ? override : theme.background }
 }
 
 /** 解析主题的连线颜色。 */

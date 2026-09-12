@@ -10,9 +10,14 @@
  */
 
 import type { MindMapEdgeLayout, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
-import type { Boundary, Relationship, SheetBranchStyle, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
+import type { Boundary, EdgeEndpoint, Relationship, SheetBranchStyle, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
 import { resolveTopicStyle } from './style-resolver'
 import { getTheme } from '../../../lib/document/themes'
+import {
+  branchThicknessMultiplier,
+  resolveBranchPalette,
+  type DocumentCanvasSettings,
+} from '../../../lib/document/canvas-settings'
 import { BRANCH_COLORS, getEdgeLineWidth } from './style-constants'
 import {
   expandRect,
@@ -84,6 +89,19 @@ export interface BuildSceneOptions {
   themeId?: string
   /** 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。 */
   branchStyle?: SheetBranchStyle
+  /**
+   * 文档级画布设置（彩虹分支开关 / 色板 / 粗细）。
+   *
+   * 由调用方从 `document.settings` 解析后传入——Scene 层不认识 settings 的
+   * 存储格式，只认解析结果。屏幕与导出必须传同一份，否则两端分支色不同。
+   */
+  canvasSettings?: DocumentCanvasSettings
+  /**
+   * 主题编号映射（topicId → 形如 "1.2"）。
+   * 由调用方用 `buildTopicNumbers()` 从画布 numbering 配置算出并传入——
+   * Scene 层不认识编号配置，只认派生结果，屏幕与导出必须传同一份。
+   */
+  numberMap?: Map<string, string>
   /** 是否启用视口剔除（虚拟化）。测试或全量导出时可关闭。 */
   enableCulling?: boolean
   /**
@@ -119,22 +137,43 @@ export function buildScene(options: BuildSceneOptions): Scene {
 
   // 画布级分支样式解析：edgeType / thickness / colorPalette
   const branchStyle = options.branchStyle
+  const canvasSettings = options.canvasSettings
   const resolvedEdgeType: 'curve' | 'straight' | 'elbow' = branchStyle?.edgeType ?? 'curve'
-  const thicknessMultiplier = branchStyle?.thickness ?? 1
-  // 分支色优先级：画布级自定义色板 > 主题自带分支色板（缤纷主题）> 默认 8 色循环。
-  // 主题色板与主题节点的填充色同源，保证连线与所在分支同色。
-  const customPalette = branchStyle?.colorPalette
-  const themeBranchPalette = getTheme(options.themeId).branchPalette
-  const palette =
-    customPalette && customPalette.length > 0
-      ? customPalette
-      : themeBranchPalette && themeBranchPalette.length > 0
-        ? themeBranchPalette
-        : BRANCH_COLORS
+  const resolvedEndpoint: EdgeEndpoint = branchStyle?.endpoint ?? 'none'
+  // 粗细：画布页下拉（离散档位）与样式页滑杆（连续值）写的是同一个字段。
+  // 滑杆值为空时取画布设置的档位，二者不叠加——否则两处控件会互相放大。
+  const thicknessMultiplier =
+    branchStyle?.thickness ??
+    (canvasSettings ? branchThicknessMultiplier(canvasSettings.branchThickness) : 1)
+  const theme = getTheme(options.themeId)
 
-  /** 按分支索引取色（支持自定义色板覆盖默认 8 色循环）。 */
+  /**
+   * 分支色板解析，优先级从高到低：
+   *   1. 彩虹分支显式关闭 → 无色板（单色，用主题连线色）
+   *   2. 画布级自定义色板（样式页选择 / 既有文档数据）
+   *   3. 彩虹分支显式开启 → 画布设置里的预设色板
+   *   4. 主题自带色板（缤纷主题）
+   *   5. 默认 8 色循环
+   *
+   * 第 1 条必须排在最前：否则关掉彩虹分支后，缤纷主题的 branchPalette
+   * 会接手，用户取消了却仍是彩色的。
+   */
+  const customPalette = branchStyle?.colorPalette
+  const themeBranchPalette = theme.branchPalette
+  const palette =
+    canvasSettings?.rainbowBranch === false
+      ? null
+      : customPalette && customPalette.length > 0
+        ? customPalette
+        : canvasSettings?.rainbowBranch === true
+          ? resolveBranchPalette(canvasSettings.branchPalette)
+          : themeBranchPalette && themeBranchPalette.length > 0
+            ? themeBranchPalette
+            : BRANCH_COLORS
+
+  /** 按分支索引取色。无色板（关闭彩虹分支）时统一用主题连线色。 */
   const resolveBranchColor = (branchIndex: number): string =>
-    palette[branchIndex % palette.length]
+    palette === null ? theme.edge : palette[branchIndex % palette.length]
 
   const nodes: RenderNode[] = []
 
@@ -149,7 +188,13 @@ export function buildScene(options: BuildSceneOptions): Scene {
   }
 
   // 边（在节点之前，因为 z-order 更低）
-  for (const edge of layout.edges) {
+  //
+  // 布局产出的边几何是**根主题相对坐标**（未含 offset），而节点在下面会被
+  // `layoutNodeToBounds` 加上 offset。二者必须一起平移，否则连线会整体偏出
+  // 半个画布——屏幕、PNG、PDF 三端都会错位（三端共用本函数，所以 parity 对比
+  // 也发现不了，只能靠「边端点必须落在父/子节点边界上」这类不变量测试守）。
+  for (const rawEdge of layout.edges) {
+    const edge = offsetEdge(rawEdge, layout.offsetX, layout.offsetY)
     const edgeBounds = computeEdgeBounds(edge)
     if (cullRect && !rectsIntersect(edgeBounds, cullRect)) {
       continue
@@ -169,6 +214,7 @@ export function buildScene(options: BuildSceneOptions): Scene {
         resolveBranchColor(branchIndex),
         resolvedEdgeType,
         finalLineWidth,
+        resolvedEndpoint,
       ),
     )
   }
@@ -197,6 +243,7 @@ export function buildScene(options: BuildSceneOptions): Scene {
         options.themeId,
         options.topicImageUrls,
         branchIndexMap,
+        options.numberMap,
       ),
     )
   }
@@ -258,6 +305,21 @@ function layoutNodeToBounds(
   }
 }
 
+/** 将边几何从布局坐标系平移到场景坐标系（与节点边界同一坐标系）。 */
+function offsetEdge(
+  edge: MindMapEdgeLayout,
+  offsetX: number,
+  offsetY: number,
+): MindMapEdgeLayout {
+  return {
+    ...edge,
+    start: { x: edge.start.x + offsetX, y: edge.start.y + offsetY },
+    end: { x: edge.end.x + offsetX, y: edge.end.y + offsetY },
+    control1: { x: edge.control1.x + offsetX, y: edge.control1.y + offsetY },
+    control2: { x: edge.control2.x + offsetX, y: edge.control2.y + offsetY },
+  }
+}
+
 function computeEdgeBounds(edge: MindMapEdgeLayout): WorldRect {
   const xs = [edge.start.x, edge.end.x, edge.control1.x, edge.control2.x]
   const ys = [edge.start.y, edge.end.y, edge.control1.y, edge.control2.y]
@@ -280,6 +342,7 @@ function topicToRenderNode(
   themeId: string | undefined,
   topicImageUrls: Record<string, string> | undefined,
   branchIndexMap: Map<string, number>,
+  numberMap?: Map<string, string>,
 ): TopicRenderNode {
   const id = layoutNode.id
   const visualState: TopicVisualState = {
@@ -329,6 +392,7 @@ function topicToRenderNode(
     layer: 'topic',
     bounds,
     text: layoutNode.topic.text,
+    number: numberMap?.get(id) ?? null,
     depth: layoutNode.depth,
     side: layoutNode.side,
     collapsed: layoutNode.topic.collapsed,
@@ -347,6 +411,7 @@ function edgeToRenderNode(
   branchColor: string,
   edgeType: 'curve' | 'straight' | 'elbow',
   lineWidth: number,
+  endpoint: EdgeEndpoint,
 ): EdgeRenderNode {
   return {
     type: 'edge',
@@ -364,6 +429,7 @@ function edgeToRenderNode(
     branchColor,
     edgeType,
     lineWidth,
+    endpoint,
   }
 }
 

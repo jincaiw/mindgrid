@@ -31,6 +31,19 @@ export interface MindMapEdgeLayout {
   control2: { x: number; y: number }
 }
 
+export interface MindMapLayoutOptions {
+  compact?: boolean
+  balance?: boolean
+  alignSiblings?: boolean
+  /**
+   * 分支方向（来自画布 layoutConfig.direction）：
+   * - left：根的所有直接子分支放左侧
+   * - right：根的所有直接子分支放右侧
+   * - balanced/undefined：按 balance 选项或默认交替分配
+   */
+  direction?: 'left' | 'right' | 'balanced'
+}
+
 export interface MindMapLayoutResult {
   nodes: MindMapNodeLayout[]
   edges: MindMapEdgeLayout[]
@@ -125,6 +138,9 @@ function distributeCenters(
   centerY: number,
   side: Exclude<LayoutSide, 'center'>,
   sideMap: Map<string, Exclude<LayoutSide, 'center'>>,
+  leafBlock = LEAF_BLOCK,
+  verticalGap = VERTICAL_GAP,
+  alignSiblings = false,
 ) {
   const relevantTopics =
     side === 'left'
@@ -135,20 +151,27 @@ function distributeCenters(
     1,
     metrics.reduce((sum, metric) => sum + metric.leafCount, 0),
   )
-  const totalHeight = totalLeafCount * LEAF_BLOCK + (relevantTopics.length - 1) * VERTICAL_GAP
+  const totalHeight = totalLeafCount * leafBlock + (relevantTopics.length - 1) * verticalGap
   let cursor = centerY - totalHeight / 2
 
   return relevantTopics.map((topic, index) => {
-    const blockHeight = metrics[index].leafCount * LEAF_BLOCK
-    const nodeCenterY = cursor + blockHeight / 2
+    const blockHeight = metrics[index].leafCount * leafBlock
+    const nodeCenterY = alignSiblings
+      ? centerY + (index - (relevantTopics.length - 1) / 2) * (leafBlock + verticalGap)
+      : cursor + blockHeight / 2
 
-    cursor += blockHeight + VERTICAL_GAP
+    cursor += blockHeight + verticalGap
 
     return { topic, centerY: nodeCenterY }
   })
 }
 
-export function computeMindMapLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
+export function computeMindMapLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const verticalGap = options.compact ? 8 : VERTICAL_GAP
+  const leafBlock = options.compact ? 64 : LEAF_BLOCK
   const rootSize = estimateNodeSize(rootTopic, 0)
   const rootNode: MindMapNodeLayout = {
     id: rootTopic.id,
@@ -174,7 +197,15 @@ export function computeMindMapLayout(rootTopic: TopicSnapshot): MindMapLayoutRes
     }
   }
 
-  const sideMap = assignRootSides(rootTopic.children)
+  // 分支方向优先级：显式 direction > balance 自动平衡 > 默认左右交替
+  const sideMap =
+    options.direction === 'left'
+      ? new Map(rootTopic.children.map((topic) => [topic.id, 'left'] as const))
+      : options.direction === 'right'
+        ? new Map(rootTopic.children.map((topic) => [topic.id, 'right'] as const))
+        : options.balance
+          ? assignRootSides(rootTopic.children)
+          : new Map(rootTopic.children.map((topic, index) => [topic.id, index % 2 === 0 ? 'right' : 'left'] as const))
 
   const placeSubtree = (
     topic: TopicSnapshot,
@@ -223,20 +254,36 @@ export function computeMindMapLayout(rootTopic: TopicSnapshot): MindMapLayoutRes
       0,
     )
     const totalChildHeight =
-      totalChildLeafCount * LEAF_BLOCK + (topic.children.length - 1) * VERTICAL_GAP
+      totalChildLeafCount * leafBlock + (topic.children.length - 1) * verticalGap
     let cursor = centerY - totalChildHeight / 2
 
     topic.children.forEach((child, index) => {
-      const blockHeight = childMetrics[index].leafCount * LEAF_BLOCK
+      const blockHeight = childMetrics[index].leafCount * leafBlock
       const childCenterY = cursor + blockHeight / 2
 
-      cursor += blockHeight + VERTICAL_GAP
+      cursor += blockHeight + verticalGap
       placeSubtree(child, node, side, childCenterY, depth + 1)
     })
   }
 
-  const leftGroups = distributeCenters(rootTopic.children, 0, 'left', sideMap)
-  const rightGroups = distributeCenters(rootTopic.children, 0, 'right', sideMap)
+  const leftGroups = distributeCenters(
+    rootTopic.children,
+    0,
+    'left',
+    sideMap,
+    leafBlock,
+    verticalGap,
+    options.alignSiblings,
+  )
+  const rightGroups = distributeCenters(
+    rootTopic.children,
+    0,
+    'right',
+    sideMap,
+    leafBlock,
+    verticalGap,
+    options.alignSiblings,
+  )
 
   leftGroups.forEach(({ topic, centerY }) => {
     placeSubtree(topic, rootNode, 'left', centerY, 1)

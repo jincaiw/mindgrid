@@ -34,9 +34,10 @@ button {
 /* XMind 式贴合布局：通栏相接、无间隙、无圆角，仅以 1px 发丝线分隔 */
 .workspace-shell {
   display: grid;
-  /* 三行：工具栏(44) + 主体(自适应) + 状态条(28)。
-     状态条收进 shell 内，画布分页标签并入其左侧（对标 XMind 底部状态条） */
-  grid-template-rows: 44px minmax(0, 1fr) auto;
+  /* 三行：工具栏(52) + 主体(自适应) + 状态条(48)。
+     参考截图按 macOS Retina 内容区折算：工具栏约 104 物理像素，
+     底部状态条约 96 物理像素，均承载单行内容。 */
+  grid-template-rows: 52px minmax(0, 1fr) 48px;
   padding: 0;
   gap: 0;
   height: 100vh;
@@ -46,7 +47,7 @@ button {
 /* XMind 式贴边布局：三栏无间距，以 1px 细分割线区隔 */
 .workspace-shell__body {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 280px;
+  grid-template-columns: 0 minmax(0, 1fr) 280px;
   /* 显式约束行高：隐式 auto 行会被画布/大纲的 max-content 撑爆，
      导致页面整体滚动、画布相机把内容居中到视口之外（表现为画布空白） */
   grid-template-rows: minmax(0, 1fr);
@@ -67,17 +68,26 @@ button {
   flex: 1 1 auto;
 }
 
-/* 检查器隐藏（Cmd/Ctrl + I）：两列布局，画布占满剩余空间 */
+/* 检查器隐藏（Cmd/Ctrl + I）：根据左栏是否存在使用两列或一列。 */
 .workspace-shell__body--inspector-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-shell__body--sidebar-visible.workspace-shell__body--inspector-hidden {
   grid-template-columns: 280px minmax(0, 1fr);
 }
 
-/* 侧栏隐藏（批次 26，Cmd/Ctrl + B）：画布 + 检查器两列 */
+/* 导航面板显示（查看 → 导航面板）：左栏按参考宽度打开。 */
+.workspace-shell__body--sidebar-visible {
+  grid-template-columns: 280px minmax(0, 1fr) 280px;
+}
+
+/* 左栏隐藏且检查器可见：首屏基准的两列布局。 */
 .workspace-shell__body--sidebar-hidden {
   grid-template-columns: minmax(0, 1fr) 280px;
 }
 
-/* 侧栏 + 检查器同时隐藏：画布占满 */
+/* 两侧面板同时隐藏：画布占满。 */
 .workspace-shell__body--sidebar-hidden.workspace-shell__body--inspector-hidden {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -1002,7 +1012,7 @@ button {
   border-bottom: 1px solid var(--color-border-default);
   background: var(--color-surface-glass-strong);
   color: var(--color-text-primary);
-  min-height: 44px;
+  min-height: 52px;
 }
 
 .toolbar__left {
@@ -1346,6 +1356,21 @@ button {
   color: var(--color-text-secondary);
   display: grid;
   gap: 10px;
+}
+
+.panel__color-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel__color-control input[type='color'] {
+  width: 36px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface-panel-strong);
 }
 
 .panel__field {
@@ -3072,6 +3097,30 @@ button {
 }
 
 /* 深度分级字号 */
+/* 主题编号：Canvas / SVG 以文本前缀绘制，DOM 用独立 span 保持同一视觉 */
+.mindmap-node__number {
+  margin-right: 4px;
+  opacity: 0.72;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 开关行：复选框 + 说明文字，与 panel__field 的标签宽度一致 */
+.panel__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--color-text-secondary, #5b6472);
+  cursor: pointer;
+}
+
+.panel__switch input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent-strong, #2f6df6);
+  cursor: pointer;
+}
+
 .mindmap-node--depth-0 .mindmap-node__title {
   font-size: 20px;
   font-weight: 700;
@@ -3266,12 +3315,17 @@ button {
   }
 }
 
-@media (max-width: 1280px) {
-  .workspace-shell__body {
-    grid-template-columns: 280px minmax(0, 1fr);
+@media (max-width: 760px) {
+  .workspace-shell__body,
+  .workspace-shell__body--sidebar-visible,
+  .workspace-shell__body--sidebar-visible.workspace-shell__body--inspector-hidden,
+  .workspace-shell__body--sidebar-hidden,
+  .workspace-shell__body--sidebar-hidden.workspace-shell__body--inspector-hidden {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .panel--inspector {
+  .panel--inspector,
+  .panel--sidebar {
     display: none;
   }
 }
@@ -3295,10 +3349,11 @@ button {
 
 @media (max-width: 960px) {
   .workspace-shell__body {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .panel--sidebar {
+  .panel--sidebar,
+  .panel--inspector {
     display: none;
   }
 
@@ -3702,11 +3757,13 @@ button {
 }
 
 .structure-picker__popover {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
+  /* 挂在 body 上的 portal，坐标由 JS 按触发器位置算出（fixed）。
+     比右栏宽（对齐 XMind）：右对齐触发器、向左展开覆盖画布，
+     否则 280px 面板里两张卡片会挤成一列，缩略图失去可比性。 */
+  position: fixed;
   z-index: 60;
+  width: 360px;
+  max-width: calc(100vw - 24px);
   overflow: hidden;
   border: 1px solid var(--color-border-default);
   border-radius: 10px;
@@ -3770,6 +3827,12 @@ button {
   width: 100%;
   height: 46px;
   color: var(--color-accent);
+}
+
+@media (min-width: 1100px) {
+  .structure-picker__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .structure-picker__card-name {

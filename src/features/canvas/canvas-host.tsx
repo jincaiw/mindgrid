@@ -23,6 +23,7 @@ import type {
   ChartType,
   Relationship,
   SheetBranchStyle,
+  SheetNumbering,
   SummaryNode,
   TopicSnapshot,
   TopicStyleOverrides,
@@ -58,7 +59,12 @@ import type { CanvasCommand, ZoomCommand } from '../menu/menu-actions'
 import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
 import { computeLayout } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
-import { resolveTopicStyle } from './runtime/style-resolver'
+import { resolveThemeBackground, resolveTopicStyle } from './runtime/style-resolver'
+import {
+  buildFontStack,
+  resolveCanvasSettings,
+  type DocumentCanvasSettings,
+} from '../../lib/document/canvas-settings'
 import {
   buildBranchIndexMap,
   buildScene,
@@ -66,6 +72,7 @@ import {
 } from './runtime/scene-builder'
 import { pickTopicImageUrl, useTopicImageUrls } from './runtime/topic-image-store'
 import { collectClipboardTopics } from './topic-clipboard'
+import { buildTopicNumbers } from './numbering'
 import { MarkerIcon } from './markers'
 import {
   readTopicsFromSystemClipboard,
@@ -218,6 +225,9 @@ function MindMapScene({
   summaries,
   themeId,
   branchStyle,
+  numbering,
+  layoutDirection,
+  canvasSettings,
   activeTopicId,
   selectedTopicIds,
   editingTopicId,
@@ -268,6 +278,12 @@ function MindMapScene({
   summaries: SummaryNode[]
   themeId: string | undefined
   branchStyle: SheetBranchStyle | undefined
+  /** 画布级主题编号配置，缺省不显示编号。 */
+  numbering: SheetNumbering | undefined
+  /** 画布级分支方向（来自 layoutConfig.direction），缺省自动。 */
+  layoutDirection: 'left' | 'right' | 'balanced' | undefined
+  /** 文档级画布设置（彩虹分支 / 色板 / 粗细 / 布局开关）。 */
+  canvasSettings: DocumentCanvasSettings
   activeTopicId: string | null
   selectedTopicIds: string[]
   editingTopicId: string | null
@@ -319,9 +335,30 @@ function MindMapScene({
   onCreateFloatingTopic?: (text: string, offsetX: number, offsetY: number) => Promise<void>
 }) {
   const layout = useMemo(
-    () => computeLayout(rootTopic, chartType, floatingTopics),
-    [rootTopic, chartType, floatingTopics],
+    () =>
+      computeLayout(rootTopic, chartType, floatingTopics, {
+        balance: canvasSettings.balance,
+        compact: canvasSettings.compact,
+        alignSiblings: canvasSettings.alignSiblings,
+        direction: layoutDirection,
+      }),
+    [
+      rootTopic,
+      chartType,
+      floatingTopics,
+      canvasSettings.balance,
+      canvasSettings.compact,
+      canvasSettings.alignSiblings,
+      layoutDirection,
+    ],
   )
+  // 主题编号：从画布 numbering 配置派生的展示层前缀，不写入主题文本。
+  // 屏幕与导出必须算同一份映射，否则编号会一端有一端没有。
+  const numberMap = useMemo(
+    () => buildTopicNumbers(rootTopic, numbering),
+    [rootTopic, numbering],
+  )
+
   const nodeMap = useMemo(
     () => new Map(layout.nodes.map((node) => [node.id, node])),
     [layout.nodes],
@@ -471,9 +508,23 @@ function MindMapScene({
         summaries,
         themeId,
         branchStyle,
+        numberMap,
+        canvasSettings,
         enableCulling: viewportSize.width > 0 && viewportSize.height > 0,
       }),
-    [layout, camera, visualStates, viewportSize, relationships, boundaries, summaries, themeId, branchStyle],
+    [
+      layout,
+      camera,
+      visualStates,
+      viewportSize,
+      relationships,
+      boundaries,
+      summaries,
+      themeId,
+      branchStyle,
+      numberMap,
+      canvasSettings,
+    ],
   )
 
   // 分支序号：一级主题在其父下的序号，缤纷主题的分支配色按此取色。
@@ -660,8 +711,10 @@ function MindMapScene({
       drawTopics: false,
       drawOverlays: false,
       themeId,
+      background: canvasSettings.background,
+      fontFamily: buildFontStack(canvasSettings.fontFamily, canvasSettings.cjkFont),
     })
-  }, [scene, camera, viewportSize, themeId])
+  }, [scene, camera, viewportSize, themeId, canvasSettings])
 
   const setZoomFromViewportCenter = useCallback(
     (nextZoom: number) => {
@@ -1550,6 +1603,8 @@ function MindMapScene({
               onAppearEnd={handleNodeAppearEnd}
               onOpenLink={onOpenLink}
               imageUrl={pickTopicImageUrl(node.topic.image, topicImageUrls)}
+              fontFamily={buildFontStack(canvasSettings.fontFamily, canvasSettings.cjkFont)}
+              numberText={numberMap.get(node.id) ?? null}
             />
           ))}
         </div>
@@ -1663,6 +1718,8 @@ function MindMapNode({
   onOpenLink,
   imageUrl,
   branchIndex,
+  fontFamily,
+  numberText,
 }: {
   node: MindMapNodeLayout
   offsetX: number
@@ -1699,6 +1756,9 @@ function MindMapNode({
   onOpenLink?: (url: string) => void
   /** 主题图片的 data URL，null 表示无图或尚未加载完成（此时不渲染图片元素）。 */
   imageUrl: string | null
+  fontFamily?: string
+  /** 主题编号（形如 "1.2"），null 表示未启用编号。 */
+  numberText?: string | null
 }) {
   const left = node.x - node.width / 2 + offsetX
   const top = node.y - node.height / 2 + offsetY
@@ -1749,6 +1809,7 @@ function MindMapNode({
   const titleStyle: CSSProperties = {
     fontSize: resolvedStyle.fontSize,
     fontWeight: resolvedStyle.fontWeight,
+    ...(fontFamily ? { fontFamily } : {}),
   }
   // XMind 式：折叠 toggle 位于"连线起点侧"——中心节点贴下缘、
   // 左侧分支贴左缘、右侧分支贴右缘，16px 按钮半嵌于节点边。
@@ -1859,7 +1920,10 @@ function MindMapNode({
             draggable={false}
           />
         ) : null}
-        <span className="mindmap-node__title" style={titleStyle}>{node.topic.text}</span>
+        <span className="mindmap-node__title" style={titleStyle}>
+          {numberText ? <span className="mindmap-node__number">{numberText}</span> : null}
+          {node.topic.text}
+        </span>
         {task ? (
           <span
             className="mindmap-node__task"
@@ -2012,6 +2076,12 @@ function TreeWorkspace({
   const activeSheet = getActiveSheet(session.document!)
   const rootTopic = activeSheet.rootTopic
   const floatingTopics = activeSheet.floatingTopics ?? []
+  // 文档级画布设置。必须 useMemo：进 MindMapScene 的 effect 依赖数组，
+  // 每次渲染新建对象会让场景反复重建。
+  const canvasSettings = useMemo(
+    () => resolveCanvasSettings(session.document!.settings),
+    [session.document!.settings],
+  )
   const [localSelectedTopicIds, setLocalSelectedTopicIds] = useState<string[]>(() =>
     activeTopicId ? [activeTopicId] : [rootTopic.id],
   )
@@ -2765,6 +2835,9 @@ function TreeWorkspace({
           summaries={activeSheet.summaries ?? []}
           themeId={session.document!.theme?.id}
           branchStyle={activeSheet.branchStyle}
+          numbering={activeSheet.numbering}
+          layoutDirection={activeSheet.layoutConfig?.direction}
+          canvasSettings={canvasSettings}
           activeTopicId={activeTopicId}
           selectedTopicIds={selectedTopicIds}
           editingTopicId={editingTopicId}
@@ -2820,14 +2893,29 @@ export function CanvasHost({
   onNotify,
   searchOpen,
   onSearchOpenChange,
+  searchQuery,
+  onSearchQueryChange,
+  replaceQuery,
+  onReplaceQueryChange,
+  activeSearchIndex,
+  onActiveSearchIndexChange,
+  searchResults,
   showGrid = false,
   onCameraChange,
   zoomRequest,
+  canvasCommand,
 }: CanvasHostProps) {
+  // 画布背景：主题背景色 + 画布级覆盖，与 PNG/SVG 导出同源。
+  // 屏幕过去用的是 UI 令牌，切到暗色主题后「屏幕浅、导出深」，此处统一。
+  const canvasBackground = resolveThemeBackground(
+    session.document?.theme?.id,
+    resolveCanvasSettings(session.document?.settings).background,
+  ).background
   return (
     <main
       className={`canvas-host${showGrid ? ' canvas-host--grid-on' : ''}`}
       aria-label="画布区域"
+      style={{ background: canvasBackground }}
     >
       <div className="canvas-host__texture" />
       {renderContent({
@@ -2837,8 +2925,16 @@ export function CanvasHost({
         onNotify,
         searchOpen,
         onSearchOpenChange,
+        searchQuery,
+        onSearchQueryChange,
+        replaceQuery,
+        onReplaceQueryChange,
+        activeSearchIndex,
+        onActiveSearchIndexChange,
+        searchResults,
         onCameraChange,
         zoomRequest,
+        canvasCommand,
       })}
     </main>
   )

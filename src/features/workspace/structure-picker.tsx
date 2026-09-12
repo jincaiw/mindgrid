@@ -8,12 +8,13 @@
  * 两个与 XMind 的差异（有意）：
  * - **气泡图** XMind 截图里没出现，但 MindGrid 有实现，收在「思维导图」组下
  *   作为第二张卡片，不为对齐而砍功能
- * - **树型表格** XMind 有、MindGrid 暂无该布局引擎，卡片在但置灰并标注
+ * - **树型表格** 已实现：列 = 层级、行 = 叶子，父单元格跨行合并（见 tree-table-layout.ts）
  *
  * 缩略图是静态 SVG（84×52 视口），不跑布局引擎——浮层要能瞬间打开。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ChartType } from '../../lib/document/types'
 import { ChevronDownIcon } from './icons'
 
@@ -22,6 +23,7 @@ interface StructureOption {
   label: string
   /** 84×52 视口内的缩略图内容 */
   thumbnail: React.ReactNode
+  /** 预留：后续新增骨架时可在卡片上标注不可用原因。 */
   disabled?: boolean
   disabledHint?: string
 }
@@ -247,15 +249,7 @@ const STRUCTURE_GROUPS: readonly StructureGroup[] = [
   { title: '鱼骨图', options: [{ value: 'fishbone', label: '鱼骨图', thumbnail: <FishboneThumb /> }] },
   {
     title: '树型表格',
-    options: [
-      {
-        value: null,
-        label: '树型表格',
-        thumbnail: <TreeTableThumb />,
-        disabled: true,
-        disabledHint: '树型表格布局尚未实现',
-      },
-    ],
+    options: [{ value: 'treetable', label: '树型表格', thumbnail: <TreeTableThumb /> }],
   },
   { title: '矩阵图', options: [{ value: 'matrix', label: '矩阵图', thumbnail: <MatrixThumb /> }] },
 ]
@@ -281,7 +275,41 @@ interface StructurePickerProps {
 export function StructurePicker({ value, onChange, disabled = false }: StructurePickerProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const popoverRef = useRef<HTMLDivElement | null>(null)
+  // 浮层坐标（视口坐标，fixed 定位）
+  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
   const current = findOption(value)
+
+  /**
+   * 计算浮层位置：锚在触发器下方、**右对齐**并向左展开。
+   *
+   * 浮层必须挂到 body 上（portal）：右栏是滚动容器，会裁掉超出面板的子元素，
+   * 挂在触发器内部时浮层宽度被限制在 280px 面板内，两张卡片挤成一列。
+   */
+  const updateAnchor = useCallback(() => {
+    const trigger = triggerRef.current
+    if (!trigger) return
+    const rect = trigger.getBoundingClientRect()
+    setAnchor({
+      top: rect.bottom + 6,
+      right: Math.max(8, window.innerWidth - rect.right),
+    })
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setAnchor(null)
+      return
+    }
+    updateAnchor()
+    window.addEventListener('resize', updateAnchor)
+    window.addEventListener('scroll', updateAnchor, true)
+    return () => {
+      window.removeEventListener('resize', updateAnchor)
+      window.removeEventListener('scroll', updateAnchor, true)
+    }
+  }, [open, updateAnchor])
 
   // 点击外部 / Esc 关闭浮层（与工具栏下拉、画布标签右键菜单同一套交互）
   useEffect(() => {
@@ -290,7 +318,11 @@ export function StructurePicker({ value, onChange, disabled = false }: Structure
     }
 
     const handlePointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node
+      if (popoverRef.current?.contains(target)) {
+        return
+      }
+      if (!rootRef.current?.contains(target)) {
         setOpen(false)
       }
     }
@@ -311,6 +343,7 @@ export function StructurePicker({ value, onChange, disabled = false }: Structure
   return (
     <div className="structure-picker" ref={rootRef}>
       <button
+        ref={triggerRef}
         className="structure-picker__trigger"
         type="button"
         disabled={disabled}
@@ -330,51 +363,60 @@ export function StructurePicker({ value, onChange, disabled = false }: Structure
         <ChevronDownIcon size={12} />
       </button>
 
-      {open ? (
-        <div className="structure-picker__popover" role="dialog" aria-label="选择骨架">
-          <div className="structure-picker__scroll">
-            {STRUCTURE_GROUPS.map((group) => (
-              <section className="structure-picker__group" key={group.title}>
-                <h3 className="structure-picker__group-title">{group.title}</h3>
-                <div className="structure-picker__grid">
-                  {group.options.map((option) => {
-                    const selected = option.value !== null && option.value === value
-                    return (
-                      <button
-                        key={option.label}
-                        className={`structure-picker__card${
-                          selected ? ' structure-picker__card--selected' : ''
-                        }`}
-                        type="button"
-                        disabled={option.disabled}
-                        title={option.disabled ? option.disabledHint : option.label}
-                        aria-label={option.label}
-                        aria-pressed={selected}
-                        onClick={() => {
-                          if (option.value) {
-                            onChange(option.value)
-                            setOpen(false)
-                          }
-                        }}
-                      >
-                        <svg
-                          className="structure-picker__card-thumb"
-                          viewBox="0 0 84 52"
-                          aria-hidden="true"
-                          focusable="false"
+      {open && anchor
+        ? createPortal(
+              <div
+                ref={popoverRef}
+                className="structure-picker__popover"
+                role="dialog"
+                aria-label="选择骨架"
+                style={{ top: anchor.top, right: anchor.right }}
+              >
+            <div className="structure-picker__scroll">
+              {STRUCTURE_GROUPS.map((group) => (
+                <section className="structure-picker__group" key={group.title}>
+                  <h3 className="structure-picker__group-title">{group.title}</h3>
+                  <div className="structure-picker__grid">
+                    {group.options.map((option) => {
+                      const selected = option.value !== null && option.value === value
+                      return (
+                        <button
+                          key={option.label}
+                          className={`structure-picker__card${
+                            selected ? ' structure-picker__card--selected' : ''
+                          }`}
+                          type="button"
+                          disabled={option.disabled}
+                          title={option.disabled ? option.disabledHint : option.label}
+                          aria-label={option.label}
+                          aria-pressed={selected}
+                          onClick={() => {
+                            if (option.value) {
+                              onChange(option.value)
+                              setOpen(false)
+                            }
+                          }}
                         >
-                          {option.thumbnail}
-                        </svg>
-                        <span className="structure-picker__card-name">{option.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </section>
-            ))}
-          </div>
-        </div>
-      ) : null}
+                          <svg
+                            className="structure-picker__card-thumb"
+                            viewBox="0 0 84 52"
+                            aria-hidden="true"
+                            focusable="false"
+                          >
+                            {option.thumbnail}
+                          </svg>
+                          <span className="structure-picker__card-name">{option.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+              </div>,
+            document.body,
+          )
+        : null}
     </div>
   )
 }

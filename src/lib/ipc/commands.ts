@@ -2,6 +2,7 @@ import type {
   DocumentSessionSnapshot,
   DocumentSnapshot,
   SheetBranchStyle,
+  SheetNumbering,
   TopicLink,
   TopicMarker,
   TopicSnapshot,
@@ -122,6 +123,23 @@ export function setSheetBranchStyle(
   return invokeCommand<DocumentSessionSnapshot>('set_sheet_branch_style', {
     sheet_id: sheetId,
     branch_style: branchStyle,
+  })
+}
+
+export function setSheetNumbering(
+  sheetId: string,
+  numbering: SheetNumbering | null,
+) {
+  return invokeCommand<DocumentSessionSnapshot>('set_sheet_numbering', {
+    sheet_id: sheetId,
+    numbering,
+  })
+}
+
+export function setSheetLayoutDirection(sheetId: string, direction: string) {
+  return invokeCommand<DocumentSessionSnapshot>('set_sheet_layout_direction', {
+    sheet_id: sheetId,
+    direction,
   })
 }
 

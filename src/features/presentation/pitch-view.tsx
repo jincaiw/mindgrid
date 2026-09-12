@@ -44,6 +44,10 @@ const ANIMATION_DURATION_MS = 420
 interface PitchViewProps {
   document: DocumentSnapshot
   onExit: () => void
+  aspectRatio?: PitchAspectRatio
+  onAspectRatioChange?: (value: PitchAspectRatio) => void
+  themeStyle?: PitchThemeStyle
+  onThemeStyleChange?: (value: PitchThemeStyle) => void
 }
 
 const EMPTY_VISUAL_STATES: TopicVisualStates = {
@@ -78,7 +82,14 @@ const THEME_STYLE_OPTIONS: ReadonlyArray<{ id: PitchThemeStyle; label: string }>
   { id: 'light', label: '浅色' },
 ]
 
-export function PitchView({ document, onExit }: PitchViewProps) {
+export function PitchView({
+  document,
+  onExit,
+  aspectRatio: controlledAspectRatio,
+  onAspectRatioChange,
+  themeStyle: controlledThemeStyle,
+  onThemeStyleChange,
+}: PitchViewProps) {
   const activeSheet =
     document.sheets.find((s) => s.id === document.activeSheetId) ?? document.sheets[0]
   const rootTopic: TopicSnapshot = activeSheet.rootTopic
@@ -92,8 +103,18 @@ export function PitchView({ document, onExit }: PitchViewProps) {
   const acts = useMemo(() => buildPitchActs(rootTopic), [rootTopic])
 
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [aspectRatio, setAspectRatio] = useState<PitchAspectRatio>('16:9')
-  const [themeStyle, setThemeStyle] = useState<PitchThemeStyle>('document')
+  const [localAspectRatio, setLocalAspectRatio] = useState<PitchAspectRatio>('16:9')
+  const [localThemeStyle, setLocalThemeStyle] = useState<PitchThemeStyle>('document')
+  const aspectRatio = controlledAspectRatio ?? localAspectRatio
+  const themeStyle = controlledThemeStyle ?? localThemeStyle
+  const setAspectRatio = (value: PitchAspectRatio) => {
+    setLocalAspectRatio(value)
+    onAspectRatioChange?.(value)
+  }
+  const setThemeStyle = (value: PitchThemeStyle) => {
+    setLocalThemeStyle(value)
+    onThemeStyleChange?.(value)
+  }
   const themeId = resolvePitchThemeId(themeStyle, documentThemeId)
 
   const safeIndex = acts.length === 0 ? 0 : Math.min(currentIndex, acts.length - 1)

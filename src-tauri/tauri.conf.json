@@ -5,7 +5,7 @@
   "identifier": "com.mindgrid.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeDevCommand": "pnpm dev --host 127.0.0.1 --port 1420",
     "beforeBuildCommand": "pnpm build"
   },

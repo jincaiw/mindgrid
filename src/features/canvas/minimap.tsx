@@ -72,8 +72,15 @@ export function Minimap({ layout, camera, viewportSize, onNavigate }: MinimapPro
     ctx.lineWidth = Math.max(0.5, sceneScale)
     ctx.beginPath()
     for (const edge of layout.edges) {
-      const start = boardToMinimap(edge.start.x, edge.start.y)
-      const end = boardToMinimap(edge.end.x, edge.end.y)
+      // 边几何是根相对坐标，必须和下面的节点一样补上 layout.offset
+      const start = boardToMinimap(
+        edge.start.x + layout.offsetX,
+        edge.start.y + layout.offsetY,
+      )
+      const end = boardToMinimap(
+        edge.end.x + layout.offsetX,
+        edge.end.y + layout.offsetY,
+      )
       ctx.moveTo(start.x, start.y)
       ctx.lineTo(end.x, end.y)
     }
@@ -105,10 +112,12 @@ export function Minimap({ layout, camera, viewportSize, onNavigate }: MinimapPro
       const topLeft = boardToMinimap(viewWorldX, viewWorldY)
       const w = viewWorldW * sceneScale
       const h = viewWorldH * sceneScale
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)'
-      ctx.lineWidth = 1.5
+      // 视口框用 accent 蓝而非红色：红色是「错误/警告」语义，画布缩略图里
+      // 一个红色方框会被误读成异常区域，与 XMind 的低调导航器也不符。
+      ctx.strokeStyle = 'rgba(47, 109, 246, 0.85)'
+      ctx.lineWidth = 1.2
       ctx.strokeRect(topLeft.x, topLeft.y, w, h)
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.08)'
+      ctx.fillStyle = 'rgba(47, 109, 246, 0.07)'
       ctx.fillRect(topLeft.x, topLeft.y, w, h)
     }
   }, [layout, camera, viewportSize, sceneScale, contentOffsetX, contentOffsetY])

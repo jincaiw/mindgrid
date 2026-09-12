@@ -7,7 +7,7 @@
 
 import type { TopicSnapshot } from '../../../lib/document/types'
 import type { ChartType } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import { computeMindMapLayout, estimateNodeSize } from '../mindmap-layout'
 import { computeLayoutBounds } from './layout-utils'
 import { computeBraceLayout } from './brace-layout'
@@ -18,6 +18,7 @@ import { computeMatrixLayout } from './matrix-layout'
 import { computeOrgLayout } from './org-layout'
 import { computeTimelineLayout } from './timeline-layout'
 import { computeTreeLayout } from './tree-layout'
+import { computeTreeTableLayout } from './tree-table-layout'
 
 /**
  * 根据图表类型计算布局。
@@ -31,6 +32,7 @@ export function computeLayout(
   rootTopic: TopicSnapshot,
   chartType: ChartType | undefined,
   floatingTopics?: TopicSnapshot[],
+  options: MindMapLayoutOptions = {},
 ): MindMapLayoutResult {
   const base = (() => {
     switch (chartType) {
@@ -50,9 +52,11 @@ export function computeLayout(
         return computeMatrixLayout(rootTopic)
       case 'bubble':
         return computeBubbleLayout(rootTopic)
+      case 'treetable':
+        return computeTreeTableLayout(rootTopic)
       case 'mindmap':
       default:
-        return computeMindMapLayout(rootTopic)
+        return computeMindMapLayout(rootTopic, options)
     }
   })()
 

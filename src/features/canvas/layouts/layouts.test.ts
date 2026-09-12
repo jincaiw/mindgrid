@@ -9,6 +9,7 @@ import { computeMatrixLayout } from './matrix-layout'
 import { computeOrgLayout } from './org-layout'
 import { computeTimelineLayout } from './timeline-layout'
 import { computeTreeLayout } from './tree-layout'
+import { computeTreeTableLayout } from './tree-table-layout'
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
@@ -84,11 +85,110 @@ describe('computeLayout dispatcher', () => {
 
   it('routes to each chart type', () => {
     const root = makeRoot()
-    const types = ['logic', 'tree', 'org', 'fishbone', 'timeline', 'brace', 'matrix', 'bubble'] as const
+    const types = [
+      'logic',
+      'tree',
+      'org',
+      'fishbone',
+      'timeline',
+      'brace',
+      'matrix',
+      'bubble',
+      'treetable',
+    ] as const
     for (const chartType of types) {
       const layout = computeLayout(root, chartType)
       expect(layout.nodes.length).toBe(7)
       expect(layout.edges.length).toBe(6)
+    }
+  })
+})
+
+describe('mindmap layout options', () => {
+  it('compact reduces the scene height without moving the root', () => {
+    const root = makeTopic('root', 'Root', [
+      makeTopic('a', 'Alpha', [makeTopic('a1', 'Alpha-1'), makeTopic('a2', 'Alpha-2')]),
+      makeTopic('b', 'Beta', [makeTopic('b1', 'Beta-1'), makeTopic('b2', 'Beta-2')]),
+      makeTopic('c', 'Gamma', [makeTopic('c1', 'Gamma-1'), makeTopic('c2', 'Gamma-2')]),
+    ])
+    const regular = computeLayout(root, 'mindmap')
+    const compact = computeLayout(root, 'mindmap', undefined, { compact: true })
+
+    expect(compact.height).toBeLessThan(regular.height)
+    expect(compact.nodes.find((node) => node.id === 'root')?.y).toBe(0)
+  })
+
+  it('balance distributes root subtrees by leaf weight', () => {
+    const root = makeTopic('root', 'Root', [
+      makeTopic('heavy', 'Heavy', [
+        makeTopic('h1', 'H1', [makeTopic('h1a', 'H1A'), makeTopic('h1b', 'H1B')]),
+        makeTopic('h2', 'H2', [makeTopic('h2a', 'H2A'), makeTopic('h2b', 'H2B')]),
+      ]),
+      makeTopic('light-a', 'Light A'),
+      makeTopic('light-b', 'Light B'),
+    ])
+    const balanced = computeLayout(root, 'mindmap', undefined, { balance: true })
+    const directChildren = balanced.nodes.filter((node) => node.depth === 1)
+    const leftWeight = directChildren
+      .filter((node) => node.side === 'left')
+      .reduce((sum, node) => sum + (node.id === 'heavy' ? 4 : 1), 0)
+    const rightWeight = directChildren
+      .filter((node) => node.side === 'right')
+      .reduce((sum) => sum + 1, 0)
+
+    expect(directChildren.map((node) => [node.id, node.side])).toEqual([
+      ['heavy', 'left'],
+      ['light-a', 'right'],
+      ['light-b', 'right'],
+    ])
+    expect(Math.abs(leftWeight - rightWeight)).toBeLessThan(4)
+  })
+
+  it('aligns direct siblings to a stable compact row spacing', () => {
+    const root = makeTopic('root', 'Root', [
+      makeTopic('a', 'Alpha', [makeTopic('a1', 'A1'), makeTopic('a2', 'A2')]),
+      makeTopic('b', 'Beta'),
+      makeTopic('c', 'Gamma', [makeTopic('c1', 'C1')]),
+      makeTopic('d', 'Delta'),
+    ])
+    const aligned = computeLayout(root, 'mindmap', undefined, { alignSiblings: true })
+    const rightChildren = aligned.nodes
+      .filter((node) => node.depth === 1 && node.side === 'right')
+      .sort((a, b) => a.y - b.y)
+
+    expect(rightChildren).toHaveLength(2)
+    expect(rightChildren[1].y - rightChildren[0].y).toBe(98)
+  })
+
+  it('keeps variable-height subtrees from overlapping', () => {
+    const root = makeTopic('root', 'Root', [
+      makeTopic('long', 'Long', [
+        makeTopic('long-1', 'Long 1', [
+          makeTopic('long-1-a', 'Long 1 A'),
+          makeTopic('long-1-b', 'Long 1 B'),
+          makeTopic('long-1-c', 'Long 1 C'),
+        ]),
+        makeTopic('long-2', 'Long 2'),
+      ]),
+      makeTopic('short', 'Short'),
+      makeTopic('short-2', 'Short 2'),
+    ])
+    const layout = computeLayout(root, 'mindmap', undefined, {
+      balance: true,
+      compact: true,
+      alignSiblings: true,
+    })
+
+    for (let i = 0; i < layout.nodes.length; i++) {
+      for (let j = i + 1; j < layout.nodes.length; j++) {
+        const a = layout.nodes[i]
+        const b = layout.nodes[j]
+        if (a.depth !== b.depth || a.side !== b.side) continue
+        const overlaps =
+          Math.abs(a.x - b.x) < (a.width + b.width) / 2 &&
+          Math.abs(a.y - b.y) < (a.height + b.height) / 2
+        expect(overlaps, `${a.id} overlaps ${b.id}`).toBe(false)
+      }
     }
   })
 })
@@ -132,6 +232,39 @@ describe('computeLayout with floating topics', () => {
     expect(f2).toBeDefined()
     expect(f2!.x).toBe(-300)
     expect(f2!.y).toBe(250)
+  })
+
+  it('places all first-level branches on one side when direction is set', () => {
+    const root = makeRoot()
+    const left = computeLayout(root, 'mindmap', undefined, { direction: 'left' })
+    const right = computeLayout(root, 'mindmap', undefined, { direction: 'right' })
+
+    const rootNode = (layout: ReturnType<typeof computeLayout>) =>
+      layout.nodes.find((n) => n.id === root.id)!
+
+    for (const child of root.children) {
+      expect(left.nodes.find((n) => n.id === child.id)!.side).toBe('left')
+      expect(right.nodes.find((n) => n.id === child.id)!.side).toBe('right')
+    }
+
+    // 全部放一侧后，该侧节点横坐标同号（左为负、右为正）
+    expect(left.nodes.filter((n) => n.depth === 1).every((n) => n.x < rootNode(left).x)).toBe(
+      true,
+    )
+    expect(
+      right.nodes.filter((n) => n.depth === 1).every((n) => n.x > rootNode(right).x),
+    ).toBe(true)
+  })
+
+  it('keeps the alternating default when direction is omitted', () => {
+    const root = makeRoot()
+    const layout = computeLayout(root, 'mindmap')
+    const sides = root.children.map(
+      (child) => layout.nodes.find((n) => n.id === child.id)!.side,
+    )
+
+    expect(sides).toContain('left')
+    expect(sides).toContain('right')
   })
 
   it('returns unchanged layout when no floating topics', () => {
@@ -388,4 +521,92 @@ describe('all layouts handle edge cases', () => {
       }
     })
   }
+})
+
+describe('computeTreeTableLayout', () => {
+  it('puts every level in its own column with strictly increasing x', () => {
+    const root = makeRoot()
+    const layout = computeTreeTableLayout(root)
+
+    const byId = new Map(layout.nodes.map((n) => [n.id, n]))
+    for (const node of layout.nodes) {
+      for (const child of node.topic.children) {
+        const childNode = byId.get(child.id)
+        expect(childNode).toBeDefined()
+        expect(childNode!.depth).toBe(node.depth + 1)
+        expect(childNode!.x).toBeGreaterThan(node.x)
+      }
+    }
+  })
+
+  it('aligns all cells of the same depth to a shared column center', () => {
+    const root = makeRoot()
+    const layout = computeTreeTableLayout(root)
+
+    const perDepth = new Map<number, Set<number>>()
+    for (const node of layout.nodes) {
+      const set = perDepth.get(node.depth) ?? new Set<number>()
+      set.add(node.x)
+      perDepth.set(node.depth, set)
+    }
+
+    for (const centers of perDepth.values()) {
+      expect(centers.size).toBe(1)
+    }
+  })
+
+  it('gives one row to each leaf and merges parents across their subtree rows', () => {
+    const root = makeRoot()
+    const layout = computeTreeTableLayout(root)
+    const byId = new Map(layout.nodes.map((n) => [n.id, n]))
+
+    const leaves = layout.nodes.filter((n) => n.topic.children.length === 0)
+    const leafTops = leaves.map((n) => n.y - n.height / 2).sort((a, b) => a - b)
+    // 每个叶子占据互不相同的行
+    expect(new Set(leafTops).size).toBe(leaves.length)
+
+    for (const node of layout.nodes) {
+      if (node.topic.children.length === 0) continue
+      const childTops = node.topic.children.map((c) => {
+        const childNode = byId.get(c.id)!
+        return childNode.y - childNode.height / 2
+      })
+      const childBottoms = node.topic.children.map((c) => {
+        const childNode = byId.get(c.id)!
+        return childNode.y + childNode.height / 2
+      })
+      // 父单元格纵向覆盖其全部子单元格
+      expect(node.y - node.height / 2).toBeLessThanOrEqual(Math.min(...childTops))
+      expect(node.y + node.height / 2).toBeGreaterThanOrEqual(Math.max(...childBottoms))
+    }
+  })
+
+  it('treats collapsed branches as a single row without descendants', () => {
+    const root: TopicSnapshot = {
+      id: 'root',
+      text: 'Root',
+      collapsed: false,
+      children: [
+        { id: 'a', text: 'A', collapsed: true, children: [makeTopic('a1', 'A-1')] },
+        makeTopic('b', 'B'),
+      ],
+    }
+
+    const layout = computeTreeTableLayout(root)
+    expect(layout.nodes.map((n) => n.id).sort()).toEqual(['a', 'b', 'root'])
+    // 折叠分支不产生边
+    expect(layout.edges.map((e) => e.childId)).toEqual(['a', 'b'])
+  })
+
+  it('keeps every cell inside the reported layout bounds', () => {
+    const root = makeRoot()
+    const layout = computeTreeTableLayout(root)
+
+    for (const node of layout.nodes) {
+      const left = node.x - node.width / 2 + layout.offsetX
+      const right = node.x + node.width / 2 + layout.offsetX
+      expect(left).toBeGreaterThanOrEqual(0)
+      expect(right).toBeLessThanOrEqual(layout.width)
+    }
+  })
 })

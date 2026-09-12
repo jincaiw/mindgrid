@@ -189,6 +189,17 @@ describe('resolveThemeBackground', () => {
     const bg = resolveThemeBackground(undefined)
     expect(bg.background).toBe('#f5f5f7')
   })
+
+  it('画布级背景覆盖优先于主题背景', () => {
+    expect(resolveThemeBackground('dark', '#123456').background).toBe('#123456')
+    expect(resolveThemeBackground('classic-blue', '#abcdef').background).toBe('#abcdef')
+  })
+
+  it('覆盖为空值（null/空串/不传）时跟随主题', () => {
+    expect(resolveThemeBackground('dark', null).background).toBe('#1a1a2e')
+    expect(resolveThemeBackground('dark', '').background).toBe('#1a1a2e')
+    expect(resolveThemeBackground('dark').background).toBe('#1a1a2e')
+  })
 })
 
 describe('resolveThemeEdge', () => {

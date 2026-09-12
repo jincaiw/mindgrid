@@ -103,6 +103,7 @@ function createSnapshot(
 ): DocumentSessionSnapshot {
   return {
     document: {
+      theme: { id: 'classic-blue' },
       schemaVersion: '1.0.0',
       documentId: 'doc_1',
       revision: 1,
@@ -616,9 +617,15 @@ it('exports the current document as a png image in desktop runtime', async () =>
     defaultPath: '/tmp/mindgrid.png',
     filters: [{ name: 'PNG 图片', extensions: ['png'] }],
   })
+  // 必须带上 themeId + background：不传的话暗色主题文档会导出成默认浅底
   expect(renderMocks.renderSceneToPngBytes).toHaveBeenCalledWith(
     expect.objectContaining({ nodes: expect.any(Array) }),
-    { scale: 2 },
+    {
+      scale: 2,
+      themeId: expect.any(String),
+      background: null,
+      fontFamily: expect.any(String),
+    },
   )
   expect(commandMocks.exportPngFile).toHaveBeenCalledWith('/tmp/mindgrid-image.png', pngBytes)
 })
@@ -650,6 +657,11 @@ it('exports the current document as an svg image in desktop runtime', async () =
   })
   expect(renderMocks.renderSceneToSvg).toHaveBeenCalledWith(
     expect.objectContaining({ nodes: expect.any(Array) }),
+    {
+      themeId: expect.any(String),
+      background: null,
+      fontFamily: expect.any(String),
+    },
   )
   expect(commandMocks.exportSvgFile).toHaveBeenCalledWith('/tmp/mindgrid-vector.svg', svgContent)
 })

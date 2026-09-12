@@ -10,7 +10,8 @@
 use crate::domain::document::{
     clone_topic_branch, contains_topic, create_id, find_parent_id_and_index, find_topic,
     find_topic_mut, normalize_topic_ids_for_batch, normalize_topic_ids_for_delete, Boundary,
-    ChartType, DocumentSnapshot, Relationship, SheetBranchStyle, SheetSnapshot,
+    ChartType, DocumentSnapshot, LayoutBalance, LayoutConfig, Relationship, SheetBranchStyle,
+    SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
     TopicSnapshot, TopicStyleOverrides, TopicTask,
 };
@@ -111,6 +112,18 @@ pub enum Operation {
         sheet_id: String,
         old_branch_style: Option<SheetBranchStyle>,
         new_branch_style: Option<SheetBranchStyle>,
+    },
+    /// 画布级主题编号配置变更。逆操作交换 old/new。
+    SetSheetNumbering {
+        sheet_id: String,
+        old_numbering: Option<SheetNumbering>,
+        new_numbering: Option<SheetNumbering>,
+    },
+    /// 画布级布局方向（分支方向）变更。逆操作交换 old/new。
+    SetSheetLayoutDirection {
+        sheet_id: String,
+        old_direction: Option<LayoutBalance>,
+        new_direction: Option<LayoutBalance>,
     },
     /// 在画布的 floating_topics 列表末尾插入浮动主题。逆操作为 RemoveFloatingTopic。
     InsertFloatingTopic { sheet_id: String, topic: TopicSnapshot },
@@ -275,6 +288,24 @@ pub fn invert_operation(op: &Operation) -> Operation {
             sheet_id: sheet_id.clone(),
             old_branch_style: new_branch_style.clone(),
             new_branch_style: old_branch_style.clone(),
+        },
+        Operation::SetSheetNumbering {
+            sheet_id,
+            old_numbering,
+            new_numbering,
+        } => Operation::SetSheetNumbering {
+            sheet_id: sheet_id.clone(),
+            old_numbering: new_numbering.clone(),
+            new_numbering: old_numbering.clone(),
+        },
+        Operation::SetSheetLayoutDirection {
+            sheet_id,
+            old_direction,
+            new_direction,
+        } => Operation::SetSheetLayoutDirection {
+            sheet_id: sheet_id.clone(),
+            old_direction: *new_direction,
+            new_direction: *old_direction,
         },
         Operation::InsertFloatingTopic { sheet_id, topic } => Operation::RemoveFloatingTopic {
             sheet_id: sheet_id.clone(),
@@ -453,6 +484,39 @@ fn do_set_sheet_branch_style(
     }
 }
 
+fn do_set_sheet_numbering(
+    document: &mut DocumentSnapshot,
+    sheet_id: &str,
+    numbering: Option<SheetNumbering>,
+) {
+    if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+        sheet.numbering = numbering;
+    }
+}
+
+fn do_set_sheet_layout_direction(
+    document: &mut DocumentSnapshot,
+    sheet_id: &str,
+    direction: Option<LayoutBalance>,
+) {
+    if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+        let mut config = sheet.layout_config.clone().unwrap_or(LayoutConfig {
+            direction: None,
+            horizontal_spacing: None,
+            vertical_spacing: None,
+        });
+        config.direction = direction;
+        if config.direction.is_none()
+            && config.horizontal_spacing.is_none()
+            && config.vertical_spacing.is_none()
+        {
+            sheet.layout_config = None;
+        } else {
+            sheet.layout_config = Some(config);
+        }
+    }
+}
+
 /// 正向应用一个操作。用于 redo（以及 editor 执行后回放校验）。
 pub fn apply_operation(document: &mut DocumentSnapshot, op: &Operation) {
     match op {
@@ -499,6 +563,20 @@ pub fn apply_operation(document: &mut DocumentSnapshot, op: &Operation) {
         }
         Operation::SetSheetBranchStyle { sheet_id, new_branch_style, .. } => {
             do_set_sheet_branch_style(document, sheet_id, new_branch_style.clone())
+        }
+        Operation::SetSheetNumbering {
+            sheet_id,
+            new_numbering,
+            ..
+        } => {
+            do_set_sheet_numbering(document, sheet_id, new_numbering.clone())
+        }
+        Operation::SetSheetLayoutDirection {
+            sheet_id,
+            new_direction,
+            ..
+        } => {
+            do_set_sheet_layout_direction(document, sheet_id, *new_direction)
         }
         Operation::InsertFloatingTopic { sheet_id, topic } => {
             if let Some(sheet) = document.find_sheet_mut(sheet_id) {
@@ -1023,6 +1101,11 @@ impl<'a> DocumentEditor<'a> {
                     ));
                 }
             }
+            if let Some(endpoint) = style.endpoint {
+                if matches!(endpoint, crate::domain::document::EdgeEndpoint::None) {
+                    return Err("分支终点样式不能以 none 形式写入覆盖".to_string());
+                }
+            }
         }
 
         if self.document.find_sheet(sheet_id).is_none() {
@@ -1033,6 +1116,101 @@ impl<'a> DocumentEditor<'a> {
         self.set_sheet_branch_style_raw(sheet_id, branch_style);
 
         Ok(active_root_topic_id)
+    }
+
+    /// 设置画布的主题编号配置。`numbering` 为 None 或 enabled=false 表示关闭编号。
+    pub fn set_sheet_numbering(
+        &mut self,
+        sheet_id: &str,
+        numbering: Option<SheetNumbering>,
+    ) -> Result<String, String> {
+        if numbering
+            .as_ref()
+            .and_then(|n| n.separator.as_deref())
+            .is_some_and(|sep| !matches!(sep, "." | "-" | ")"))
+        {
+            return Err("编号分隔符仅支持 . / - / )".to_string());
+        }
+
+        if self.document.find_sheet(sheet_id).is_none() {
+            return Err("找不到需要设置编号的画布".to_string());
+        }
+
+        let active_root_topic_id = self.document.root_topic().id.clone();
+        self.set_sheet_numbering_raw(sheet_id, numbering);
+
+        Ok(active_root_topic_id)
+    }
+
+    fn set_sheet_numbering_raw(
+        &mut self,
+        sheet_id: &str,
+        new_numbering: Option<SheetNumbering>,
+    ) {
+        let old_numbering = self
+            .document
+            .find_sheet(sheet_id)
+            .and_then(|sheet| sheet.numbering.clone());
+
+        if old_numbering == new_numbering {
+            return;
+        }
+
+        do_set_sheet_numbering(self.document, sheet_id, new_numbering.clone());
+
+        self.record(Operation::SetSheetNumbering {
+            sheet_id: sheet_id.to_string(),
+            old_numbering,
+            new_numbering,
+        });
+    }
+
+    /// 设置画布的分支方向（layoutConfig.direction）。None 表示回到自动。
+    pub fn set_sheet_layout_direction(
+        &mut self,
+        sheet_id: &str,
+        direction: &str,
+    ) -> Result<String, String> {
+        let parsed = match direction.trim().to_lowercase().as_str() {
+            "" | "auto" => None,
+            "left" => Some(LayoutBalance::Left),
+            "right" => Some(LayoutBalance::Right),
+            "balanced" => Some(LayoutBalance::Balanced),
+            other => return Err(format!("不支持的分支方向“{other}”")),
+        };
+
+        if self.document.find_sheet(sheet_id).is_none() {
+            return Err("找不到需要设置分支方向的画布".to_string());
+        }
+
+        let active_root_topic_id = self.document.root_topic().id.clone();
+        self.set_sheet_layout_direction_raw(sheet_id, parsed);
+
+        Ok(active_root_topic_id)
+    }
+
+    fn set_sheet_layout_direction_raw(
+        &mut self,
+        sheet_id: &str,
+        new_direction: Option<LayoutBalance>,
+    ) {
+        let old_direction = self
+            .document
+            .find_sheet(sheet_id)
+            .and_then(|sheet| sheet.layout_config.as_ref())
+            .and_then(|config| config.direction);
+
+        if old_direction == new_direction {
+            return;
+        }
+
+        do_set_sheet_layout_direction(self.document, sheet_id, new_direction);
+
+        self.record(Operation::SetSheetLayoutDirection {
+            sheet_id: sheet_id.to_string(),
+            old_direction,
+            new_direction,
+        });
     }
 
     pub fn delete_sheet(&mut self, sheet_id: &str) -> Result<String, String> {
@@ -2004,8 +2182,9 @@ fn parse_chart_type(value: &str) -> Result<Option<ChartType>, String> {
         "brace" => Ok(Some(ChartType::Brace)),
         "matrix" => Ok(Some(ChartType::Matrix)),
         "bubble" => Ok(Some(ChartType::Bubble)),
+        "treetable" => Ok(Some(ChartType::Treetable)),
         other => Err(format!(
-            "不支持的图表类型“{}”，支持 mindmap / logic / tree / org / fishbone / timeline / brace / matrix / bubble",
+            "不支持的图表类型“{}”，支持 mindmap / logic / tree / org / fishbone / timeline / brace / matrix / bubble / treetable",
             other
         )),
     }
@@ -2075,6 +2254,7 @@ mod tests {
             edge_type: Some(EdgeType::Straight),
             thickness: Some(1.5),
             color_palette: vec!["#ff0000".into(), "#00ff00".into()],
+            endpoint: None,
         });
 
         let mut editor = DocumentEditor::new(&mut document);
@@ -2100,6 +2280,102 @@ mod tests {
     }
 
     #[test]
+    fn set_sheet_numbering_round_trips_and_inverts() {
+        use crate::domain::document::{NumberingFormat, SheetNumbering};
+
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        let new_numbering = Some(SheetNumbering {
+            enabled: true,
+            format: Some(NumberingFormat::UpperAlpha),
+            separator: Some("-".into()),
+            include_root: Some(true),
+        });
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor
+            .set_sheet_numbering(&sheet_id, new_numbering.clone())
+            .unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Operation::SetSheetNumbering {
+                new_numbering: applied,
+                ..
+            } => assert_eq!(*applied, new_numbering),
+            other => panic!("expected SetSheetNumbering, got {:?}", other),
+        }
+
+        let sheet = document.find_sheet(&sheet_id).unwrap();
+        assert_eq!(sheet.numbering, new_numbering);
+
+        apply_inverse(&mut document, &ops);
+        assert!(document.find_sheet(&sheet_id).unwrap().numbering.is_none());
+    }
+
+    #[test]
+    fn set_sheet_numbering_rejects_unsupported_separator() {
+        use crate::domain::document::SheetNumbering;
+
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        assert!(editor
+            .set_sheet_numbering(
+                &sheet_id,
+                Some(SheetNumbering {
+                    enabled: true,
+                    format: None,
+                    separator: Some("|".into()),
+                    include_root: None,
+                }),
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn set_sheet_layout_direction_round_trips_and_inverts() {
+        use crate::domain::document::LayoutBalance;
+
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_sheet_layout_direction(&sheet_id, "left").unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            document
+                .find_sheet(&sheet_id)
+                .unwrap()
+                .layout_config
+                .as_ref()
+                .unwrap()
+                .direction,
+            Some(LayoutBalance::Left)
+        );
+
+        apply_inverse(&mut document, &ops);
+        // 回退后 layout_config 里已无有效字段，整体清除
+        assert!(document.find_sheet(&sheet_id).unwrap().layout_config.is_none());
+    }
+
+    #[test]
+    fn set_sheet_layout_direction_rejects_unknown_value() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        assert!(editor
+            .set_sheet_layout_direction(&sheet_id, "sideways")
+            .is_err());
+    }
+
+    #[test]
     fn set_sheet_branch_style_noop_when_same() {
         use crate::domain::document::EdgeType;
 
@@ -2110,6 +2386,7 @@ mod tests {
             edge_type: Some(EdgeType::Elbow),
             thickness: Some(2.0),
             color_palette: vec!["#abc".into()],
+            endpoint: None,
         });
 
         let mut editor = DocumentEditor::new(&mut document);
@@ -2121,6 +2398,7 @@ mod tests {
                     edge_type: Some(EdgeType::Elbow),
                     thickness: Some(2.0),
                     color_palette: vec!["#abc".into()],
+                    endpoint: None,
                 }),
             )
             .unwrap();
@@ -2190,6 +2468,13 @@ mod tests {
         assert_eq!(parse_chart_type("org").unwrap(), Some(ChartType::Org));
         assert_eq!(parse_chart_type("fishbone").unwrap(), Some(ChartType::Fishbone));
         assert_eq!(parse_chart_type("timeline").unwrap(), Some(ChartType::Timeline));
+        assert_eq!(parse_chart_type("brace").unwrap(), Some(ChartType::Brace));
+        assert_eq!(parse_chart_type("matrix").unwrap(), Some(ChartType::Matrix));
+        assert_eq!(parse_chart_type("bubble").unwrap(), Some(ChartType::Bubble));
+        assert_eq!(
+            parse_chart_type("treeTable").unwrap(),
+            Some(ChartType::Treetable)
+        );
         assert!(parse_chart_type("radial").is_err());
     }
 

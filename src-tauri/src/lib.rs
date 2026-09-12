@@ -73,6 +73,8 @@ pub fn run() {
             app::commands::move_sheet,
             app::commands::set_sheet_chart_type,
             app::commands::set_sheet_branch_style,
+            app::commands::set_sheet_numbering,
+            app::commands::set_sheet_layout_direction,
             app::commands::select_topic,
             app::commands::create_child_topic,
             app::commands::create_sibling_topic,

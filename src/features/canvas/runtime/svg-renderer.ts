@@ -59,6 +59,10 @@ export interface SvgRenderOptions {
   padding?: number
   /** 文档主题 ID（用于背景色解析）。缺省使用 classic-blue。 */
   themeId?: string
+  /** 画布级背景色覆盖（`canvas.background` 设置）。空值 = 跟随主题。 */
+  background?: string | null
+  /** 画布级字体栈；未提供时使用默认字体栈。 */
+  fontFamily?: string
 }
 
 const DEFAULT_PADDING = 32
@@ -72,7 +76,8 @@ const DEFAULT_PADDING = 32
  */
 export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): string {
   const { drawBackground = false, padding = DEFAULT_PADDING } = options
-  const themeBackground = resolveThemeBackground(options.themeId)
+  const fontFamily = options.fontFamily ?? FONT_FAMILY
+  const themeBackground = resolveThemeBackground(options.themeId, options.background)
 
   // 过滤掉 overlay 节点（交互态，非文档内容）
   const exportableNodes = scene.nodes.filter(
@@ -100,7 +105,7 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     (n): n is BoundaryRenderNode => n.type === 'boundary',
   )
   for (const node of boundaries) {
-    layers.push(boundaryToSvg(node))
+    layers.push(boundaryToSvg(node, fontFamily))
   }
 
   const edges = exportableNodes.filter((n): n is EdgeRenderNode => n.type === 'edge')
@@ -112,19 +117,19 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     (n): n is SummaryRenderNode => n.type === 'summary',
   )
   for (const node of summaries) {
-    layers.push(summaryToSvg(node))
+    layers.push(summaryToSvg(node, fontFamily))
   }
 
   const topics = exportableNodes.filter((n): n is TopicRenderNode => n.type === 'topic')
   for (const node of topics) {
-    layers.push(topicToSvg(node))
+    layers.push(topicToSvg(node, fontFamily))
   }
 
   const relationships = exportableNodes.filter(
     (n): n is RelationshipRenderNode => n.type === 'relationship',
   )
   for (const node of relationships) {
-    layers.push(relationshipToSvg(node))
+    layers.push(relationshipToSvg(node, fontFamily))
   }
 
   const viewBox = `${fmt(bounds.x)} ${fmt(bounds.y)} ${fmt(bounds.width)} ${fmt(bounds.height)}`
@@ -135,7 +140,7 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     `     xmlns:xlink="http://www.w3.org/1999/xlink"`,
     `     viewBox="${viewBox}"`,
     `     width="${fmt(bounds.width)}" height="${fmt(bounds.height)}"`,
-    `     font-family="${escapeXml(FONT_FAMILY)}">`,
+    `     font-family="${escapeXml(fontFamily)}">`,
     ...layers,
     `</svg>`,
   ].join('\n')
@@ -158,8 +163,8 @@ function buildDefs(): string {
 
 // ---- 各节点序列化 ----
 
-function topicToSvg(node: TopicRenderNode): string {
-  const { bounds, text, depth, collapsed, childCount, style, side } = node
+function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
+  const { bounds, text, number, depth, collapsed, childCount, style, side } = node
   const isRoot = depth === 0
   const isUnderline = style.shape === 'underline'
   const radius = isUnderline ? 0 : getNodeRadiusForShape(style.shape, depth, bounds.height)
@@ -195,9 +200,11 @@ function topicToSvg(node: TopicRenderNode): string {
   }
 
   // 标题文字：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
-  const titleFont = `${style.fontWeight} ${style.fontSize}px ${FONT_FAMILY}`
+  const titleFont = `${style.fontWeight} ${style.fontSize}px ${fontFamily}`
   const maxTextWidth = bounds.width - padding * 2
-  const lines = wrapText(text, maxTextWidth, titleFont)
+  // 编号是展示层前缀：与 Canvas / DOM 三端一致地拼在标题前
+  const displayText = number ? `${number} ${text}` : text
+  const lines = wrapText(displayText, maxTextWidth, titleFont)
   const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding + titleOffsetY
 
@@ -272,7 +279,7 @@ function topicToSvg(node: TopicRenderNode): string {
 
       // 先测量每个标签宽度
       const labelWidths = shownLabels.map((label) => {
-        const w = measureTextWidth(label, `400 ${labelFontSize}px ${FONT_FAMILY}`)
+        const w = measureTextWidth(label, `400 ${labelFontSize}px ${fontFamily}`)
         return Math.max(RICH_LABEL_MIN_WIDTH, w + RICH_LABEL_PADDING_X * 2)
       })
       const totalWidth =
@@ -337,7 +344,7 @@ function topicToSvg(node: TopicRenderNode): string {
 }
 
 function edgeToSvg(node: EdgeRenderNode): string {
-  const { start, end, control1, control2, branchColor, edgeType, lineWidth } = node
+  const { start, end, control1, control2, branchColor, edgeType, lineWidth, endpoint } = node
   const strokeWidth = lineWidth
 
   let d: string
@@ -358,10 +365,23 @@ function edgeToSvg(node: EdgeRenderNode): string {
     d = `M ${fmt(start.x)} ${fmt(start.y)} C ${fmt(control1.x)} ${fmt(control1.y)}, ${fmt(control2.x)} ${fmt(control2.y)}, ${fmt(end.x)} ${fmt(end.y)}`
   }
 
-  return `  <path d="${d}" fill="none" stroke="${branchColor}" stroke-width="${fmt(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"/>`
+  const endpointMarkup = endpoint === 'circle'
+    ? `  <circle cx="${fmt(end.x)}" cy="${fmt(end.y)}" r="${fmt(Math.max(3, strokeWidth * 1.8))}" fill="${branchColor}"/>`
+    : endpoint === 'arrow'
+      ? (() => {
+          const angle = Math.atan2(end.y - control2.y, end.x - control2.x)
+          const size = Math.max(7, strokeWidth * 3.5)
+          const wing = size * 0.55
+          const p1 = `${fmt(end.x - Math.cos(angle) * size + Math.sin(angle) * wing)},${fmt(end.y - Math.sin(angle) * size - Math.cos(angle) * wing)}`
+          const p2 = `${fmt(end.x - Math.cos(angle) * size - Math.sin(angle) * wing)},${fmt(end.y - Math.sin(angle) * size + Math.cos(angle) * wing)}`
+          return `  <path d="M ${fmt(end.x)} ${fmt(end.y)} L ${p1} L ${p2} Z" fill="${branchColor}"/>`
+        })()
+      : ''
+
+  return `  <path d="${d}" fill="none" stroke="${branchColor}" stroke-width="${fmt(strokeWidth)}" stroke-linecap="round" stroke-linejoin="round"/>${endpointMarkup ? `\n${endpointMarkup}` : ''}`
 }
 
-function boundaryToSvg(node: BoundaryRenderNode): string {
+function boundaryToSvg(node: BoundaryRenderNode, fontFamily: string): string {
   const { bounds, label } = node
   const radius = 12
   const padding = 10
@@ -380,14 +400,14 @@ function boundaryToSvg(node: BoundaryRenderNode): string {
     const labelX = x + 8
     const labelY = y + 6
     elements.push(
-      `  <text x="${fmt(labelX)}" y="${fmt(labelY)}" font-size="11" font-weight="600" fill="${COLORS.boundaryLabelText}" dominant-baseline="hanging">${escapeXml(label)}</text>`,
+      `  <text x="${fmt(labelX)}" y="${fmt(labelY)}" font-size="11" font-weight="600" font-family="${escapeXml(fontFamily)}" fill="${COLORS.boundaryLabelText}" dominant-baseline="hanging">${escapeXml(label)}</text>`,
     )
   }
 
   return elements.join('\n')
 }
 
-function summaryToSvg(node: SummaryRenderNode): string {
+function summaryToSvg(node: SummaryRenderNode, fontFamily: string): string {
   const { bounds, label, anchor } = node
   const bracketOffset = 16
   const bracketWidth = 12
@@ -413,11 +433,11 @@ function summaryToSvg(node: SummaryRenderNode): string {
 
   return [
     `  <path d="${d}" fill="none" stroke="${COLORS.summaryBracket}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`,
-    `  <text x="${fmt(labelX)}" y="${fmt(midY)}" font-size="13" font-weight="600" fill="${COLORS.summaryLabelText}" dominant-baseline="central">${escapeXml(label)}</text>`,
+    `  <text x="${fmt(labelX)}" y="${fmt(midY)}" font-size="13" font-weight="600" font-family="${escapeXml(fontFamily)}" fill="${COLORS.summaryLabelText}" dominant-baseline="central">${escapeXml(label)}</text>`,
   ].join('\n')
 }
 
-function relationshipToSvg(node: RelationshipRenderNode): string {
+function relationshipToSvg(node: RelationshipRenderNode, fontFamily: string): string {
   const { from, to, label } = node
   const elements: string[] = []
 
@@ -428,7 +448,7 @@ function relationshipToSvg(node: RelationshipRenderNode): string {
   if (label) {
     const midX = (from.x + to.x) / 2
     const midY = (from.y + to.y) / 2
-    const labelFont = `600 12px ${FONT_FAMILY}`
+    const labelFont = `600 12px ${fontFamily}`
     const textWidth = measureTextWidth(label, labelFont)
     const pillWidth = textWidth + 16
     const pillHeight = 22

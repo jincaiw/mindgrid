@@ -7,6 +7,7 @@ import type {
   DocumentSnapshot,
   EdgeType,
   SheetBranchStyle,
+  SheetNumbering,
   TopicLink,
   TopicMarker,
   TopicSnapshot,
@@ -613,6 +614,7 @@ export async function invokeBrowserCommand<TResult>(
           'tree',
           'org',
           'fishbone',
+          'treetable',
           'timeline',
           'brace',
           'matrix',
@@ -686,6 +688,17 @@ export async function invokeBrowserCommand<TResult>(
           thickness = num
         }
 
+        // 校验 endpoint（如提供）
+        let endpoint: SheetBranchStyle['endpoint']
+        if (raw.endpoint != null) {
+          const candidate = String(raw.endpoint).trim().toLowerCase()
+          const allowed = ['none', 'circle', 'arrow'] as const
+          if (!allowed.includes(candidate as (typeof allowed)[number])) {
+            throw new Error(`不支持的分支终点样式“${candidate}”，支持 none / circle / arrow`)
+          }
+          endpoint = candidate as SheetBranchStyle['endpoint']
+        }
+
         // 校验 colorPalette（如提供）
         let colorPalette: string[] | undefined
         if (raw.colorPalette != null) {
@@ -699,6 +712,7 @@ export async function invokeBrowserCommand<TResult>(
         if (edgeType !== undefined) nextBranchStyle.edgeType = edgeType
         if (thickness !== undefined) nextBranchStyle.thickness = thickness
         if (colorPalette !== undefined) nextBranchStyle.colorPalette = colorPalette
+        if (endpoint !== undefined && endpoint !== 'none') nextBranchStyle.endpoint = endpoint
 
         // noop：相同值不入历史栈（与 Rust set_sheet_branch_style_raw 一致）
         if (JSON.stringify(sheet.branchStyle) === JSON.stringify(nextBranchStyle)) {
@@ -712,6 +726,80 @@ export async function invokeBrowserCommand<TResult>(
         return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
           ? activeTopicId
           : getActiveSheet(draft).rootTopic.id
+      }) as TResult
+    }
+    case 'set_sheet_numbering': {
+      return applyMutation('设置编号', (draft) => {
+        const sheetId = String(payload.sheet_id)
+        const sheet = getSheetById(draft, sheetId)
+        if (!sheet) {
+          throw new Error('找不到需要设置编号的画布')
+        }
+
+        const raw = payload.numbering
+        if (raw == null) {
+          sheet.numbering = undefined
+          return activeTopicId ?? sheet.rootTopic.id
+        }
+
+        const source = raw as Record<string, unknown>
+        const enabled = source.enabled === true
+        const next: SheetNumbering = { enabled }
+
+        if (source.format != null) {
+          const candidate = String(source.format).trim()
+          const allowed = ['decimal', 'lowerAlpha', 'upperAlpha', 'lowerRoman', 'upperRoman']
+          if (!allowed.includes(candidate)) {
+            throw new Error(`不支持的编号格式“${candidate}”`)
+          }
+          next.format = candidate as SheetNumbering['format']
+        }
+        if (source.separator != null) {
+          const candidate = String(source.separator)
+          if (!['.', '-', ')'].includes(candidate)) {
+            throw new Error('编号分隔符仅支持 . / - / )')
+          }
+          next.separator = candidate
+        }
+        if (source.includeRoot != null) {
+          next.includeRoot = source.includeRoot === true
+        }
+
+        sheet.numbering = next
+
+        return activeTopicId ?? sheet.rootTopic.id
+      }) as TResult
+    }
+    case 'set_sheet_layout_direction': {
+      return applyMutation('设置分支方向', (draft) => {
+        const sheetId = String(payload.sheet_id)
+        const sheet = getSheetById(draft, sheetId)
+        if (!sheet) {
+          throw new Error('找不到需要设置分支方向的画布')
+        }
+
+        const candidate = String(payload.direction ?? '').trim().toLowerCase()
+        const allowed = ['', 'auto', 'left', 'right', 'balanced']
+        if (!allowed.includes(candidate)) {
+          throw new Error(`不支持的分支方向“${candidate}”`)
+        }
+
+        const direction =
+          candidate === 'left' || candidate === 'right' || candidate === 'balanced'
+            ? (candidate as 'left' | 'right' | 'balanced')
+            : undefined
+
+        const nextConfig = { ...(sheet.layoutConfig ?? {}) }
+        if (direction) {
+          nextConfig.direction = direction
+        } else {
+          delete nextConfig.direction
+        }
+
+        sheet.layoutConfig =
+          Object.keys(nextConfig).length === 0 ? undefined : nextConfig
+
+        return activeTopicId ?? sheet.rootTopic.id
       }) as TResult
     }
     case 'select_topic': {

@@ -5,9 +5,12 @@ import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
 import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
 import type {
   DocumentSnapshot,
+  EdgeEndpoint,
   EdgeType,
+  NumberingFormat,
   Relationship,
   SheetBranchStyle,
+  SheetNumbering,
   TopicLink,
   TopicShape,
   TopicStyleOverrides,
@@ -18,9 +21,26 @@ import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import { MarkerSelector } from '../canvas/marker-selector'
-import { buildPitchActs } from '../presentation/pitch-controller'
+import {
+  buildPitchActs,
+  PITCH_ASPECT_RATIOS,
+  type PitchAspectRatio,
+  type PitchThemeStyle,
+} from '../presentation/pitch-controller'
+import {
+  NUMBERING_FORMAT_OPTIONS,
+  NUMBERING_SEPARATORS,
+} from '../canvas/numbering'
 import { StructurePicker } from './structure-picker'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
+import {
+  BRANCH_PALETTE_PRESETS as CANVAS_BRANCH_PALETTES,
+  BRANCH_THICKNESS_OPTIONS,
+  CANVAS_SETTINGS_KEYS,
+  CJK_FONT_OPTIONS,
+  GLOBAL_FONT_OPTIONS,
+  resolveCanvasSettings,
+} from '../../lib/document/canvas-settings'
 
 /**
  * XMind 格式面板式分区：可折叠（默认展开），标题行点击切换。
@@ -181,6 +201,28 @@ const EDGE_TYPE_OPTIONS: { value: EdgeType; label: string }[] = [
   { value: 'elbow', label: '折线' },
 ]
 
+const LAYOUT_DIRECTION_OPTIONS: {
+  value: 'auto' | 'left' | 'right' | 'balanced'
+  label: string
+}[] = [
+  { value: 'auto', label: '自动' },
+  { value: 'left', label: '左侧' },
+  { value: 'right', label: '右侧' },
+  { value: 'balanced', label: '平衡' },
+]
+
+const NUMBERING_SEPARATOR_OPTIONS = [
+  { value: '.', label: '1.1（点）' },
+  { value: '-', label: '1-1（连字符）' },
+  { value: ')', label: '1)1（右括号）' },
+]
+
+const EDGE_ENDPOINT_OPTIONS: { value: EdgeEndpoint; label: string }[] = [
+  { value: 'none', label: '无' },
+  { value: 'circle', label: '圆点' },
+  { value: 'arrow', label: '箭头' },
+]
+
 /** 连线粗细乘数边界（与 Rust 端 editor 校验范围对齐：0.1–10.0，UI 收窄到常用区间）。 */
 const BRANCH_THICKNESS_MIN = 0.5
 const BRANCH_THICKNESS_MAX = 3
@@ -249,6 +291,10 @@ interface InspectorProps {
    * 与演示并存而非合并：演示按节点逐个渐进揭示，简报按一级分支分幕。
    */
   onStartPitch?: () => void
+  pitchAspectRatio?: PitchAspectRatio
+  onPitchAspectRatioChange?: (value: PitchAspectRatio) => void
+  pitchThemeStyle?: PitchThemeStyle
+  onPitchThemeStyleChange?: (value: PitchThemeStyle) => void
 }
 
 export function Inspector({
@@ -257,8 +303,13 @@ export function Inspector({
   tabRequest,
   onStartPresentation,
   onStartPitch,
+  pitchAspectRatio: controlledPitchAspectRatio,
+  onPitchAspectRatioChange,
+  pitchThemeStyle: controlledPitchThemeStyle,
+  onPitchThemeStyleChange,
 }: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
+  const canvasSettings = resolveCanvasSettings(session.document?.settings)
   const activeTopic =
     session.document && session.activeTopicId
       ? findTopicById(activeSheet?.rootTopic ?? session.document.sheets[0].rootTopic, session.activeTopicId)
@@ -310,6 +361,18 @@ export function Inspector({
 
   // —— Tab 状态：默认样式子页，选中节点时直接编辑富内容 ——
   const [activeTab, setActiveTab] = useState<InspectorTab>('style')
+  const [localPitchAspectRatio, setLocalPitchAspectRatio] = useState<PitchAspectRatio>('16:9')
+  const [localPitchThemeStyle, setLocalPitchThemeStyle] = useState<PitchThemeStyle>('document')
+  const pitchAspectRatio = controlledPitchAspectRatio ?? localPitchAspectRatio
+  const pitchThemeStyle = controlledPitchThemeStyle ?? localPitchThemeStyle
+  const setPitchAspectRatio = (value: PitchAspectRatio) => {
+    setLocalPitchAspectRatio(value)
+    onPitchAspectRatioChange?.(value)
+  }
+  const setPitchThemeStyle = (value: PitchThemeStyle) => {
+    setLocalPitchThemeStyle(value)
+    onPitchThemeStyleChange?.(value)
+  }
 
   // 外部 tab 切换请求（nonce 变化即切到指定 tab）
   useEffect(() => {
@@ -366,6 +429,44 @@ export function Inspector({
       ? new Date(activeTopic.task.startDateMs).toISOString().slice(0, 10)
       : '',
   )
+
+  const activeNumbering = activeSheet?.numbering
+
+  /** 写入画布级编号配置；enabled=false 或全默认时清除，避免留下无意义的空配置。 */
+  const applyNumbering = (patch: {
+    enabled?: boolean
+    format?: NumberingFormat
+    separator?: string
+    includeRoot?: boolean
+  }) => {
+    if (!activeSheet) return
+
+    const merged: SheetNumbering = {
+      enabled: activeNumbering?.enabled === true,
+    }
+    if (activeNumbering?.format) merged.format = activeNumbering.format
+    if (activeNumbering?.separator) merged.separator = activeNumbering.separator
+    if (activeNumbering?.includeRoot) merged.includeRoot = true
+
+    if (patch.enabled !== undefined) merged.enabled = patch.enabled
+    if (patch.format !== undefined) merged.format = patch.format
+    if (patch.separator !== undefined) {
+      merged.separator = NUMBERING_SEPARATORS.includes(
+        patch.separator as (typeof NUMBERING_SEPARATORS)[number],
+      )
+        ? patch.separator
+        : '.'
+    }
+    if (patch.includeRoot !== undefined) {
+      if (patch.includeRoot) merged.includeRoot = true
+      else delete merged.includeRoot
+    }
+
+    const next: SheetNumbering | null = merged.enabled ? merged : null
+
+    if (JSON.stringify(activeNumbering ?? null) === JSON.stringify(next)) return
+    void session.setSheetNumbering(activeSheet.id, next)
+  }
 
   // —— 画布级分支样式：连线类型 / 粗细 / 色板，写入 activeSheet.branchStyle ——
   // edgeType 与 colorPalette 点击即提交（无 draft）；thickness 走 slider draft，失焦提交。
@@ -494,6 +595,7 @@ export function Inspector({
       edgeType: EdgeType
       thickness: number | ''
       colorPalette: string[] | null
+      endpoint: EdgeEndpoint
     }>,
   ) => {
     if (!activeSheet) return
@@ -514,6 +616,9 @@ export function Inspector({
     ) {
       merged.colorPalette = activeBranchStyle.colorPalette
     }
+    if (activeBranchStyle?.endpoint && activeBranchStyle.endpoint !== 'none') {
+      merged.endpoint = activeBranchStyle.endpoint
+    }
 
     if ('edgeType' in patch && patch.edgeType !== undefined) {
       if (patch.edgeType === 'curve') delete merged.edgeType
@@ -532,6 +637,10 @@ export function Inspector({
       } else {
         merged.colorPalette = palette
       }
+    }
+    if ('endpoint' in patch && patch.endpoint !== undefined) {
+      if (patch.endpoint === 'none') delete merged.endpoint
+      else merged.endpoint = patch.endpoint
     }
 
     const keys = Object.keys(merged) as (keyof SheetBranchStyle)[]
@@ -1101,6 +1210,26 @@ export function Inspector({
               </div>
 
               <div className="panel__field">
+                <span>分支终点</span>
+                <div className="panel__segmented" role="group" aria-label="分支终点样式">
+                  {EDGE_ENDPOINT_OPTIONS.map((opt) => {
+                    const active = (activeBranchStyle?.endpoint ?? 'none') === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => applyBranchStyle({ endpoint: opt.value })}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="panel__field">
                 <span>
                   连线粗细
                   <output className="panel__value-out">
@@ -1183,6 +1312,103 @@ export function Inspector({
                 </button>
               ) : null}
             </PanelSection>
+
+            <PanelSection eyebrow="Direction" title="分支方向">
+              <div className="panel__field">
+                <span>一级分支布局</span>
+                <div className="panel__segmented" role="group" aria-label="分支方向">
+                  {LAYOUT_DIRECTION_OPTIONS.map((opt) => {
+                    const active =
+                      (activeSheet?.layoutConfig?.direction ?? 'auto') === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => {
+                          if (!activeSheet) return
+                          void session.setSheetLayoutDirection(activeSheet.id, opt.value)
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+              <p className="panel__muted">
+                「自动」按平衡开关与默认交替分配左右分支；指定左/右后全部一级分支固定在该侧。
+              </p>
+            </PanelSection>
+
+            <PanelSection eyebrow="Numbering" title="主题编号">
+              <div className="panel__field">
+                <span>启用编号</span>
+                <label className="panel__switch">
+                  <input
+                    type="checkbox"
+                    aria-label="启用主题编号"
+                    checked={activeNumbering?.enabled === true}
+                    onChange={(event) => applyNumbering({ enabled: event.target.checked })}
+                  />
+                  <span>在当前画布显示编号</span>
+                </label>
+              </div>
+
+              {activeNumbering?.enabled === true ? (
+                <>
+                  <div className="panel__field">
+                    <span>编号格式</span>
+                    <select
+                      aria-label="编号格式"
+                      value={activeNumbering?.format ?? 'decimal'}
+                      onChange={(event) =>
+                        applyNumbering({
+                          format: event.target.value as NumberingFormat,
+                        })
+                      }
+                    >
+                      {NUMBERING_FORMAT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="panel__field">
+                    <span>层级分隔符</span>
+                    <select
+                      aria-label="编号层级分隔符"
+                      value={activeNumbering?.separator ?? '.'}
+                      onChange={(event) => applyNumbering({ separator: event.target.value })}
+                    >
+                      {NUMBERING_SEPARATOR_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="panel__field">
+                    <span>编号中心主题</span>
+                    <label className="panel__switch">
+                      <input
+                        type="checkbox"
+                        aria-label="编号中心主题"
+                        checked={activeNumbering?.includeRoot === true}
+                        onChange={(event) =>
+                          applyNumbering({ includeRoot: event.target.checked })
+                        }
+                      />
+                      <span>中心主题也带编号</span>
+                    </label>
+                  </div>
+                </>
+              ) : null}
+            </PanelSection>
           </div>
         ) : null}
 
@@ -1233,11 +1459,36 @@ export function Inspector({
                 </button>
               ) : null}
               <p className="panel__eyebrow">简报设置</p>
-              <ul className="panel__list">
-                <li>长宽比：16:9 / 4:3 / 1:1 / 铺满</li>
-                <li>主题风格：跟随文档 / 深色 / 浅色</li>
-                <li>→ 下一幕　← 上一幕　Esc 退出</li>
-              </ul>
+              <label className="panel__field">
+                <span>长宽比</span>
+                <select
+                  value={pitchAspectRatio}
+                  onChange={(event) =>
+                    setPitchAspectRatio(event.target.value as PitchAspectRatio)
+                  }
+                >
+                  {PITCH_ASPECT_RATIOS.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                  <option value="fit">铺满</option>
+                </select>
+              </label>
+              <label className="panel__field">
+                <span>主题风格</span>
+                <select
+                  value={pitchThemeStyle}
+                  onChange={(event) =>
+                    setPitchThemeStyle(event.target.value as PitchThemeStyle)
+                  }
+                >
+                  <option value="document">跟随文档</option>
+                  <option value="dark">深色</option>
+                  <option value="light">浅色</option>
+                </select>
+              </label>
+              <p className="panel__muted">→ 下一幕　← 上一幕　Esc 退出</p>
             </PanelSection>
           </div>
         ) : null}
@@ -1259,6 +1510,160 @@ export function Inspector({
                 }}
                 disabled={!activeSheet}
               />
+            </PanelSection>
+
+            <PanelSection eyebrow="Palette" title="配色方案">
+              <label className="panel__field">
+                <span>分支色板</span>
+                <select
+                  value={canvasSettings.branchPalette}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.branchPalette,
+                      event.target.value,
+                    )
+                  }
+                >
+                  {CANVAS_BRANCH_PALETTES.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="accordion-card">
+                <input
+                  type="checkbox"
+                  checked={canvasSettings.rainbowBranch !== false}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.rainbowBranch,
+                      event.target.checked,
+                    )
+                  }
+                  aria-label="彩虹分支"
+                />
+                <span>彩虹分支</span>
+              </label>
+            </PanelSection>
+
+            <PanelSection eyebrow="Appearance" title="画布外观">
+              <label className="panel__field">
+                <span>背景颜色</span>
+                <span className="panel__color-control">
+                  <input
+                    type="color"
+                    value={canvasSettings.background ?? '#ffffff'}
+                    onChange={(event) =>
+                      void session.setDocumentSetting(
+                        CANVAS_SETTINGS_KEYS.background,
+                        event.target.value,
+                      )
+                    }
+                    aria-label="背景颜色"
+                  />
+                  {canvasSettings.background ? (
+                    <button
+                      className="panel__action panel__action--ghost"
+                      type="button"
+                      onClick={() => void session.setDocumentSetting(CANVAS_SETTINGS_KEYS.background, null)}
+                    >
+                      跟随主题
+                    </button>
+                  ) : null}
+                </span>
+              </label>
+              <label className="panel__field">
+                <span>全局字体</span>
+                <select
+                  value={canvasSettings.fontFamily}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.fontFamily,
+                      event.target.value,
+                    )
+                  }
+                >
+                  {GLOBAL_FONT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="panel__field">
+                <span>分支线粗细</span>
+                <select
+                  value={canvasSettings.branchThickness}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.branchThickness,
+                      event.target.value,
+                    )
+                  }
+                >
+                  {BRANCH_THICKNESS_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="panel__field">
+                <span>中日韩字体</span>
+                <select
+                  value={canvasSettings.cjkFont}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.cjkFont,
+                      event.target.value,
+                    )
+                  }
+                >
+                  {CJK_FONT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </PanelSection>
+
+            <PanelSection eyebrow="Layout" title="导图样式">
+              {[
+                [CANVAS_SETTINGS_KEYS.balance, '自动平衡布局'],
+                [CANVAS_SETTINGS_KEYS.compact, '紧凑型布局'],
+                [CANVAS_SETTINGS_KEYS.alignSiblings, '同级主题对齐'],
+              ].map(([key, label]) => (
+                <label className="accordion-card" key={key}>
+                  <input
+                    type="checkbox"
+                    checked={canvasSettings[key as 'balance' | 'compact' | 'alignSiblings']}
+                    onChange={(event) =>
+                      void session.setDocumentSetting(key, event.target.checked)
+                    }
+                    aria-label={label}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </PanelSection>
+
+            <PanelSection eyebrow="Advanced" title="高级布局">
+              <label className="accordion-card">
+                <input
+                  type="checkbox"
+                  checked={canvasSettings.freeTopic}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.freeTopic,
+                      event.target.checked,
+                    )
+                  }
+                  aria-label="灵活自由主题"
+                />
+                <span>灵活自由主题</span>
+              </label>
             </PanelSection>
 
             <PanelSection eyebrow="Move" title="跨画布移动">

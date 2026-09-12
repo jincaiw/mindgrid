@@ -9,6 +9,8 @@ const scrollIntoViewMock = vi.fn()
 
 beforeEach(() => {
   scrollIntoViewMock.mockReset()
+  // 大多数行为测试需要可见导航树；首屏默认隐藏由专门测试覆盖。
+  window.sessionStorage.setItem('mindgrid.sidebar-visible', '1')
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
     configurable: true,
     value: scrollIntoViewMock,
@@ -83,6 +85,8 @@ importDocxOutline: async () => {},
   moveSheet: async () => {},
   setSheetChartType: async () => {},
   setSheetBranchStyle: async () => {},
+  setSheetNumbering: async () => {},
+  setSheetLayoutDirection: async () => {},
   selectTopic: async () => {},
   createChildTopic: async () => {},
   createSiblingTopic: async () => {},
@@ -2579,16 +2583,17 @@ it('toggles the inspector via Cmd/Ctrl + I and the toolbar button', () => {
   expect(screen.queryByLabelText('右侧检查器')).not.toBeInTheDocument()
 })
 
-it('toggles the sidebar with Cmd/Ctrl + B', () => {
+it('opens the hidden sidebar with Cmd/Ctrl + B', () => {
+  window.sessionStorage.removeItem('mindgrid.sidebar-visible')
   renderWithApp(<WorkspaceScreen session={sessionStub} />)
 
-  expect(screen.getByLabelText('左侧边栏')).toBeInTheDocument()
-
-  fireEvent.keyDown(window, { key: 'b', metaKey: true })
   expect(screen.queryByLabelText('左侧边栏')).not.toBeInTheDocument()
 
   fireEvent.keyDown(window, { key: 'b', metaKey: true })
   expect(screen.getByLabelText('左侧边栏')).toBeInTheDocument()
+
+  fireEvent.keyDown(window, { key: 'b', metaKey: true })
+  expect(screen.queryByLabelText('左侧边栏')).not.toBeInTheDocument()
 })
 
 it('creates a new sheet with Cmd/Ctrl + T', () => {

@@ -18,6 +18,10 @@ import { CanvasHost } from '../canvas/canvas-host'
 import { GanttView } from '../gantt/gantt-view'
 import type { DocumentSession } from '../document/use-document-session'
 import { PitchView } from '../presentation/pitch-view'
+import type {
+  PitchAspectRatio,
+  PitchThemeStyle,
+} from '../presentation/pitch-controller'
 import { PresentationView } from '../presentation/presentation-view'
 import { ShortcutsHelp } from '../shortcuts/shortcuts-help'
 import { StatusBar } from '../status/status-bar'
@@ -57,6 +61,8 @@ export function WorkspaceScreen({
   const [isPresenting, setIsPresenting] = useState(false)
   // 批次 C6：提案简报（Pitch）。与演示模式并存——演示逐节点揭示，简报按分支分幕
   const [isPitching, setIsPitching] = useState(false)
+  const [pitchAspectRatio, setPitchAspectRatio] = useState<PitchAspectRatio>('16:9')
+  const [pitchThemeStyle, setPitchThemeStyle] = useState<PitchThemeStyle>('document')
   const [isZenMode, setIsZenMode] = useState(false)
   // 批次 14：搜索框开关提升到本层，工具栏搜索按钮与 Cmd/Ctrl + F 共用
   const [searchOpen, setSearchOpen] = useState(false)
@@ -108,18 +114,18 @@ export function WorkspaceScreen({
     },
     [searchResults.length],
   )
-  // 批次 14：检查器显隐（Cmd/Ctrl + I 或工具栏按钮），默认显示
+  // XMind 基准默认显示右侧格式面板；显式保留状态，避免浏览器测试和桌面启动态漂移。
   const [inspectorVisible, setInspectorVisible] = useState(true)
-  // 批次 26：侧栏折叠（工具栏按钮 + Cmd/Ctrl + B），默认展开，sessionStorage 记忆
+  // XMind 基准默认不显示左侧导航面板；通过“查看 → 导航面板”按需打开。
+  // 显式记忆用户选择，避免首次截图与后续启动状态互相污染。
   const [sidebarVisible, setSidebarVisible] = useState<boolean>(() => {
     try {
-      return window.sessionStorage.getItem('mindgrid.sidebar-visible') !== '0'
+      return window.sessionStorage.getItem('mindgrid.sidebar-visible') === '1'
     } catch {
-      return true
+      return false
     }
   })
-  // 批次 D2：工具栏显隐（查看菜单「工具栏」）。XMind 允许收起工具栏换取画布高度，
-  // 与侧栏同样写 sessionStorage 记忆。
+  // XMind 基准默认显示顶部工具栏；查看菜单只负责按需隐藏，不改变首屏基准。
   const [toolbarVisible, setToolbarVisible] = useState<boolean>(() => {
     try {
       return window.sessionStorage.getItem('mindgrid.toolbar-visible') !== '0'
@@ -388,8 +394,8 @@ export function WorkspaceScreen({
           onNotify={onNotify}
           themeMode={themeMode}
           themeEffective={themeEffective}
-          onCycleTheme={onCycleTheme}
-          onOpenShortcutsHelp={() => setIsShortcutsHelpOpen(true)}
+          onCycleTheme={undefined}
+          onOpenShortcutsHelp={undefined}
         />
       ) : null}
       {isZenMode ? (
@@ -410,7 +416,7 @@ export function WorkspaceScreen({
             : ' workspace-shell__body--inspector-hidden'
         }${
           sidebarVisible && !isOutlinerMode && !isGanttMode
-            ? ''
+            ? ' workspace-shell__body--sidebar-visible'
             : ' workspace-shell__body--sidebar-hidden'
         }${isOutlinerMode ? ' workspace-shell__body--outliner' : ''}${
           isGanttMode ? ' workspace-shell__body--outliner' : ''
@@ -480,6 +486,10 @@ export function WorkspaceScreen({
                 tabRequest={inspectorTabRequest}
                 onStartPresentation={() => setIsPresenting(true)}
                 onStartPitch={() => setIsPitching(true)}
+                pitchAspectRatio={pitchAspectRatio}
+                onPitchAspectRatioChange={setPitchAspectRatio}
+                pitchThemeStyle={pitchThemeStyle}
+                onPitchThemeStyleChange={setPitchThemeStyle}
               />
             ) : null}
           </>
@@ -500,7 +510,14 @@ export function WorkspaceScreen({
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />
       ) : null}
       {isPitching && session.document ? (
-        <PitchView document={session.document} onExit={() => setIsPitching(false)} />
+        <PitchView
+          document={session.document}
+          onExit={() => setIsPitching(false)}
+          aspectRatio={pitchAspectRatio}
+          onAspectRatioChange={setPitchAspectRatio}
+          themeStyle={pitchThemeStyle}
+          onThemeStyleChange={setPitchThemeStyle}
+        />
       ) : null}
       <ShortcutsHelp open={isShortcutsHelpOpen} onClose={() => setIsShortcutsHelpOpen(false)} />
     </div>

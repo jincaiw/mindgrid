@@ -165,6 +165,7 @@ pub enum ChartType {
     Brace,
     Matrix,
     Bubble,
+    Treetable,
 }
 
 impl Default for ChartType {
@@ -179,6 +180,30 @@ pub enum LayoutBalance {
     Left,
     Right,
     Balanced,
+}
+
+/// 编号序号格式，与 TS 侧 `NumberingFormat` 一致。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum NumberingFormat {
+    Decimal,
+    LowerAlpha,
+    UpperAlpha,
+    LowerRoman,
+    UpperRoman,
+}
+
+/// 画布级主题编号配置，与 TS 侧 `SheetNumbering` 保持结构一致。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetNumbering {
+    pub enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format: Option<NumberingFormat>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub separator: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub include_root: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -202,6 +227,14 @@ pub enum EdgeType {
     Elbow,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum EdgeEndpoint {
+    None,
+    Circle,
+    Arrow,
+}
+
 impl Default for EdgeType {
     fn default() -> Self {
         EdgeType::Curve
@@ -221,6 +254,8 @@ pub struct SheetBranchStyle {
     /// 分支色板，覆盖默认 8 色循环。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub color_palette: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<EdgeEndpoint>,
 }
 
 impl Default for SheetBranchStyle {
@@ -229,6 +264,7 @@ impl Default for SheetBranchStyle {
             edge_type: None,
             thickness: None,
             color_palette: Vec::new(),
+            endpoint: None,
         }
     }
 }
@@ -292,6 +328,9 @@ pub struct SheetSnapshot {
     /// 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub branch_style: Option<SheetBranchStyle>,
+    /// 画布级主题编号配置，缺省不显示编号。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numbering: Option<SheetNumbering>,
     /// 浮动主题列表：独立于 rootTopic 树结构的自由节点。
     /// 每个浮动主题通过 layout_hints.offset_x/offset_y 存储世界坐标绝对位置。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -459,6 +498,7 @@ impl DocumentSnapshot {
                     chart_type: sheet.chart_type,
                     layout_config: sheet.layout_config,
                     branch_style: sheet.branch_style.clone(),
+                    numbering: sheet.numbering.clone(),
                     floating_topics: sheet.floating_topics.clone(),
                     boundaries,
                     summaries,
@@ -717,6 +757,26 @@ impl DocumentSession {
     ) -> Result<DocumentSessionSnapshot, String> {
         self.apply_change_set("设置分支样式", |editor| {
             editor.set_sheet_branch_style(sheet_id, branch_style)
+        })
+    }
+
+    pub fn set_sheet_numbering(
+        &mut self,
+        sheet_id: &str,
+        numbering: Option<SheetNumbering>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("设置编号", |editor| {
+            editor.set_sheet_numbering(sheet_id, numbering)
+        })
+    }
+
+    pub fn set_sheet_layout_direction(
+        &mut self,
+        sheet_id: &str,
+        direction: &str,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("设置分支方向", |editor| {
+            editor.set_sheet_layout_direction(sheet_id, direction)
         })
     }
 
@@ -1286,6 +1346,7 @@ impl SheetSnapshot {
             chart_type: None,
             layout_config: None,
             branch_style: None,
+            numbering: None,
             floating_topics: Vec::new(),
             boundaries: Vec::new(),
             summaries: Vec::new(),

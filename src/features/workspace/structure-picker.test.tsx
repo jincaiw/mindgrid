@@ -66,17 +66,18 @@ describe('StructurePicker', () => {
     expect(screen.getByRole('button', { name: '鱼骨图' }).getAttribute('aria-pressed')).toBe('false')
   })
 
-  it('树型表格存在但不可点（布局尚未实现）', () => {
+  it('树型表格可选中（布局已实现，不再置灰）', () => {
     const onChange = vi.fn()
     render(<StructurePicker value="mindmap" onChange={onChange} />)
 
     fireEvent.click(screen.getByRole('button', { name: '骨架：思维导图' }))
 
     const card = screen.getByRole('button', { name: '树型表格' })
-    expect((card as HTMLButtonElement).disabled).toBe(true)
+    // 曾经的置灰占位项已补齐布局引擎，卡片必须可点
+    expect((card as HTMLButtonElement).disabled).toBe(false)
 
     fireEvent.click(card)
-    expect(onChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenCalledWith('treetable')
   })
 
   it('气泡图收在「思维导图」组下（MindGrid 有实现，不因截图没有而砍掉）', () => {

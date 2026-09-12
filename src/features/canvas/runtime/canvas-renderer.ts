@@ -79,6 +79,10 @@ export interface RenderOptions {
   drawDecorations?: boolean
   /** 文档主题 ID（用于背景色与连线色解析）。缺省使用 classic-blue。 */
   themeId?: string
+  /** 画布级背景色覆盖（`canvas.background` 设置）。空值 = 跟随主题。 */
+  background?: string | null
+  /** 画布级字体栈；未提供时使用默认字体栈。 */
+  fontFamily?: string
   /**
    * 已解码的主题图片：topicId → HTMLImageElement。
    *
@@ -113,9 +117,10 @@ export function renderScene(
     drawOverlays = true,
     drawDecorations = true,
   } = options
+  const fontFamily = options.fontFamily ?? FONT_FAMILY
 
   // 解析文档主题的背景色（节点样式已在 SceneBuilder 阶段注入 TopicRenderNode.style）
-  const themeBackground = resolveThemeBackground(options.themeId)
+  const themeBackground = resolveThemeBackground(options.themeId, options.background)
 
   // 清空整个画布（物理像素）
   const pixelWidth = Math.round(viewport.width * dpr)
@@ -140,7 +145,7 @@ export function renderScene(
       (n): n is BoundaryRenderNode => n.type === 'boundary',
     )
     for (const boundary of boundaries) {
-      drawBoundary(ctx, boundary)
+      drawBoundary(ctx, boundary, fontFamily)
     }
   }
 
@@ -154,14 +159,14 @@ export function renderScene(
       (n): n is SummaryRenderNode => n.type === 'summary',
     )
     for (const summary of summaries) {
-      drawSummary(ctx, summary)
+      drawSummary(ctx, summary, fontFamily)
     }
   }
 
   if (drawTopics) {
     const topics = scene.nodes.filter((n): n is TopicRenderNode => n.type === 'topic')
     for (const topic of topics) {
-      drawTopic(ctx, topic, options.topicImages)
+      drawTopic(ctx, topic, options.topicImages, fontFamily)
     }
   }
 
@@ -170,7 +175,7 @@ export function renderScene(
       (n): n is RelationshipRenderNode => n.type === 'relationship',
     )
     for (const relationship of relationships) {
-      drawRelationship(ctx, relationship)
+      drawRelationship(ctx, relationship, fontFamily)
     }
   }
 
@@ -179,7 +184,7 @@ export function renderScene(
       (n) => n.type === 'selection-box' || n.type === 'drag-preview' || n.type === 'drop-indicator',
     )
     for (const overlay of overlays) {
-      drawOverlay(ctx, overlay)
+      drawOverlay(ctx, overlay, fontFamily)
     }
   }
 
@@ -241,6 +246,34 @@ function drawEdge(ctx: CanvasRenderingContext2D, edge: EdgeRenderNode): void {
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
   ctx.stroke()
+
+  if (edge.endpoint !== 'none') {
+    ctx.save()
+    ctx.fillStyle = edge.branchColor
+    ctx.strokeStyle = edge.branchColor
+    if (edge.endpoint === 'circle') {
+      ctx.beginPath()
+      ctx.arc(edge.end.x, edge.end.y, Math.max(3, edge.lineWidth * 1.8), 0, Math.PI * 2)
+      ctx.fill()
+    } else {
+      const angle = Math.atan2(edge.end.y - edge.control2.y, edge.end.x - edge.control2.x)
+      const size = Math.max(7, edge.lineWidth * 3.5)
+      const wing = size * 0.55
+      ctx.beginPath()
+      ctx.moveTo(edge.end.x, edge.end.y)
+      ctx.lineTo(
+        edge.end.x - Math.cos(angle) * size + Math.sin(angle) * wing,
+        edge.end.y - Math.sin(angle) * size - Math.cos(angle) * wing,
+      )
+      ctx.lineTo(
+        edge.end.x - Math.cos(angle) * size - Math.sin(angle) * wing,
+        edge.end.y - Math.sin(angle) * size + Math.cos(angle) * wing,
+      )
+      ctx.closePath()
+      ctx.fill()
+    }
+    ctx.restore()
+  }
 }
 
 // ---- 主题节点 ----
@@ -248,7 +281,8 @@ function drawEdge(ctx: CanvasRenderingContext2D, edge: EdgeRenderNode): void {
 function drawTopic(
   ctx: CanvasRenderingContext2D,
   node: TopicRenderNode,
-  topicImages?: Map<string, HTMLImageElement>,
+  topicImages: Map<string, HTMLImageElement> | undefined,
+  fontFamily: string,
 ): void {
   const { bounds, state } = node
 
@@ -273,14 +307,14 @@ function drawTopic(
   drawNodeImage(ctx, node, topicImages)
 
   // 文字
-  drawNodeText(ctx, node)
+  drawNodeText(ctx, node, fontFamily)
 
   // 富内容：任务状态 / 标记 / 备注 / 链接 / 标签（与 SVG 端同一套几何与图形定义）
-  drawRichContent(ctx, node)
+  drawRichContent(ctx, node, fontFamily)
 
   // 折叠/展开按钮
   if (node.childCount > 0) {
-    drawToggleButton(ctx, node)
+    drawToggleButton(ctx, node, fontFamily)
   }
 
   ctx.globalAlpha = 1
@@ -398,20 +432,22 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
   ctx.stroke()
 }
 
-function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
-  const { bounds, text, depth, style } = node
+function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, fontFamily: string): void {
+  const { bounds, text, number, depth, style } = node
   const padding = getNodePadding(depth)
+  // 编号是展示层前缀：与 SVG / DOM 三端一致地拼在标题前，不写入主题文本
+  const displayText = number ? `${number} ${text}` : text
   // 与 SVG 端保持一致：只要 rich.image 存在就下移标题，即使图片解码失败，
   // 这样 SVG 与 PNG 的版面不会因为个别坏图而错位。
   const titleOffsetY = node.rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0
 
   // 标题：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
-  ctx.font = `${style.fontWeight} ${style.fontSize}px ${FONT_FAMILY}`
+  ctx.font = `${style.fontWeight} ${style.fontSize}px ${fontFamily}`
   ctx.fillStyle = style.textColor
   ctx.textBaseline = 'top'
   ctx.textAlign = 'left'
 
-  const lines = wrapText(text, bounds.width - padding * 2, ctx.font)
+  const lines = wrapText(displayText, bounds.width - padding * 2, ctx.font)
   const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding + titleOffsetY
   for (let i = 0; i < lines.length; i++) {
@@ -470,7 +506,7 @@ function drawNodeImage(
  *   - 图标图形：复用 `markers.tsx` 的 SVG 字符串，经 svg-inner-canvas 绘制
  *   - 几何常量：取自 rich-content-constants（基准为 DOM 的 CSS）
  */
-function drawRichContent(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+function drawRichContent(ctx: CanvasRenderingContext2D, node: TopicRenderNode, fontFamily: string): void {
   const rich = node.rich
   if (!rich) return
 
@@ -487,6 +523,8 @@ function drawRichContent(ctx: CanvasRenderingContext2D, node: TopicRenderNode): 
       taskStatusToSvgInner(rich.task.status, rich.task.priority),
       taskX,
       taskY,
+      RICH_ICON_SIZE,
+      fontFamily,
     )
   }
 
@@ -506,27 +544,27 @@ function drawRichContent(ctx: CanvasRenderingContext2D, node: TopicRenderNode): 
     let cursorX = bounds.x + bounds.width + RICH_META_OFFSET
     const cursorY = bounds.y + bounds.height / 2 - RICH_ICON_SIZE / 2
     for (const icon of metaIcons) {
-      drawSvgInner(ctx, icon, cursorX, cursorY)
+      drawSvgInner(ctx, icon, cursorX, cursorY, RICH_ICON_SIZE, fontFamily)
       cursorX += RICH_ICON_SIZE + RICH_META_GAP
     }
   }
 
   // 标签胶囊行：节点下方水平居中
   if (rich.labels && rich.labels.length > 0) {
-    drawLabelPills(ctx, node)
+    drawLabelPills(ctx, node, fontFamily)
   }
 
   ctx.restore()
 }
 
 /** 绘制标签胶囊行（节点下方，最多 RICH_LABEL_MAX_SHOWN 个，其余以 +N 收尾）。 */
-function drawLabelPills(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+function drawLabelPills(ctx: CanvasRenderingContext2D, node: TopicRenderNode, fontFamily: string): void {
   const labels = node.rich?.labels ?? []
   if (labels.length === 0) return
 
   const shown = labels.slice(0, RICH_LABEL_MAX_SHOWN)
   const overflow = labels.length - shown.length
-  const font = `400 ${RICH_LABEL_FONT_SIZE}px ${FONT_FAMILY}`
+  const font = `400 ${RICH_LABEL_FONT_SIZE}px ${fontFamily}`
 
   // 与 SVG 端同用 measureTextWidth，保证两端胶囊宽度一致
   const widths = shown.map((label) =>
@@ -567,7 +605,7 @@ function drawLabelPills(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
   ctx.textBaseline = 'top'
 }
 
-function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode, fontFamily: string): void {
   const { bounds, collapsed, side } = node
   const toggleSize = TOGGLE_BUTTON_SIZE
   const half = toggleSize / 2
@@ -600,7 +638,7 @@ function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode):
 
   // +/− 符号（切换按钮为独立 UI 控件，符号色不随主题变化）
   ctx.fillStyle = COLORS.text
-  ctx.font = `600 10px ${FONT_FAMILY}`
+  ctx.font = `600 10px ${fontFamily}`
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(collapsed ? '+' : '−', toggleX, toggleY)
@@ -613,16 +651,17 @@ function drawToggleButton(ctx: CanvasRenderingContext2D, node: TopicRenderNode):
 function drawOverlay(
   ctx: CanvasRenderingContext2D,
   overlay: SelectionBoxRenderNode | DragPreviewRenderNode | DropIndicatorRenderNode,
+  fontFamily: string,
 ): void {
   switch (overlay.type) {
     case 'selection-box':
       drawSelectionBox(ctx, overlay)
       break
     case 'drag-preview':
-      drawDragPreview(ctx, overlay)
+      drawDragPreview(ctx, overlay, fontFamily)
       break
     case 'drop-indicator':
-      drawDropIndicator(ctx, overlay)
+      drawDropIndicator(ctx, overlay, fontFamily)
       break
   }
 }
@@ -637,7 +676,7 @@ function drawSelectionBox(ctx: CanvasRenderingContext2D, node: SelectionBoxRende
   ctx.stroke()
 }
 
-function drawDragPreview(ctx: CanvasRenderingContext2D, node: DragPreviewRenderNode): void {
+function drawDragPreview(ctx: CanvasRenderingContext2D, node: DragPreviewRenderNode, fontFamily: string): void {
   const { bounds, text, depth, side, style } = node
 
   ctx.globalAlpha = 0.86
@@ -648,6 +687,7 @@ function drawDragPreview(ctx: CanvasRenderingContext2D, node: DragPreviewRenderN
     layer: 'overlay',
     bounds,
     text,
+    number: null,
     depth,
     side,
     collapsed: false,
@@ -663,18 +703,18 @@ function drawDragPreview(ctx: CanvasRenderingContext2D, node: DragPreviewRenderN
       isDragging: true,
     },
     style,
-  })
+  }, fontFamily)
   ctx.globalAlpha = 1
 }
 
-function drawDropIndicator(ctx: CanvasRenderingContext2D, node: DropIndicatorRenderNode): void {
+function drawDropIndicator(ctx: CanvasRenderingContext2D, node: DropIndicatorRenderNode, fontFamily: string): void {
   const { bounds, label } = node
   ctx.save()
   ctx.shadowColor = 'rgba(12, 21, 40, 0.18)'
   ctx.shadowBlur = 38
   ctx.shadowOffsetY = 16
 
-  ctx.font = `400 12px ${FONT_FAMILY}`
+  ctx.font = `400 12px ${fontFamily}`
   const textWidth = ctx.measureText(label).width
   const pillWidth = textWidth + 28
   const pillHeight = 32
@@ -698,7 +738,7 @@ function drawDropIndicator(ctx: CanvasRenderingContext2D, node: DropIndicatorRen
 // ---- 装饰元素（关系线 / 边界 / 概要）----
 
 /** 绘制关系线：两端主题中心之间的虚线连接 + 可选标签。 */
-function drawRelationship(ctx: CanvasRenderingContext2D, node: RelationshipRenderNode): void {
+function drawRelationship(ctx: CanvasRenderingContext2D, node: RelationshipRenderNode, fontFamily: string): void {
   const { from, to, label } = node
 
   // 虚线连接（区别于树形实线边）
@@ -718,7 +758,7 @@ function drawRelationship(ctx: CanvasRenderingContext2D, node: RelationshipRende
     const midX = (from.x + to.x) / 2
     const midY = (from.y + to.y) / 2
     ctx.save()
-    ctx.font = `600 12px ${FONT_FAMILY}`
+    ctx.font = `600 12px ${fontFamily}`
     const textWidth = ctx.measureText(label).width
     const pillWidth = textWidth + 16
     const pillHeight = 22
@@ -740,7 +780,7 @@ function drawRelationship(ctx: CanvasRenderingContext2D, node: RelationshipRende
 }
 
 /** 绘制边界：框选一组主题的圆角矩形 + 可选标签。 */
-function drawBoundary(ctx: CanvasRenderingContext2D, node: BoundaryRenderNode): void {
+function drawBoundary(ctx: CanvasRenderingContext2D, node: BoundaryRenderNode, fontFamily: string): void {
   const { bounds, label } = node
   const radius = 12
   const padding = 10
@@ -776,7 +816,7 @@ function drawBoundary(ctx: CanvasRenderingContext2D, node: BoundaryRenderNode): 
   // 标签（左上角）
   if (label) {
     ctx.save()
-    ctx.font = `600 11px ${FONT_FAMILY}`
+    ctx.font = `600 11px ${fontFamily}`
     ctx.fillStyle = COLORS.boundaryLabelText
     ctx.textBaseline = 'top'
     ctx.fillText(label, bounds.x - padding + 8, bounds.y - padding + 6)
@@ -785,7 +825,7 @@ function drawBoundary(ctx: CanvasRenderingContext2D, node: BoundaryRenderNode): 
 }
 
 /** 绘制概要：右侧大括号 + 标签。 */
-function drawSummary(ctx: CanvasRenderingContext2D, node: SummaryRenderNode): void {
+function drawSummary(ctx: CanvasRenderingContext2D, node: SummaryRenderNode, fontFamily: string): void {
   const { bounds, label, anchor } = node
   const bracketOffset = 16
   const bracketWidth = 12
@@ -818,7 +858,7 @@ function drawSummary(ctx: CanvasRenderingContext2D, node: SummaryRenderNode): vo
 
   // 标签（括号右侧）
   ctx.save()
-  ctx.font = `600 13px ${FONT_FAMILY}`
+  ctx.font = `600 13px ${fontFamily}`
   ctx.fillStyle = COLORS.summaryLabelText
   ctx.textBaseline = 'middle'
   ctx.fillText(label, protrudeX + 10, midY)

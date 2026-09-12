@@ -21,6 +21,7 @@ export type ChartType =
   | 'brace'
   | 'matrix'
   | 'bubble'
+  | 'treetable'
 
 /** 主题标记（图标库引用），例如优先级、进度、旗帜等。 */
 export interface TopicMarker {
@@ -141,6 +142,30 @@ export interface Boundary {
   styleRef?: string
 }
 
+/** 编号序号格式。 */
+export type NumberingFormat =
+  | 'decimal'
+  | 'lowerAlpha'
+  | 'upperAlpha'
+  | 'lowerRoman'
+  | 'upperRoman'
+
+/**
+ * 画布级主题编号配置（XMind 样式页「编号」）。
+ *
+ * 编号是展示层派生数据，不写入主题文本；关闭后编号消失，主题文本不变。
+ */
+export interface SheetNumbering {
+  /** 是否启用编号。false 等价于无配置。 */
+  enabled: boolean
+  /** 序号格式，缺省 decimal。 */
+  format?: NumberingFormat
+  /** 层级分隔符，支持 `.` / `-` / `)`，缺省 `.`。 */
+  separator?: string
+  /** 是否给根主题也编号，缺省 false。 */
+  includeRoot?: boolean
+}
+
 /** 布局参数，随图表类型解释。 */
 export interface LayoutConfig {
   direction?: 'left' | 'right' | 'balanced'
@@ -156,6 +181,9 @@ export interface LayoutConfig {
  */
 export type EdgeType = 'curve' | 'straight' | 'elbow'
 
+/** 分支终点装饰，沿父子连线的子主题端绘制。 */
+export type EdgeEndpoint = 'none' | 'circle' | 'arrow'
+
 /**
  * 画布级分支样式覆盖，影响整张画布的连线视觉。
  *
@@ -170,6 +198,8 @@ export interface SheetBranchStyle {
   thickness?: number
   /** 分支色板，覆盖默认 8 色循环。每个根直接子节点取一个色，其后代继承。 */
   colorPalette?: string[]
+  /** 子主题端点装饰，缺省为 none。 */
+  endpoint?: EdgeEndpoint
 }
 
 export interface SheetSnapshot {
@@ -179,8 +209,10 @@ export interface SheetSnapshot {
   /** 图表类型，缺省为 mindmap。 */
   chartType?: ChartType
   layoutConfig?: LayoutConfig
-  /** 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。 */
+  /** 画布级分支样式（连线类型/粗细/分支色板/终点），缺省回退到默认。 */
   branchStyle?: SheetBranchStyle
+  /** 画布级主题编号配置，缺省不显示编号。 */
+  numbering?: SheetNumbering
   /**
    * 浮动主题列表：独立于 rootTopic 树结构的自由节点。
    * 每个浮动主题通过 layoutHints.offsetX/offsetY 存储世界坐标绝对位置，

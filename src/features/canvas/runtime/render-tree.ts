@@ -94,6 +94,8 @@ export interface TopicRenderNode {
   layer: RenderLayer
   bounds: WorldRect
   text: string
+  /** 主题编号（形如 "1.2"），未启用编号时为 null。三端渲染一致。 */
+  number: string | null
   depth: number
   side: NodeSide
   collapsed: boolean
@@ -137,6 +139,8 @@ export interface EdgeRenderNode {
   edgeType: 'curve' | 'straight' | 'elbow'
   /** 最终线宽（已应用 branchStyle.thickness 乘数）。 */
   lineWidth: number
+  /** 子主题端点装饰。 */
+  endpoint: 'none' | 'circle' | 'arrow'
 }
 
 export interface SelectionBoxRenderNode {

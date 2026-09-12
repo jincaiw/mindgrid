@@ -10,6 +10,11 @@ import {
 import type { CameraProjection, Viewport } from './render-tree'
 import { BRANCH_COLORS } from './style-constants'
 import { getTheme } from '../../../lib/document/themes'
+import {
+  DEFAULT_CANVAS_SETTINGS,
+  resolveBranchPalette,
+  type DocumentCanvasSettings,
+} from '../../../lib/document/canvas-settings'
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
@@ -59,6 +64,75 @@ describe('buildScene', () => {
     expect(topicNodes).toHaveLength(5)
     // root->a, root->b, a->a1, a->a2 = 4 edges
     expect(edgeNodes).toHaveLength(4)
+  })
+
+  it('anchors every edge on its parent and child node borders (offset applied)', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+
+    const topicById = new Map(
+      scene.nodes.filter((n) => n.type === 'topic').map((n) => [n.id, n]),
+    )
+    const edges = scene.nodes.filter((n) => n.type === 'edge')
+    expect(edges.length).toBeGreaterThan(0)
+
+    for (const edge of edges) {
+      const parent = topicById.get(edge.parentId)!
+      const child = topicById.get(edge.childId)!
+      expect(parent).toBeDefined()
+      expect(child).toBeDefined()
+
+      // 连线的起点必须落在父节点边框上（横向 x 相差不超过 0.001，纵向在父节点范围内）。
+      // 布局产出的边是根相对坐标，场景构建漏掉 layout.offset 时这根线会整体偏移
+      // （偏移量 = 场景内边线位置与节点位置之差），此断言即为此缺陷的守门测试。
+      const startOnParent =
+        Math.abs(edge.start.x - (parent.bounds.x + parent.bounds.width)) < 0.001 ||
+        Math.abs(edge.start.x - parent.bounds.x) < 0.001
+      expect(startOnParent).toBe(true)
+      expect(edge.start.y).toBeGreaterThanOrEqual(parent.bounds.y - 0.001)
+      expect(edge.start.y).toBeLessThanOrEqual(
+        parent.bounds.y + parent.bounds.height + 0.001,
+      )
+
+      const endOnChild =
+        Math.abs(edge.end.x - child.bounds.x) < 0.001 ||
+        Math.abs(edge.end.x - (child.bounds.x + child.bounds.width)) < 0.001
+      expect(endOnChild).toBe(true)
+      expect(edge.end.y).toBeGreaterThanOrEqual(child.bounds.y - 0.001)
+      expect(edge.end.y).toBeLessThanOrEqual(
+        child.bounds.y + child.bounds.height + 0.001,
+      )
+    }
+  })
+
+  it('keeps edges inside the reported scene bounds', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+
+    for (const edge of scene.nodes.filter((n) => n.type === 'edge')) {
+      expect(edge.bounds.x).toBeGreaterThanOrEqual(0)
+      expect(edge.bounds.y).toBeGreaterThanOrEqual(0)
+      expect(edge.bounds.x + edge.bounds.width).toBeLessThanOrEqual(
+        scene.worldBounds.width,
+      )
+      expect(edge.bounds.y + edge.bounds.height).toBeLessThanOrEqual(
+        scene.worldBounds.height,
+      )
+    }
   })
 
   it('sets visual state correctly on topic nodes', () => {
@@ -451,7 +525,11 @@ describe('buildScene', () => {
 
   describe('分支连线配色', () => {
     /** 按连线终点（子主题 id）查分支色，避免依赖节点数组顺序。 */
-    const branchColorByChild = (options: { themeId?: string; colorPalette?: string[] }) => {
+    const buildEdges = (options: {
+      themeId?: string
+      colorPalette?: string[]
+      canvasSettings?: Partial<DocumentCanvasSettings>
+    }) => {
       const layout = computeMindMapLayout(makeRoot())
       const scene = buildScene({
         layout,
@@ -461,11 +539,18 @@ describe('buildScene', () => {
         overlays: defaultOverlays,
         themeId: options.themeId,
         branchStyle: options.colorPalette ? { colorPalette: options.colorPalette } : undefined,
+        canvasSettings: options.canvasSettings
+          ? { ...DEFAULT_CANVAS_SETTINGS, ...options.canvasSettings }
+          : undefined,
         enableCulling: false,
       })
+      return scene.nodes.filter((n) => n.type === 'edge')
+    }
+
+    const branchColorByChild = (options: Parameters<typeof buildEdges>[0]) => {
       const map = new Map<string, string>()
-      for (const node of scene.nodes) {
-        if (node.type === 'edge') map.set(node.childId, node.branchColor)
+      for (const node of buildEdges(options)) {
+        map.set(node.childId, node.branchColor)
       }
       return map
     }
@@ -498,6 +583,82 @@ describe('buildScene', () => {
       })
       expect(colors.get('a')).toBe('#111111')
       expect(colors.get('b')).toBe('#222222')
+    })
+
+    it('彩虹分支显式关闭时全部连线统一为单色（含缤纷主题）', () => {
+      const single = getTheme('rainbow').edge
+      const colors = branchColorByChild({
+        themeId: 'rainbow',
+        canvasSettings: { rainbowBranch: false },
+      })
+      expect(colors.get('a')).toBe(single)
+      expect(colors.get('b')).toBe(single)
+      expect(colors.get('a1')).toBe(single)
+      // 确实退出了多色：两条一级分支不再异色
+      expect(colors.get('a')).toBe(colors.get('b'))
+    })
+
+    it('彩虹分支显式开启时用画布设置里的预设色板', () => {
+      const preset = resolveBranchPalette('ocean')
+      const colors = branchColorByChild({
+        themeId: 'classic-blue',
+        canvasSettings: { rainbowBranch: true, branchPalette: 'ocean' },
+      })
+      expect(colors.get('a')).toBe(preset[0])
+      expect(colors.get('b')).toBe(preset[1])
+    })
+
+    it('彩虹分支未设置（null）时跟随主题，不覆盖既有行为', () => {
+      const colors = branchColorByChild({
+        themeId: 'classic-blue',
+        canvasSettings: { rainbowBranch: null },
+      })
+      expect(colors.get('a')).toBe(BRANCH_COLORS[0])
+      expect(colors.get('b')).toBe(BRANCH_COLORS[1])
+    })
+  })
+
+  describe('分支线粗细', () => {
+    const lineWidthOfFirst = (options: {
+      branchStyle?: { thickness?: number }
+      canvasSettings?: Partial<DocumentCanvasSettings>
+    }) => {
+      const layout = computeMindMapLayout(makeRoot())
+      const scene = buildScene({
+        layout,
+        viewport: defaultViewport,
+        camera: defaultCamera,
+        visualStates: defaultVisualStates,
+        overlays: defaultOverlays,
+        branchStyle: options.branchStyle,
+        canvasSettings: options.canvasSettings
+          ? { ...DEFAULT_CANVAS_SETTINGS, ...options.canvasSettings }
+          : undefined,
+        enableCulling: false,
+      })
+      const edge = scene.nodes.find((n) => n.type === 'edge')!
+      return edge.lineWidth
+    }
+
+    it('画布设置的粗细档位生效', () => {
+      const base = lineWidthOfFirst({ canvasSettings: { branchThickness: 'default' } })
+      expect(lineWidthOfFirst({ canvasSettings: { branchThickness: 'thick' } })).toBeCloseTo(
+        base * 2,
+        5,
+      )
+      expect(lineWidthOfFirst({ canvasSettings: { branchThickness: 'thin' } })).toBeCloseTo(
+        base * 0.75,
+        5,
+      )
+    })
+
+    it('滑杆值（branchStyle.thickness）优先于画布档位，二者不叠加', () => {
+      const withSlider = lineWidthOfFirst({
+        branchStyle: { thickness: 3 },
+        canvasSettings: { branchThickness: 'thick' },
+      })
+      const sliderOnly = lineWidthOfFirst({ branchStyle: { thickness: 3 } })
+      expect(withSlider).toBeCloseTo(sliderOnly, 5)
     })
   })
 

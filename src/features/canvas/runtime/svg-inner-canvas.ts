@@ -62,6 +62,7 @@ export function drawSvgInner(
   x: number,
   y: number,
   size: number = RICH_ICON_SIZE,
+  fontFamily: string = FONT_FAMILY,
 ): void {
   if (!svgInner) return
 
@@ -72,7 +73,7 @@ export function drawSvgInner(
 
   for (const element of elements) {
     if (element.kind === 'text') {
-      drawTextElement(ctx, element, x, y, scale)
+      drawTextElement(ctx, element, x, y, scale, fontFamily)
       continue
     }
 
@@ -388,6 +389,7 @@ function drawTextElement(
   ox: number,
   oy: number,
   scale: number,
+  fontFamily: string = FONT_FAMILY,
 ): void {
   if (!element.fill || !element.content) return
 
@@ -395,7 +397,7 @@ function drawTextElement(
   const prevBaseline = ctx.textBaseline
   const prevFont = ctx.font
 
-  ctx.font = `${element.fontWeight} ${element.fontSize * scale}px ${FONT_FAMILY}`
+  ctx.font = `${element.fontWeight} ${element.fontSize * scale}px ${fontFamily}`
   ctx.fillStyle = element.fill
   ctx.textAlign = element.textAnchor
   ctx.textBaseline = element.textBaseline

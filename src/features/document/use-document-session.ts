@@ -52,6 +52,8 @@ import {
   setDocumentTheme,
   setSheetChartType,
   setSheetBranchStyle,
+  setSheetLayoutDirection,
+  setSheetNumbering,
   setTopicImage,
   setTopicLabels,
   setTopicLink,
@@ -69,6 +71,7 @@ import type {
   ChartType,
   DocumentSnapshot,
   SheetBranchStyle,
+  SheetNumbering,
   TopicLink,
   TopicMarker,
   TopicSnapshot,
@@ -77,6 +80,7 @@ import type {
 } from '../../lib/document/types'
 import { getActiveSheet } from '../../lib/document/sheets'
 import { computeLayout } from '../canvas/layouts'
+import { buildTopicNumbers } from '../canvas/numbering'
 import {
   collectTopicImageAssetIds,
   collectTopicImageRefs,
@@ -93,6 +97,7 @@ import {
   type RecentActionRecord,
   type DocumentSessionState,
 } from './document-session-store'
+import { buildFontStack, resolveCanvasSettings } from '../../lib/document/canvas-settings'
 
 export interface DocumentSession extends DocumentSessionState {
   createNewDocument: () => Promise<void>
@@ -124,6 +129,14 @@ export interface DocumentSession extends DocumentSessionState {
   setSheetBranchStyle: (
     sheetId: string,
     branchStyle: SheetBranchStyle | null,
+  ) => Promise<void>
+  setSheetNumbering: (
+    sheetId: string,
+    numbering: SheetNumbering | null,
+  ) => Promise<void>
+  setSheetLayoutDirection: (
+    sheetId: string,
+    direction: 'left' | 'right' | 'balanced' | 'auto',
   ) => Promise<void>
   selectTopic: (topicId: string) => Promise<void>
   createChildTopic: (parentId: string) => Promise<void>
@@ -386,7 +399,13 @@ async function resolveTopicImageUrls(rootTopic: TopicSnapshot): Promise<Record<s
 /** 从文档构建全量导出场景（关闭视口剔除，渲染所有节点，并解析主题图片）。 */
 async function buildExportScene(document: DocumentSnapshot) {
   const sheet = getActiveSheet(document)
-  const layout = computeLayout(sheet.rootTopic, sheet.chartType ?? 'mindmap')
+  const canvasSettings = resolveCanvasSettings(document.settings)
+  const layout = computeLayout(sheet.rootTopic, sheet.chartType ?? 'mindmap', undefined, {
+    balance: canvasSettings.balance,
+    compact: canvasSettings.compact,
+    alignSiblings: canvasSettings.alignSiblings,
+    direction: sheet.layoutConfig?.direction,
+  })
   const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
 
   return buildScene({
@@ -400,9 +419,31 @@ async function buildExportScene(document: DocumentSnapshot) {
     summaries: sheet.summaries,
     themeId: document.theme?.id,
     branchStyle: sheet.branchStyle,
+    // 编号必须与屏幕同源：导出少了这一项，PDF/PNG 就没有编号
+    numberMap: buildTopicNumbers(sheet.rootTopic, sheet.numbering),
+    canvasSettings: resolveCanvasSettings(document.settings),
     enableCulling: false,
     topicImageUrls,
   })
+}
+
+/**
+ * 导出链路的渲染参数（主题 + 画布级背景覆盖）。
+ *
+ * **三个导出器都必须传**：PNG/SVG/PDF 在渲染时才解析背景色，
+ * 不传 themeId 会一律回退到默认主题——暗色主题文档导出成浅底。
+ */
+function exportRenderOptions(document: DocumentSnapshot): {
+  themeId: string | undefined
+  background: string | null
+  fontFamily: string
+} {
+  const canvasSettings = resolveCanvasSettings(document.settings)
+  return {
+    themeId: document.theme?.id,
+    background: canvasSettings.background,
+    fontFamily: buildFontStack(canvasSettings.fontFamily, canvasSettings.cjkFont),
+  }
 }
 
 export function useDocumentSession(): DocumentSession {
@@ -891,7 +932,10 @@ export function useDocumentSession(): DocumentSession {
 
     try {
       const scene = await buildExportScene(state.document)
-      const bytes = await renderSceneToPngBytes(scene, { scale: 2 })
+      const bytes = await renderSceneToPngBytes(scene, {
+        scale: 2,
+        ...exportRenderOptions(state.document),
+      })
       await exportPngFile(selectedPath, bytes)
 
       setState((current) => ({
@@ -935,7 +979,10 @@ export function useDocumentSession(): DocumentSession {
 
     try {
       const scene = await buildExportScene(state.document)
-      const svgContent = renderSceneToSvg(scene)
+      const svgContent = renderSceneToSvg(
+        scene,
+        exportRenderOptions(state.document),
+      )
       await exportSvgFile(selectedPath, svgContent)
 
       setState((current) => ({
@@ -1068,7 +1115,7 @@ export function useDocumentSession(): DocumentSession {
 
     try {
       const scene = await buildExportScene(state.document)
-      const bytes = await renderSceneToPdfBytes(scene)
+      const bytes = await renderSceneToPdfBytes(scene, exportRenderOptions(state.document))
       await exportPdfFile(selectedPath, bytes)
 
       setState((current) => ({
@@ -1124,6 +1171,22 @@ export function useDocumentSession(): DocumentSession {
   const setDocumentSheetBranchStyle = useCallback(
     async (sheetId: string, branchStyle: SheetBranchStyle | null) => {
       await runCommand('设置分支样式', () => setSheetBranchStyle(sheetId, branchStyle))
+    },
+    [runCommand],
+  )
+
+  const setDocumentSheetNumbering = useCallback(
+    async (sheetId: string, numbering: SheetNumbering | null) => {
+      await runCommand('设置编号', () => setSheetNumbering(sheetId, numbering))
+    },
+    [runCommand],
+  )
+
+  const setDocumentSheetLayoutDirection = useCallback(
+    async (sheetId: string, direction: 'left' | 'right' | 'balanced' | 'auto') => {
+      await runCommand('设置分支方向', () =>
+        setSheetLayoutDirection(sheetId, direction),
+      )
     },
     [runCommand],
   )
@@ -1500,6 +1563,8 @@ export function useDocumentSession(): DocumentSession {
       moveSheet: moveDocumentSheet,
       setSheetChartType: setDocumentSheetChartType,
       setSheetBranchStyle: setDocumentSheetBranchStyle,
+      setSheetNumbering: setDocumentSheetNumbering,
+      setSheetLayoutDirection: setDocumentSheetLayoutDirection,
       selectTopic: selectActiveTopic,
       createChildTopic: createChild,
       createSiblingTopic: createSibling,
@@ -1579,6 +1644,8 @@ export function useDocumentSession(): DocumentSession {
       moveDocumentSheet,
       setDocumentSheetChartType,
       setDocumentSheetBranchStyle,
+      setDocumentSheetNumbering,
+      setDocumentSheetLayoutDirection,
       exportCurrentMarkdownOutline,
       importMarkdownOutline,
       exportCurrentOpmlOutline,
