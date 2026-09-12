@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getActiveSheet } from '../../lib/document/sheets'
 import {
+  PITCH_SETTINGS_KEYS,
+  resolvePitchSettings,
+} from '../../lib/document/pitch-settings'
+import {
   buildDocumentTopicSearchIndex,
   searchTopics,
   type TopicSearchEntry,
@@ -61,8 +65,17 @@ export function WorkspaceScreen({
   const [isPresenting, setIsPresenting] = useState(false)
   // 批次 C6：提案简报（Pitch）。与演示模式并存——演示逐节点揭示，简报按分支分幕
   const [isPitching, setIsPitching] = useState(false)
-  const [pitchAspectRatio, setPitchAspectRatio] = useState<PitchAspectRatio>('16:9')
-  const [pitchThemeStyle, setPitchThemeStyle] = useState<PitchThemeStyle>('document')
+  // 演说设置是**文档级**的：从 document.settings 解析（损坏即回落默认），
+  // 改动写回同一处。此前是纯组件 state，切文档/重开会丢，属于"看得见存不住"的假设置。
+  const pitchSettings = resolvePitchSettings(session.document?.settings)
+  const pitchAspectRatio: PitchAspectRatio = pitchSettings.aspectRatio
+  const pitchThemeStyle: PitchThemeStyle = pitchSettings.themeStyle
+  const setPitchAspectRatio = (value: PitchAspectRatio) => {
+    void session.setDocumentSetting(PITCH_SETTINGS_KEYS.aspectRatio, value)
+  }
+  const setPitchThemeStyle = (value: PitchThemeStyle) => {
+    void session.setDocumentSetting(PITCH_SETTINGS_KEYS.themeStyle, value)
+  }
   const [isZenMode, setIsZenMode] = useState(false)
   // 批次 14：搜索框开关提升到本层，工具栏搜索按钮与 Cmd/Ctrl + F 共用
   const [searchOpen, setSearchOpen] = useState(false)

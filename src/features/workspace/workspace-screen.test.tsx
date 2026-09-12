@@ -2294,6 +2294,31 @@ function selectTwoTopicsViaSidebar() {
   fireEvent.click(sidebar.getByRole('button', { name: /复盘主题/ }), { ctrlKey: true })
 }
 
+it('persists the pitch aspect ratio to document settings (not local state)', async () => {
+  const setDocumentSetting = vi.fn(async () => {})
+
+  renderBatch14Workspace({
+    setDocumentSetting,
+    document: {
+      ...twoChildDocument,
+      settings: { 'pitch.aspectRatio': '4:3' },
+    },
+  })
+
+  fireEvent.click(screen.getByRole('tab', { name: '演说' }))
+
+  // 文档里存了 4:3，控件就该显示 4:3（此前是纯组件 state，存不住也读不回）
+  const ratioSelect = screen.getByLabelText('长宽比') as HTMLSelectElement
+  expect(ratioSelect.value).toBe('4:3')
+
+  fireEvent.change(ratioSelect, { target: { value: '1:1' } })
+  expect(setDocumentSetting).toHaveBeenCalledWith('pitch.aspectRatio', '1:1')
+
+  const styleSelect = screen.getByLabelText('主题风格') as HTMLSelectElement
+  fireEvent.change(styleSelect, { target: { value: 'dark' } })
+  expect(setDocumentSetting).toHaveBeenCalledWith('pitch.themeStyle', 'dark')
+})
+
 it('forwards toolbar topic actions (child/sibling) to the session', () => {
   const createChildTopic = vi.fn(async () => {})
   const createSiblingTopic = vi.fn(async () => {})

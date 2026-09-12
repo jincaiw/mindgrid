@@ -19,6 +19,10 @@ import type {
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
+import {
+  TOPIC_IMAGE_DIALOG_OPTIONS,
+  toSelectedImagePath,
+} from '../canvas/runtime/topic-image-picker'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import { MarkerSelector } from '../canvas/marker-selector'
 import {
@@ -550,14 +554,9 @@ export function Inspector({
     }
 
     if (hasTauriRuntime()) {
-      const selected = await openFileDialog({
-        multiple: false,
-        directory: false,
-        filters: [
-          { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'] },
-        ],
-      })
-      const selectedPath = typeof selected === 'string' ? selected : null
+      // 过滤条件与返回值归一化都在 topic-image-picker 里（可测），组件只负责编排
+      const selected = await openFileDialog({ ...TOPIC_IMAGE_DIALOG_OPTIONS })
+      const selectedPath = toSelectedImagePath(selected)
 
       if (selectedPath) {
         await insertTopicImage(selectedPath)
