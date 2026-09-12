@@ -73,3 +73,26 @@ it('routes only canvas-internal commands to the canvas host', () => {
   expect(toCanvasCommand('insert.child')).toBeNull()
   expect(toCanvasCommand('view.sidebar')).toBeNull()
 })
+
+/**
+ * 顶层菜单顺序契约：文件 / 编辑 / 插入 / 工具 / 查看 / 窗口 / 帮助。
+ *
+ * 「查看」必须排在「工具」之后（XMind 顺序）。曾有把顶层菜单按字母或
+ * 直觉重排的改动，重排后菜单结构看着仍然"正常"，只有逐项对照才发现顺序变了，
+ * 所以这里用源码顺序做断言。
+ */
+it('keeps the XMind top-level menu order in menu.rs', () => {
+  const titles = ['文件', '编辑', '插入', '工具', '查看', '窗口', '帮助']
+  const positions = titles.map((title) => {
+    const index = menuRsSource.indexOf(`SubmenuBuilder::new(handle, "${title}")`)
+    expect(index, `未找到顶层菜单「${title}」`).toBeGreaterThan(-1)
+    return index
+  })
+
+  for (let i = 1; i < positions.length; i++) {
+    expect(
+      positions[i],
+      `顶层菜单「${titles[i]}」应排在「${titles[i - 1]}」之后`,
+    ).toBeGreaterThan(positions[i - 1])
+  }
+})

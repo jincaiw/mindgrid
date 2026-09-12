@@ -1279,6 +1279,10 @@ function MindMapScene({
       if (!onCreateFloatingTopic || !viewportRef.current) {
         return
       }
+      // 画布设置里的「自由主题」开关必须真的生效：关掉后空白双击不再创建
+      if (canvasSettings.freeTopic === false) {
+        return
+      }
 
       const rect = viewportRef.current.getBoundingClientRect()
       const worldX = (event.clientX - rect.left - cameraRef.current.x) / cameraRef.current.zoom
@@ -1289,7 +1293,14 @@ function MindMapScene({
 
       void onCreateFloatingTopic('新建浮动主题', rootX, rootY)
     },
-    [editingTopicId, searchOpen, onCreateFloatingTopic, layout.offsetX, layout.offsetY],
+    [
+      editingTopicId,
+      searchOpen,
+      onCreateFloatingTopic,
+      layout.offsetX,
+      layout.offsetY,
+      canvasSettings.freeTopic,
+    ],
   )
 
   // 节点右键：编辑/增删/复制/粘贴/折叠/删除（参考 XMind 节点右键菜单）

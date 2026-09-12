@@ -102,6 +102,23 @@ async function main() {
   await inspectorTab('演说', '03-inspector-pitch')
   await inspectorTab('样式', '04-inspector-style')
 
+  // 模式视图：ZEN 与大纲（工具栏 / 状态条入口）
+  for (const [buttonName, file] of [
+    ['ZEN', '10-zen-mode'],
+    ['大纲', '11-outline-mode'],
+  ]) {
+    const button = page.getByRole('button', { name: buttonName, exact: false })
+    if ((await button.count()) > 0) {
+      await button.first().click()
+      await page.waitForTimeout(500)
+      await shot(page, file)
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(300)
+    } else {
+      console.log('skip (button missing):', buttonName)
+    }
+  }
+
   await browser.close()
 }
 

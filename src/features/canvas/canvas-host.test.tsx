@@ -943,6 +943,27 @@ it('renders only the scene without debug scaffolding', () => {
   expect(screen.queryByText('修订号')).not.toBeInTheDocument()
 })
 
+it('does not create a floating topic when the free-topic setting is off', async () => {
+  const createFloatingTopic = vi.fn(async (_text: string, _ox: number, _oy: number) => {})
+  const session = createSessionStub({ createFloatingTopic })
+  // 关掉「自由主题」画布设置（document.settings 是文档级自由键值字典）
+  // 桩里的 document 类型带可选字段（Partial 便于测试），这里显式收敛回完整文档
+  session.document = {
+    ...session.document,
+    settings: { 'canvas.freeTopic': false },
+  } as typeof session.document
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const section = screen.getByLabelText('思维导图舞台')
+  const viewport = section.querySelector('.mindmap-scene') as HTMLElement
+  fireEvent.doubleClick(viewport)
+
+  // 开关关闭 → 不创建；此前该开关没有任何消费点，是个"点了没用"的控件
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(createFloatingTopic).not.toHaveBeenCalled()
+})
+
 it('creates a floating topic on double-click of blank canvas (XMind-style)', async () => {
   const createFloatingTopic = vi.fn(async (_text: string, _ox: number, _oy: number) => {})
   const session = createSessionStub({ createFloatingTopic })
