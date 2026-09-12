@@ -91,6 +91,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setSheetChartType: async () => {},
     setSheetBranchStyle: async () => {},
     setSheetNumbering: async () => {},
+    applyTopicStyleToSiblings: async () => {},
     setSheetLayoutDirection: async () => {},
     selectTopic: async () => {},
     createChildTopic: async () => {},

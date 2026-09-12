@@ -32,6 +32,7 @@ import {
   NUMBERING_SEPARATORS,
 } from '../canvas/numbering'
 import { StructurePicker } from './structure-picker'
+import { SwatchPicker } from './swatch-picker'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
 import {
   BRANCH_PALETTE_PRESETS as CANVAS_BRANCH_PALETTES,
@@ -209,6 +210,18 @@ const LAYOUT_DIRECTION_OPTIONS: {
   { value: 'left', label: '左侧' },
   { value: 'right', label: '右侧' },
   { value: 'balanced', label: '平衡' },
+]
+
+/** 画布背景预设：浅色为主（XMind 背景色板同样以浅色打底），末两项是深色。 */
+const BACKGROUND_SWATCHES = [
+  { id: '#ffffff', label: '纯白', colors: ['#ffffff'] },
+  { id: '#fdfbf5', label: '米白', colors: ['#fdfbf5'] },
+  { id: '#f4f5f7', label: '浅灰', colors: ['#f4f5f7'] },
+  { id: '#eef3fb', label: '淡蓝', colors: ['#eef3fb'] },
+  { id: '#f3f7f0', label: '淡绿', colors: ['#f3f7f0'] },
+  { id: '#faf1ef', label: '淡粉', colors: ['#faf1ef'] },
+  { id: '#23252a', label: '深灰', colors: ['#23252a'] },
+  { id: '#12141a', label: '近黑', colors: ['#12141a'] },
 ]
 
 const NUMBERING_SEPARATOR_OPTIONS = [
@@ -979,15 +992,28 @@ export function Inspector({
                   />
                 </div>
 
-                {activeTopic.styleOverrides ? (
+                <div className="panel__field-row">
                   <button
                     className="panel__action panel__action--ghost"
                     type="button"
-                    onClick={() => void session.setTopicStyleOverrides(activeTopic.id, null)}
+                    title="把这个主题的样式覆盖复制给同一父主题下的其他主题"
+                    onClick={() => {
+                      if (!activeTopic) return
+                      void session.applyTopicStyleToSiblings(activeTopic.id)
+                    }}
                   >
-                    清除全部样式覆盖
+                    应用到同级主题
                   </button>
-                ) : null}
+                  {activeTopic.styleOverrides ? (
+                    <button
+                      className="panel__action panel__action--ghost"
+                      type="button"
+                      onClick={() => void session.setTopicStyleOverrides(activeTopic.id, null)}
+                    >
+                      清除全部样式覆盖
+                    </button>
+                  ) : null}
+                </div>
 
                 <div className="panel__field">
                   <span>任务</span>
@@ -1513,24 +1539,26 @@ export function Inspector({
             </PanelSection>
 
             <PanelSection eyebrow="Palette" title="配色方案">
-              <label className="panel__field">
+              <div className="panel__field">
                 <span>分支色板</span>
-                <select
+                <SwatchPicker
+                  label="分支色板"
                   value={canvasSettings.branchPalette}
-                  onChange={(event) =>
+                  fallbackLabel="默认"
+                  options={CANVAS_BRANCH_PALETTES.map((preset) => ({
+                    id: preset.id,
+                    label: preset.label,
+                    colors: [...preset.colors],
+                  }))}
+                  onChange={(next) => {
+                    if (next === null) return
                     void session.setDocumentSetting(
                       CANVAS_SETTINGS_KEYS.branchPalette,
-                      event.target.value,
+                      next,
                     )
-                  }
-                >
-                  {CANVAS_BRANCH_PALETTES.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  }}
+                />
+              </div>
               <label className="accordion-card">
                 <input
                   type="checkbox"
@@ -1548,31 +1576,23 @@ export function Inspector({
             </PanelSection>
 
             <PanelSection eyebrow="Appearance" title="画布外观">
-              <label className="panel__field">
+              <div className="panel__field">
                 <span>背景颜色</span>
-                <span className="panel__color-control">
-                  <input
-                    type="color"
-                    value={canvasSettings.background ?? '#ffffff'}
-                    onChange={(event) =>
-                      void session.setDocumentSetting(
-                        CANVAS_SETTINGS_KEYS.background,
-                        event.target.value,
-                      )
-                    }
-                    aria-label="背景颜色"
-                  />
-                  {canvasSettings.background ? (
-                    <button
-                      className="panel__action panel__action--ghost"
-                      type="button"
-                      onClick={() => void session.setDocumentSetting(CANVAS_SETTINGS_KEYS.background, null)}
-                    >
-                      跟随主题
-                    </button>
-                  ) : null}
-                </span>
-              </label>
+                <SwatchPicker
+                  label="背景颜色"
+                  value={canvasSettings.background}
+                  fallbackLabel="跟随主题"
+                  options={BACKGROUND_SWATCHES}
+                  resetLabel="跟随主题"
+                  colorInputLabel="自定义颜色"
+                  onChange={(next) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.background,
+                      next,
+                    )
+                  }
+                />
+              </div>
               <label className="panel__field">
                 <span>全局字体</span>
                 <select

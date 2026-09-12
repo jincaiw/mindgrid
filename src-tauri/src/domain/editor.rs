@@ -1537,6 +1537,55 @@ impl<'a> DocumentEditor<'a> {
         Ok(())
     }
 
+    /// 把某个主题的节点样式覆盖**应用到它的全部同级主题**（XMind「应用于兄弟主题」）。
+    ///
+    /// 语义：
+    /// - 同级 = 同一父主题下的兄弟（不含自己，自己已经是这个样式）；
+    /// - 根主题没有兄弟，直接报错而不是静默成功；
+    /// - 浮动主题没有兄弟，同样报错；
+    /// - 每个兄弟各自记录一条 `StyleOverrides` 变更，整个循环在同一个 ChangeSet 里，
+    ///   因此撤销是一次退回全部兄弟（与批量折叠一致）。
+    /// 返回源主题 id（保持选中不变）。
+    pub fn apply_topic_style_to_siblings(&mut self, topic_id: &str) -> Result<String, String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "应用样式的")?;
+
+        let (overrides, sibling_ids) = {
+            let sheet = self
+                .document
+                .find_sheet(&sheet_id)
+                .ok_or_else(|| "找不到需要应用样式的主题".to_string())?;
+
+            let topic = find_topic(&sheet.root_topic, topic_id)
+                .ok_or_else(|| "根主题没有同级主题".to_string())?;
+            let overrides = topic.style_overrides.clone();
+
+            let parent = find_parent_id_and_index(&sheet.root_topic, topic_id)
+                .ok_or_else(|| "根主题没有同级主题".to_string())?
+                .0;
+            let parent_topic = find_topic(&sheet.root_topic, &parent)
+                .ok_or_else(|| "找不到该主题的父主题".to_string())?;
+
+            let sibling_ids: Vec<String> = parent_topic
+                .children
+                .iter()
+                .filter(|child| child.id != topic_id)
+                .map(|child| child.id.clone())
+                .collect();
+
+            (overrides, sibling_ids)
+        };
+
+        if sibling_ids.is_empty() {
+            return Err("当前主题没有同级主题".into());
+        }
+
+        for sibling_id in &sibling_ids {
+            self.set_topic_style_overrides_raw(&sheet_id, sibling_id, overrides.clone());
+        }
+
+        Ok(topic_id.to_string())
+    }
+
     /// 设置/移除主题图片。`image` 为 None 时移除（XMind 图片主题的对标行为）。
     pub fn set_topic_image(&mut self, topic_id: &str, image: Option<TopicImage>) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑图片")?;
@@ -2277,6 +2326,71 @@ mod tests {
         apply_inverse(&mut document, &ops);
         let sheet = document.find_sheet(&sheet_id).unwrap();
         assert!(sheet.branch_style.is_none());
+    }
+
+    #[test]
+    fn apply_topic_style_to_siblings_copies_style_in_one_change_set() {
+        use crate::domain::document::TopicStyleOverrides;
+
+        let mut document = DocumentSnapshot::new_default();
+        let (_, child_a, child_b) = default_sheet_and_two_child_ids(&document);
+
+        let style = TopicStyleOverrides {
+            fill: Some("#ea580c".into()),
+            text_color: None,
+            border_color: None,
+            shape: None,
+            font_size: None,
+            font_weight: None,
+            border_width: None,
+        };
+        document
+            .find_sheet_mut(&document.active_sheet_id.clone())
+            .unwrap()
+            .root_topic
+            .children[0]
+            .style_overrides = Some(style.clone());
+
+        let mut editor = DocumentEditor::new(&mut document);
+        assert_eq!(
+            editor.apply_topic_style_to_siblings(&child_a).unwrap(),
+            child_a
+        );
+        let ops = editor.into_ops();
+
+        // 每个兄弟一条操作（默认文档有 2 个兄弟），源主题不受影响
+        let sibling_count = document.root_topic().children.len() - 1;
+        assert_eq!(ops.len(), sibling_count);
+
+        for (index, child) in document.root_topic().children.iter().enumerate() {
+            if index == 0 {
+                assert_eq!(child.style_overrides, Some(style.clone()));
+            } else {
+                assert_eq!(child.style_overrides, Some(style.clone()), "兄弟应继承样式");
+            }
+        }
+
+        // 撤销后兄弟回到「无覆盖」，源主题保留自己的样式
+        apply_inverse(&mut document, &ops);
+        let root = document.root_topic();
+        assert!(root.children[0].style_overrides.is_some());
+        for child in root.children.iter().skip(1) {
+            assert!(child.style_overrides.is_none());
+        }
+        let _ = child_b;
+    }
+
+    #[test]
+    fn apply_topic_style_to_siblings_rejects_root_and_leaf_only_children() {
+        let mut document = DocumentSnapshot::new_default();
+        let root_id = document.root_topic().id.clone();
+        let (_, child_a, _) = default_sheet_and_two_child_ids(&document);
+
+        let mut editor = DocumentEditor::new(&mut document);
+        // 根主题没有同级
+        assert!(editor.apply_topic_style_to_siblings(&root_id).is_err());
+        // 默认文档里 child_a 有兄弟，正常成功
+        assert!(editor.apply_topic_style_to_siblings(&child_a).is_ok());
     }
 
     #[test]

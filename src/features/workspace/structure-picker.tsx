@@ -13,10 +13,11 @@
  * 缩略图是静态 SVG（84×52 视口），不跑布局引擎——浮层要能瞬间打开。
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChartType } from '../../lib/document/types'
 import { ChevronDownIcon } from './icons'
+import { usePopoverAnchor } from './use-popover-anchor'
 
 interface StructureOption {
   value: ChartType | null
@@ -277,39 +278,9 @@ export function StructurePicker({ value, onChange, disabled = false }: Structure
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
-  // 浮层坐标（视口坐标，fixed 定位）
-  const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null)
+  // 浮层坐标（视口坐标，fixed 定位）：portal 到 body，否则被右栏滚动容器裁切
+  const anchor = usePopoverAnchor(open, triggerRef)
   const current = findOption(value)
-
-  /**
-   * 计算浮层位置：锚在触发器下方、**右对齐**并向左展开。
-   *
-   * 浮层必须挂到 body 上（portal）：右栏是滚动容器，会裁掉超出面板的子元素，
-   * 挂在触发器内部时浮层宽度被限制在 280px 面板内，两张卡片挤成一列。
-   */
-  const updateAnchor = useCallback(() => {
-    const trigger = triggerRef.current
-    if (!trigger) return
-    const rect = trigger.getBoundingClientRect()
-    setAnchor({
-      top: rect.bottom + 6,
-      right: Math.max(8, window.innerWidth - rect.right),
-    })
-  }, [])
-
-  useLayoutEffect(() => {
-    if (!open) {
-      setAnchor(null)
-      return
-    }
-    updateAnchor()
-    window.addEventListener('resize', updateAnchor)
-    window.addEventListener('scroll', updateAnchor, true)
-    return () => {
-      window.removeEventListener('resize', updateAnchor)
-      window.removeEventListener('scroll', updateAnchor, true)
-    }
-  }, [open, updateAnchor])
 
   // 点击外部 / Esc 关闭浮层（与工具栏下拉、画布标签右键菜单同一套交互）
   useEffect(() => {

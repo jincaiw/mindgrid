@@ -537,6 +537,49 @@ describe('invokeBrowserCommand', () => {
     expect(topic3?.styleOverrides).toEqual({ fill: '#ea580c', textColor: '#ffffff' })
   })
 
+  it('applies a topic style to its siblings in one undoable step', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const root = created.document.sheets[0].rootTopic
+    const source = root.children[0]
+    const sibling = root.children[1]
+
+    await invokeBrowserCommand<DocumentSessionSnapshot>('set_topic_style_overrides', {
+      topic_id: source.id,
+      style_overrides: { fill: '#22c55e' },
+    })
+
+    const applied = await invokeBrowserCommand<DocumentSessionSnapshot>(
+      'apply_topic_style_to_siblings',
+      { topic_id: source.id },
+    )
+
+    const appliedRoot = applied.document.sheets[0].rootTopic
+    expect(findTopicById(appliedRoot, sibling.id)?.styleOverrides).toEqual({
+      fill: '#22c55e',
+    })
+    // 源主题保持自己的样式
+    expect(findTopicById(appliedRoot, source.id)?.styleOverrides).toEqual({
+      fill: '#22c55e',
+    })
+
+    // 一次撤销即退回全部兄弟（单个 ChangeSet）
+    const undone = await invokeBrowserCommand<DocumentSessionSnapshot>('undo_document_command')
+    const undoneRoot = undone.document.sheets[0].rootTopic
+    expect(findTopicById(undoneRoot, sibling.id)?.styleOverrides).toBeUndefined()
+    expect(findTopicById(undoneRoot, source.id)?.styleOverrides).toEqual({ fill: '#22c55e' })
+  })
+
+  it('rejects applying style to siblings on the root topic', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const rootId = created.document.sheets[0].rootTopic.id
+
+    await expect(
+      invokeBrowserCommand<DocumentSessionSnapshot>('apply_topic_style_to_siblings', {
+        topic_id: rootId,
+      }),
+    ).rejects.toThrow(/同级/)
+  })
+
   it('switches the document theme and supports undo', async () => {
     const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
     expect(created.document.theme).toBeUndefined()

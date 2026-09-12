@@ -60,6 +60,7 @@ import {
   setTopicMarkers,
   setTopicNotes,
   setTopicStyleOverrides,
+  applyTopicStyleToSiblings,
   setTopicStyleRef,
   setTopicTask,
   toggleTopicCollapsed,
@@ -160,6 +161,7 @@ export interface DocumentSession extends DocumentSessionState {
   setTopicLabels: (topicId: string, labels: string[]) => Promise<void>
   setTopicTask: (topicId: string, task: TopicTask | null) => Promise<void>
   setTopicStyleRef: (topicId: string, styleRef: string | null) => Promise<void>
+  applyTopicStyleToSiblings: (topicId: string) => Promise<void>
   setTopicStyleOverrides: (
     topicId: string,
     styleOverrides: TopicStyleOverrides | null,
@@ -1175,6 +1177,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const applyTopicStyleToSiblingsAction = useCallback(
+    async (topicId: string) => {
+      await runCommand('应用到同级主题', () => applyTopicStyleToSiblings(topicId))
+    },
+    [runCommand],
+  )
+
   const setDocumentSheetNumbering = useCallback(
     async (sheetId: string, numbering: SheetNumbering | null) => {
       await runCommand('设置编号', () => setSheetNumbering(sheetId, numbering))
@@ -1585,6 +1594,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicTask: updateTopicTask,
       setTopicStyleRef: updateTopicStyleRef,
       setTopicStyleOverrides: updateTopicStyleOverrides,
+      applyTopicStyleToSiblings: applyTopicStyleToSiblingsAction,
       setDocumentTheme: updateDocumentTheme,
       setDocumentSetting: updateDocumentSetting,
       createRelationship: createDocumentRelationship,
@@ -1626,6 +1636,7 @@ export function useDocumentSession(): DocumentSession {
       updateTopicTask,
       updateTopicStyleRef,
       updateTopicStyleOverrides,
+      applyTopicStyleToSiblingsAction,
       updateDocumentTheme,
       updateDocumentSetting,
       createDocumentRelationship,

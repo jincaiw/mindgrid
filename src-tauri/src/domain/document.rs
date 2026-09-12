@@ -780,6 +780,16 @@ impl DocumentSession {
         })
     }
 
+    /// XMind「应用于兄弟主题」：把某主题的样式覆盖复制到它的全部同级主题（单次撤销）。
+    pub fn apply_topic_style_to_siblings(
+        &mut self,
+        topic_id: &str,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("应用到同级主题", |editor| {
+            editor.apply_topic_style_to_siblings(topic_id)
+        })
+    }
+
     pub fn create_child_topic(&mut self, parent_id: &str) -> Result<DocumentSessionSnapshot, String> {
         self.apply_change_set("创建子主题", |editor| {
             editor.create_child_topic(parent_id, "新建子主题")

@@ -74,6 +74,7 @@ pub fn run() {
             app::commands::set_sheet_chart_type,
             app::commands::set_sheet_branch_style,
             app::commands::set_sheet_numbering,
+            app::commands::apply_topic_style_to_siblings,
             app::commands::set_sheet_layout_direction,
             app::commands::select_topic,
             app::commands::create_child_topic,

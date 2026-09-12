@@ -143,6 +143,12 @@ export function setSheetLayoutDirection(sheetId: string, direction: string) {
   })
 }
 
+export function applyTopicStyleToSiblings(topicId: string) {
+  return invokeCommand<DocumentSessionSnapshot>('apply_topic_style_to_siblings', {
+    topic_id: topicId,
+  })
+}
+
 export function selectTopic(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('select_topic', { topic_id: topicId })
 }

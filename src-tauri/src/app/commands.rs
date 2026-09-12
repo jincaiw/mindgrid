@@ -596,6 +596,22 @@ pub fn set_sheet_layout_direction(
 }
 
 #[tauri::command]
+pub fn apply_topic_style_to_siblings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.apply_topic_style_to_siblings(&topic_id)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
 pub fn select_topic(
     state: State<'_, AppState>,
     topic_id: String,

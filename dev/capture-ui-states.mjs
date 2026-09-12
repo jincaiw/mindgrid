@@ -82,6 +82,22 @@ async function main() {
     console.log('skip: structure picker trigger missing')
   }
 
+  // 色板浮层（背景颜色 / 分支色板）
+  for (const [triggerLabel, file] of [
+    ['背景颜色', '08-background-swatches'],
+    ['分支色板', '09-branch-palette'],
+  ]) {
+    const trigger = page.locator(`.swatch-picker__trigger[aria-label="${triggerLabel}"]`)
+    if ((await trigger.count()) > 0) {
+      await trigger.first().click()
+      await page.waitForTimeout(350)
+      await shot(page, file)
+      await page.keyboard.press('Escape')
+    } else {
+      console.log('skip: swatch trigger missing', triggerLabel)
+    }
+  }
+
   // 骨架浮层只在「画布」子页挂载，切页顺序必须把它放在画布页之后
   await inspectorTab('演说', '03-inspector-pitch')
   await inspectorTab('样式', '04-inspector-style')

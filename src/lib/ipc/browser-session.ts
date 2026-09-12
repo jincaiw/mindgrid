@@ -728,6 +728,36 @@ export async function invokeBrowserCommand<TResult>(
           : getActiveSheet(draft).rootTopic.id
       }) as TResult
     }
+    case 'apply_topic_style_to_siblings': {
+      const topicId = String(payload.topic_id)
+
+      return applyMutation('应用到同级主题', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const topic = findTopicById(rootTopic, topicId)
+        if (!topic) {
+          throw new Error('找不到需要应用样式的主题')
+        }
+
+        const parentMatch = findParentTopicByChildId(rootTopic, topicId)
+        if (!parentMatch) {
+          throw new Error('根主题没有同级主题')
+        }
+
+        const siblings = parentMatch.parent.children.filter((child) => child.id !== topicId)
+        if (siblings.length === 0) {
+          throw new Error('当前主题没有同级主题')
+        }
+
+        // 与 Rust 侧同语义：把源主题的样式覆盖（可能为空 = 清除）复制给每个兄弟
+        for (const sibling of siblings) {
+          sibling.styleOverrides = topic.styleOverrides
+            ? { ...topic.styleOverrides }
+            : undefined
+        }
+
+        return topicId
+      }) as TResult
+    }
     case 'set_sheet_numbering': {
       return applyMutation('设置编号', (draft) => {
         const sheetId = String(payload.sheet_id)

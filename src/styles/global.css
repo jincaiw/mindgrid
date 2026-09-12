@@ -3840,6 +3840,150 @@ button {
   color: var(--color-text-secondary);
 }
 
+/* ---- 色板选择器（画布背景色 / 分支色板，XMind 风格浮层）---- */
+.swatch-picker {
+  position: relative;
+}
+
+.swatch-picker__trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.swatch-picker__trigger:hover {
+  border-color: var(--color-accent);
+}
+
+.swatch-picker__trigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.swatch-picker__preview {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+}
+
+.swatch-picker__preview-dot {
+  display: block;
+  width: 20px;
+  height: 14px;
+}
+
+.swatch-picker__preview-dot[data-empty='true'] {
+  /* 跟随主题：用斜线示意「无固定色」 */
+  background-image: linear-gradient(
+    45deg,
+    transparent 45%,
+    var(--color-border-strong, #c7ccd6) 45%,
+    var(--color-border-strong, #c7ccd6) 55%,
+    transparent 55%
+  );
+}
+
+.swatch-picker__name {
+  flex: 1;
+  font-size: 12px;
+}
+
+.swatch-picker__popover {
+  /* portal 到 body 的 fixed 浮层，坐标由 usePopoverAnchor 计算 */
+  position: fixed;
+  z-index: 60;
+  width: 248px;
+  max-width: calc(100vw - 24px);
+  padding: 10px 12px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.swatch-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.swatch-picker__option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.swatch-picker__option:hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-06);
+}
+
+.swatch-picker__option--selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-10);
+}
+
+.swatch-picker__strip {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle, rgba(15, 23, 42, 0.08));
+  border-radius: 4px;
+}
+
+.swatch-picker__strip > span {
+  flex: 1;
+  height: 14px;
+}
+
+.swatch-picker__option-name {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.swatch-picker__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-border-subtle, rgba(15, 23, 42, 0.08));
+}
+
+.swatch-picker__custom {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.swatch-picker__custom input[type='color'] {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
 /* ---- 右键上下文菜单（参考 XMind：纯白面板 + 发丝线 + 轻投影）---- */
 .context-menu {
   position: fixed;
