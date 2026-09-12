@@ -1322,6 +1322,59 @@ button {
   border-top: 1px solid var(--color-border-subtle, rgba(15, 23, 42, 0.07));
 }
 
+/* ---- 自定义配色编辑器（面板内联，不是浮层：编辑时应能同时看到画布变化）---- */
+.palette-editor {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-surface-subtle);
+}
+
+.palette-editor__colors {
+  display: grid;
+  gap: 4px;
+}
+
+.palette-editor__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.palette-editor__row input[type='color'] {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.palette-editor__hex {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.palette-editor__remove {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.palette-editor__remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .status-bar__zoom {
   display: inline-flex;
   align-items: center;

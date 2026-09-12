@@ -38,6 +38,8 @@ export const CANVAS_SETTINGS_KEYS = {
   freeTopic: 'canvas.freeTopic',
   /** 布尔：分支自由布局（拖拽一级分支可自由摆放，位置记进 layoutHints）。缺省 false。 */
   freeBranchLayout: 'canvas.freeBranchLayout',
+  /** 用户自建配色方案列表（数组，见 CustomPalette）。损坏项逐条丢弃，不整表回落。 */
+  customPalettes: 'canvas.customPalettes',
 } as const
 
 // ---- 全局字体 ----
@@ -194,6 +196,8 @@ export interface DocumentCanvasSettings {
   freeTopic: boolean
   /** 分支自由布局：拖拽一级分支可自由摆放（位置存进该分支的 layoutHints）。 */
   freeBranchLayout: boolean
+  /** 用户自建配色方案（可选；内置预设不在此列表里）。 */
+  customPalettes: CustomPalette[]
 }
 
 /** 全默认配置。所有字段缺省即"跟随主题 / XMind 默认行为"。 */
@@ -210,6 +214,7 @@ export const DEFAULT_CANVAS_SETTINGS: DocumentCanvasSettings = {
   alignSiblings: false,
   freeTopic: true,
   freeBranchLayout: false,
+  customPalettes: [],
 }
 
 const FONT_IDS = GLOBAL_FONT_OPTIONS.map((option) => option.id)
@@ -227,6 +232,15 @@ export function resolveCanvasSettings(
   settings: DocumentSettings | undefined,
 ): DocumentCanvasSettings {
   const rawRainbow = settings?.[CANVAS_SETTINGS_KEYS.rainbowBranch]
+  const customPalettes = readCustomPalettes(settings)
+  // 色板 id 的合法集合 = 内置预设 ∪ 自定义方案。
+  // 只按内置枚举校验会把自定义 id 当成非法值回落到彩虹——设置存进去了、
+  // UI 却永远显示/使用彩虹（端到端冒烟抓到过这个）。
+  const paletteIds = [
+    ...PALETTE_IDS,
+    ...customPalettes.map((palette) => palette.id),
+  ] as readonly string[]
+
   return {
     showGrid: readBool(settings, CANVAS_SETTINGS_KEYS.showGrid, DEFAULT_CANVAS_SETTINGS.showGrid),
     background: readColor(settings, CANVAS_SETTINGS_KEYS.background),
@@ -243,7 +257,7 @@ export function resolveCanvasSettings(
     branchPalette: readEnum(
       settings,
       CANVAS_SETTINGS_KEYS.branchPalette,
-      PALETTE_IDS,
+      paletteIds,
       'rainbow',
     ),
     balance: readBool(settings, CANVAS_SETTINGS_KEYS.balance, false),
@@ -251,6 +265,7 @@ export function resolveCanvasSettings(
     alignSiblings: readBool(settings, CANVAS_SETTINGS_KEYS.alignSiblings, false),
     freeTopic: readBool(settings, CANVAS_SETTINGS_KEYS.freeTopic, true),
     freeBranchLayout: readBool(settings, CANVAS_SETTINGS_KEYS.freeBranchLayout, false),
+    customPalettes,
   }
 }
 
@@ -259,8 +274,78 @@ export function branchThicknessMultiplier(id: BranchThicknessId): number {
   return BRANCH_THICKNESS_OPTIONS.find((option) => option.id === id)?.multiplier ?? 1
 }
 
-/** 取色板预设的颜色数组，未知 id 回落第一套。 */
-export function resolveBranchPalette(id: string): string[] {
+/**
+ * 用户自建配色方案。
+ *
+ * 存进 `document.settings` 的 `canvas.customPalettes`（_文档级_，随 .mgd 走），
+ * 与内置预设共用同一个字段 `canvas.branchPalette` 的 id 空间——选中哪个方案由 id 决定。
+ */
+export interface CustomPalette {
+  id: string
+  name: string
+  colors: string[]
+}
+
+/** 自定义配色的 id 前缀：避免与内置预设 id 撞车。 */
+export const CUSTOM_PALETTE_ID_PREFIX = 'custom-'
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
+
+/** 自定义色板最多允许的颜色数（超过就没有"分支编码"的意义了）。 */
+export const CUSTOM_PALETTE_MAX_COLORS = 12
+export const CUSTOM_PALETTE_MIN_COLORS = 2
+
+/** 解析自定义配色列表：损坏项逐条丢弃（一条坏数据不该带走整份列表）。 */
+export function readCustomPalettes(settings: DocumentSettings | undefined): CustomPalette[] {
+  const raw = settings?.[CANVAS_SETTINGS_KEYS.customPalettes]
+  if (!Array.isArray(raw)) {
+    return []
+  }
+
+  const result: CustomPalette[] = []
+  const seen = new Set<string>()
+
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const record = item as Record<string, unknown>
+    const id = typeof record.id === 'string' ? record.id.trim() : ''
+    const name = typeof record.name === 'string' ? record.name.trim() : ''
+    const colors = Array.isArray(record.colors)
+      ? record.colors.filter((c): c is string => typeof c === 'string' && HEX_COLOR.test(c))
+      : []
+
+    if (!id.startsWith(CUSTOM_PALETTE_ID_PREFIX) || !name || colors.length < CUSTOM_PALETTE_MIN_COLORS) {
+      continue
+    }
+    if (seen.has(id)) continue
+
+    seen.add(id)
+    result.push({ id, name, colors: colors.slice(0, CUSTOM_PALETTE_MAX_COLORS) })
+  }
+
+  return result
+}
+
+/** 内置预设 + 自定义配色，供选择器列表使用（自定义排在后面）。 */
+export function listBranchPaletteOptions(
+  customPalettes: CustomPalette[],
+): BranchPalettePreset[] {
+  return [
+    ...BRANCH_PALETTE_PRESETS,
+    ...customPalettes.map((palette) => ({
+      id: palette.id,
+      label: palette.name,
+      colors: palette.colors,
+    })),
+  ]
+}
+
+/** 取色板颜色数组：内置 id → 自定义 id → 回落第一套内置。 */
+export function resolveBranchPalette(id: string, customPalettes: CustomPalette[] = []): string[] {
+  const custom = customPalettes.find((palette) => palette.id === id)
+  if (custom) {
+    return custom.colors
+  }
   return (BRANCH_PALETTE_PRESETS.find((preset) => preset.id === id) ?? BRANCH_PALETTE_PRESETS[0])
     .colors
 }

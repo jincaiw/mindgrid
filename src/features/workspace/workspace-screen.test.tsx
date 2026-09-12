@@ -2312,6 +2312,19 @@ function selectTwoTopicsViaSidebar() {
   fireEvent.click(sidebar.getByRole('button', { name: /复盘主题/ }), { ctrlKey: true })
 }
 
+it('selecting a colour scheme also turns rainbow branches on', async () => {
+  // 否则在「彩虹分支」未显式开启时选配色方案，画布仍用主题色板 —— 看起来像点了没反应
+  const setDocumentSetting = vi.fn(async () => {})
+  renderBatch14Workspace({ setDocumentSetting })
+
+  fireEvent.click(screen.getByRole('tab', { name: '画布' }))
+  fireEvent.click(screen.getByLabelText('分支色板'))
+  fireEvent.click(screen.getByRole('button', { name: '海洋' }))
+
+  expect(setDocumentSetting).toHaveBeenCalledWith('canvas.branchPalette', 'ocean')
+  expect(setDocumentSetting).toHaveBeenCalledWith('canvas.rainbowBranch', true)
+})
+
 it('persists the pitch aspect ratio to document settings (not local state)', async () => {
   const setDocumentSetting = vi.fn(async () => {})
 

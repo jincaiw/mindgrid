@@ -37,6 +37,7 @@ import {
 } from '../canvas/numbering'
 import { StructurePicker } from './structure-picker'
 import { SwatchPicker } from './swatch-picker'
+import { PaletteEditor } from './palette-editor'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
 import {
   BRANCH_PALETTE_PRESETS as CANVAS_BRANCH_PALETTES,
@@ -44,7 +45,10 @@ import {
   CANVAS_SETTINGS_KEYS,
   CJK_FONT_OPTIONS,
   GLOBAL_FONT_OPTIONS,
+  listBranchPaletteOptions,
+  resolveBranchPalette,
   resolveCanvasSettings,
+  type CustomPalette,
 } from '../../lib/document/canvas-settings'
 
 /**
@@ -476,6 +480,44 @@ export function Inspector({
 
   // —— 画布级分支样式：连线类型 / 粗细 / 色板，写入 activeSheet.branchStyle ——
   // edgeType 与 colorPalette 点击即提交（无 draft）；thickness 走 slider draft，失焦提交。
+  // —— 自定义配色方案：列表存 document.settings，选中项仍走 canvas.branchPalette ——
+  const customPalettes = canvasSettings.customPalettes
+  const paletteOptions = listBranchPaletteOptions(customPalettes)
+  const [editingPalette, setEditingPalette] = useState<CustomPalette | null | 'new'>(null)
+
+  /**
+   * 应用配色方案：写入选中的色板 id，并**同时显式打开彩虹分支**。
+   *
+   * 否则用户在「彩虹分支」未显式开启时选任何配色方案，画布都会继续用主题自带色板，
+   * 看起来像"点了没反应"（端到端冒烟时正是这个组合让人误判）。
+   */
+  const applyBranchPalette = (paletteId: string) => {
+    void session.setDocumentSetting(CANVAS_SETTINGS_KEYS.branchPalette, paletteId)
+    void session.setDocumentSetting(CANVAS_SETTINGS_KEYS.rainbowBranch, true)
+  }
+
+  const saveCustomPalette = (palette: CustomPalette) => {
+    const existing = customPalettes.some((item) => item.id === palette.id)
+    const next = existing
+      ? customPalettes.map((item) => (item.id === palette.id ? palette : item))
+      : [...customPalettes, palette]
+
+    void session
+      .setDocumentSetting(CANVAS_SETTINGS_KEYS.customPalettes, next)
+      .then(() => applyBranchPalette(palette.id))
+    setEditingPalette(null)
+  }
+
+  const deleteCustomPalette = (paletteId: string) => {
+    const next = customPalettes.filter((item) => item.id !== paletteId)
+    void session.setDocumentSetting(CANVAS_SETTINGS_KEYS.customPalettes, next)
+    // 删掉的正是当前选中的方案时，回落到内置首套，避免选中一个不存在的 id
+    if (canvasSettings.branchPalette === paletteId) {
+      void session.setDocumentSetting(CANVAS_SETTINGS_KEYS.branchPalette, 'rainbow')
+    }
+    setEditingPalette(null)
+  }
+
   const activeBranchStyle = activeSheet?.branchStyle
   const [branchThicknessDraft, setBranchThicknessDraft] = useState<number | ''>(
     activeBranchStyle?.thickness ?? '',
@@ -1533,20 +1575,58 @@ export function Inspector({
                   label="分支色板"
                   value={canvasSettings.branchPalette}
                   fallbackLabel="默认"
-                  options={CANVAS_BRANCH_PALETTES.map((preset) => ({
+                  options={paletteOptions.map((preset) => ({
                     id: preset.id,
                     label: preset.label,
                     colors: [...preset.colors],
                   }))}
                   onChange={(next) => {
                     if (next === null) return
-                    void session.setDocumentSetting(
-                      CANVAS_SETTINGS_KEYS.branchPalette,
-                      next,
-                    )
+                    applyBranchPalette(next)
                   }}
+                  actions={
+                    <>
+                      <button
+                        type="button"
+                        className="panel__action panel__action--ghost"
+                        onClick={() => setEditingPalette('new')}
+                      >
+                        新建配色…
+                      </button>
+                      {customPalettes.some(
+                        (item) => item.id === canvasSettings.branchPalette,
+                      ) ? (
+                        <button
+                          type="button"
+                          className="panel__action panel__action--ghost"
+                          onClick={() =>
+                            setEditingPalette(
+                              customPalettes.find(
+                                (item) => item.id === canvasSettings.branchPalette,
+                              ) ?? null,
+                            )
+                          }
+                        >
+                          编辑
+                        </button>
+                      ) : null}
+                    </>
+                  }
                 />
               </div>
+
+              {editingPalette ? (
+                <PaletteEditor
+                  palette={editingPalette === 'new' ? null : editingPalette}
+                  seedColors={resolveBranchPalette(
+                    canvasSettings.branchPalette,
+                    customPalettes,
+                  )}
+                  onCancel={() => setEditingPalette(null)}
+                  onSave={saveCustomPalette}
+                  onDelete={deleteCustomPalette}
+                />
+              ) : null}
               <div className="panel__field">
                 <span>调色板</span>
                 <div

@@ -31,6 +31,8 @@ interface SwatchPickerProps {
   resetLabel?: string
   /** 提供后浮层底部出现原生取色器，用于任意自定义颜色。 */
   colorInputLabel?: string
+  /** 浮层底部的额外动作（如「新建配色…」「编辑当前配色」）。 */
+  actions?: React.ReactNode
   onChange: (value: string | null) => void
   disabled?: boolean
 }
@@ -42,6 +44,7 @@ export function SwatchPicker({
   fallbackLabel,
   resetLabel,
   colorInputLabel,
+  actions,
   onChange,
   disabled = false,
 }: SwatchPickerProps) {
@@ -142,7 +145,7 @@ export function SwatchPicker({
                 })}
               </div>
 
-              {(resetLabel || colorInputLabel) && (
+              {(resetLabel || colorInputLabel || actions) && (
                 <div className="swatch-picker__footer">
                   {colorInputLabel ? (
                     <label className="swatch-picker__custom">
@@ -167,6 +170,7 @@ export function SwatchPicker({
                       {resetLabel}
                     </button>
                   ) : null}
+                  {actions}
                 </div>
               )}
             </div>,

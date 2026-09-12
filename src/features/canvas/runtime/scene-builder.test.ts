@@ -585,6 +585,23 @@ describe('buildScene', () => {
       expect(colors.get('b')).toBe('#222222')
     })
 
+    it('自定义配色方案能真正上色（文档级 canvas.customPalettes）', () => {
+      const colors = branchColorByChild({
+        themeId: 'classic-blue',
+        canvasSettings: {
+          rainbowBranch: true,
+          branchPalette: 'custom-brand',
+          customPalettes: [
+            { id: 'custom-brand', name: '品牌色', colors: ['#0a0a0a', '#f0f0f0'] },
+          ],
+        },
+      })
+
+      // 自定义方案按 id 取色，而不是回落到内置预设
+      expect(colors.get('a')).toBe('#0a0a0a')
+      expect(colors.get('b')).toBe('#f0f0f0')
+    })
+
     it('彩虹分支显式关闭时全部连线统一为单色（含缤纷主题）', () => {
       const single = getTheme('rainbow').edge
       const colors = branchColorByChild({

@@ -166,7 +166,7 @@ export function buildScene(options: BuildSceneOptions): Scene {
       : customPalette && customPalette.length > 0
         ? customPalette
         : canvasSettings?.rainbowBranch === true
-          ? resolveBranchPalette(canvasSettings.branchPalette)
+          ? resolveBranchPalette(canvasSettings.branchPalette, canvasSettings.customPalettes)
           : themeBranchPalette && themeBranchPalette.length > 0
             ? themeBranchPalette
             : BRANCH_COLORS
