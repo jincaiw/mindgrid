@@ -3092,7 +3092,11 @@ mod tests {
     #[test]
     fn set_document_theme_round_trips_and_inverts() {
         let mut document = DocumentSnapshot::new_default();
-        assert!(document.theme.is_none());
+        // 新文档默认带彩虹主题（与 XMind 新建导图观感一致）
+        assert_eq!(
+            document.theme.as_ref().map(|t| t.id.as_str()),
+            Some(DocumentSnapshot::DEFAULT_THEME_ID)
+        );
 
         let mut editor = DocumentEditor::new(&mut document);
         editor.set_document_theme(Some("dark")).unwrap();
@@ -3101,7 +3105,10 @@ mod tests {
         assert_eq!(ops.len(), 1);
         match &ops[0] {
             Operation::SetDocumentTheme { old_theme, new_theme } => {
-                assert!(old_theme.is_none());
+                assert_eq!(
+                    old_theme.as_ref().map(|t| t.id.as_str()),
+                    Some(DocumentSnapshot::DEFAULT_THEME_ID)
+                );
                 assert_eq!(new_theme.as_ref().unwrap().id, "dark");
             }
             other => panic!("expected SetDocumentTheme, got {:?}", other),
@@ -3110,9 +3117,12 @@ mod tests {
         // 正向应用后文档主题为 dark
         assert_eq!(document.theme.as_ref().unwrap().id, "dark");
 
-        // 逆操作回到 None
+        // 逆操作回到新建文档的默认主题
         apply_inverse(&mut document, &ops);
-        assert!(document.theme.is_none());
+        assert_eq!(
+            document.theme.as_ref().map(|t| t.id.as_str()),
+            Some(DocumentSnapshot::DEFAULT_THEME_ID)
+        );
     }
 
     #[test]

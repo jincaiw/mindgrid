@@ -387,14 +387,15 @@ function MindMapScene({
   // 批次 27：查找替换的替换词输入（局部状态，随搜索浮层开关保留）
   // replaceQuery 由上层（TreeWorkspace → WorkspaceScreen）持有：左栏「主题」Tab 的
   // 查找替换面板与画布浮层共用同一个替换词，避免两处各填各的。
-  // 小地图显隐：默认开，localStorage 持久化（对齐 XMind Navigator 开关）
+  // 小地图显隐：**默认关**，localStorage 持久化。
+  // XMind 桌面端默认没有小地图，常驻一块缩略图属于额外视觉噪声；
+  // 能力保留，用户需要时从右下角缩放条打开。
   const [minimapVisible, setMinimapVisible] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return true
+    if (typeof window === 'undefined') return false
     try {
-      const stored = window.localStorage.getItem('mindgrid:minimap-visible')
-      return stored === null ? true : stored === '1'
+      return window.localStorage.getItem('mindgrid:minimap-visible') === '1'
     } catch {
-      return true
+      return false
     }
   })
   const toggleMinimap = useCallback(() => {
@@ -1425,7 +1426,7 @@ function MindMapScene({
           title={minimapVisible ? '隐藏小地图' : '显示小地图'}
           aria-pressed={minimapVisible}
         >
-          {minimapVisible ? '🗺' : '🗺 off'}
+          小地图
         </button>
       </div>
 

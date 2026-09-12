@@ -78,6 +78,15 @@ export type BuiltinThemeId =
 
 export const DEFAULT_THEME_ID: BuiltinThemeId = 'classic-blue'
 
+/**
+ * 新建文档使用的主题 id。
+ *
+ * 与 `DEFAULT_THEME_ID` 是**两个概念**：前者是"取不到主题时的兜底"，后者是
+ * "新文档长什么样"。XMind 新建导图是深色中心 + 多色分支 + 白字，对应这里的
+ * `rainbow`；Rust 侧 `DocumentSnapshot::DEFAULT_THEME_ID` 必须与此保持一致。
+ */
+export const NEW_DOCUMENT_THEME_ID: BuiltinThemeId = 'rainbow'
+
 export const BUILT_IN_THEMES: ThemePalette[] = [
   {
     id: 'classic-blue',

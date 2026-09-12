@@ -33,6 +33,7 @@ import type { EffectiveTheme, ThemeMode } from '../theme/use-theme'
 import { Inspector, type InspectorTab } from './inspector'
 import { OutlinerView } from './outliner-view'
 import { SheetTabBar } from './sheet-tab-bar'
+import { useDocumentWindowTitle } from './use-document-window-title'
 import { NavPanel } from './nav-panel'
 import { Toolbar } from './toolbar'
 
@@ -58,6 +59,10 @@ export function WorkspaceScreen({
   themeEffective = 'light',
   onCycleTheme,
 }: WorkspaceScreenProps) {
+  useDocumentWindowTitle(session)
+  // macOS 统一标题栏下，红绿灯会压在我们自己的工具栏上，左侧必须让出位置
+  const isMacTitlebar = hasTauriRuntime()
+
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const [selectedTopicIds, setSelectedTopicIds] = useState<string[]>(() =>
     session.activeTopicId ? [session.activeTopicId] : activeSheet ? [activeSheet.rootTopic.id] : [],
@@ -386,13 +391,20 @@ export function WorkspaceScreen({
     <div
       className={`workspace-shell${isZenMode ? ' workspace-shell--zen' : ''}${
         isOutlinerMode ? ' workspace-shell--outliner' : ''
-      }${isGanttMode ? ' workspace-shell--gantt' : ''}`}
+      }${isGanttMode ? ' workspace-shell--gantt' : ''}${
+        toolbarVisible ? '' : ' workspace-shell--toolbar-hidden'
+      }${isMacTitlebar ? ' workspace-shell--mac-titlebar' : ''}`}
     >
       {/*
         XMind 式工具栏只留：中段 主题/子主题/联系/概要/外框/标记/插入，
         右段 ZEN/演说/格式。搜索(⌘F)、侧栏(⌘B)、大纲、甘特、检查更新一律
         收进原生菜单与状态条，不再占工具栏位置。
       */}
+      {!toolbarVisible ? (
+        // 工具栏收起时仍留一条拖拽区：窗口改成统一标题栏（Overlay）后，
+        // 没有它就没法拖动窗口了；高度只占 28px，不引入新的视觉元素。
+        <div className="window-drag-strip" data-tauri-drag-region aria-hidden="true" />
+      ) : null}
       {toolbarVisible ? (
         <Toolbar
           session={session}
@@ -517,7 +529,12 @@ export function WorkspaceScreen({
         onResetZoom={handleResetZoom}
         isOutlinerMode={isOutlinerMode}
         onToggleOutliner={() => setIsOutlinerMode((v) => !v)}
-        sheetTabs={tabBarVisible ? <SheetTabBar session={session} /> : null}
+        sheetTabs={
+          // XMind 只有一个画布时不显示标签栏；多画布时才出现（可用 查看→显示标签页栏 关掉）
+          tabBarVisible && (session.document?.sheets.length ?? 0) > 1 ? (
+            <SheetTabBar session={session} />
+          ) : null
+        }
       />
       {isPresenting && session.document ? (
         <PresentationView document={session.document} onExit={() => setIsPresenting(false)} />

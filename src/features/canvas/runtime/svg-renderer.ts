@@ -184,8 +184,9 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
         `  <line x1="${fmt(bounds.x)}" y1="${fmt(bounds.y + bounds.height)}" x2="${fmt(bounds.x + bounds.width)}" y2="${fmt(bounds.y + bounds.height)}" stroke="${lineColor}" stroke-width="${fmt(style.borderWidth)}" stroke-linecap="round"/>`,
       )
     }
-  } else {
-    // 节点组（带阴影滤镜）
+  } else if (isRoot) {
+    // 节点组（带阴影滤镜）：仅中心主题投影，分支节点保持纯色块（与 canvas-renderer 一致，
+    // 逐个投影会让整幅图显脏，也与 XMind 的观感不符）
     elements.push(`  <g filter="url(#nodeShadow)">`)
     elements.push(
       `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="${style.fill}"/>`,
@@ -197,6 +198,16 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
       )
     }
     elements.push(`  </g>`)
+  } else {
+    // 分支节点：纯色块 + 可选边框，不套阴影滤镜
+    elements.push(
+      `  <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="${style.fill}"/>`,
+    )
+    if (style.borderWidth > 0) {
+      elements.push(
+        `  <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="none" stroke="${style.borderColor}" stroke-width="${fmt(style.borderWidth)}"/>`,
+      )
+    }
   }
 
   // 标题文字：字号 / 字重来自解析样式（深度默认 + 节点覆盖）

@@ -20,7 +20,8 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "titleBarStyle": "Visible"
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
       }
     ],
     "security": {
@@ -47,7 +48,9 @@
       {
         "name": "MindGrid Document",
         "description": "MindGrid 思维导图文档",
-        "ext": ["mgd"],
+        "ext": [
+          "mgd"
+        ],
         "mimeType": "application/vnd.mindgrid.document",
         "role": "Editor"
       }
@@ -62,7 +65,10 @@
     "windows": {
       "nsis": {
         "installMode": "perMachine",
-        "languages": ["English", "SimpChinese"],
+        "languages": [
+          "English",
+          "SimpChinese"
+        ],
         "displayLanguageSelector": true
       },
       "webviewInstallMode": {
@@ -71,7 +77,10 @@
     },
     "linux": {
       "deb": {
-        "recommends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+        "recommends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0"
+        ]
       },
       "appimage": {
         "bundleMediaFramework": false

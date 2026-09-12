@@ -377,7 +377,7 @@ export function Inspector({
   const currentThemeId = session.document?.theme?.id ?? DEFAULT_THEME_ID
 
   // —— Tab 状态：默认样式子页，选中节点时直接编辑富内容 ——
-  const [activeTab, setActiveTab] = useState<InspectorTab>('style')
+  const [activeTab, setActiveTab] = useState<InspectorTab>('canvas')
   const [localPitchAspectRatio, setLocalPitchAspectRatio] = useState<PitchAspectRatio>('16:9')
   const [localPitchThemeStyle, setLocalPitchThemeStyle] = useState<PitchThemeStyle>('document')
   const pitchAspectRatio = controlledPitchAspectRatio ?? localPitchAspectRatio
@@ -1558,6 +1558,48 @@ export function Inspector({
                   }}
                 />
               </div>
+              <div className="panel__field">
+                <span>调色板</span>
+                <div
+                  className="panel__palette-grid"
+                  role="radiogroup"
+                  aria-label="画布调色板预设"
+                >
+                  {CANVAS_BRANCH_PALETTES.map((preset) => {
+                    const active = canvasSettings.branchPalette === preset.id
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        className={`panel__palette-swatch${
+                          active ? ' panel__palette-swatch--active' : ''
+                        }`}
+                        title={preset.label}
+                        onClick={() =>
+                          void session.setDocumentSetting(
+                            CANVAS_SETTINGS_KEYS.branchPalette,
+                            preset.id,
+                          )
+                        }
+                      >
+                        <span className="panel__palette-strip">
+                          {preset.colors.map((color, index) => (
+                            <span
+                              key={index}
+                              className="panel__palette-dot"
+                              style={{ background: color }}
+                            />
+                          ))}
+                        </span>
+                        <span className="panel__palette-name">{preset.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
               <label className="accordion-card">
                 <input
                   type="checkbox"

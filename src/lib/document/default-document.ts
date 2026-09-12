@@ -1,3 +1,4 @@
+import { NEW_DOCUMENT_THEME_ID } from './themes/built-in-themes'
 import type { DocumentSnapshot, SheetSnapshot, TopicSnapshot } from './types'
 
 export function createId(prefix: string) {
@@ -40,5 +41,6 @@ export function createDefaultDocument(): DocumentSnapshot {
     revision: 1,
     activeSheetId: sheet.id,
     sheets: [sheet],
+    theme: { id: NEW_DOCUMENT_THEME_ID },
   }
 }

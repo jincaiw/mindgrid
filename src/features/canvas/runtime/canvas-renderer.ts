@@ -324,6 +324,8 @@ function drawNodeShadow(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
   const { bounds, state, depth, style } = node
   // underline 形状无填充矩形，不投射阴影
   if (style.shape === 'underline') return
+  // 只有中心主题带轻投影：XMind 的分支节点是纯色块，逐个投影会让整幅图显脏
+  if (depth > 0) return
   const radius = getNodeRadiusForShape(style.shape, depth, bounds.height)
   ctx.save()
   // XMind 式：状态由 2px 描边表达（drawStateOutline），阴影保持轻量统一，

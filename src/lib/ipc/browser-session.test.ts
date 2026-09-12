@@ -582,7 +582,8 @@ describe('invokeBrowserCommand', () => {
 
   it('switches the document theme and supports undo', async () => {
     const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
-    expect(created.document.theme).toBeUndefined()
+    // 新建文档默认带「彩虹」缤纷主题（与 XMind 新建导图观感一致）
+    expect(created.document.theme).toEqual({ id: 'rainbow' })
 
     const switched = await invokeBrowserCommand<DocumentSessionSnapshot>('set_document_theme', {
       theme_id: 'dark',

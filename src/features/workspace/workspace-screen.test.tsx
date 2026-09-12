@@ -1767,6 +1767,19 @@ it('supports batch move-to-sheet actions from the inspector', () => {
   )
 })
 
+/**
+ * 右栏默认停在「画布」子页（XMind 默认页）；需要节点级样式的用例先切到「样式」。
+ * 幂等：已经选中就直接返回，避免再点一次又切回画布页。
+ */
+function openInspectorStyleTab() {
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const styleTab = inspector.getByRole('tab', { name: '样式' })
+  if (styleTab.getAttribute('aria-selected') !== 'true') {
+    fireEvent.click(styleTab)
+  }
+  return inspector
+}
+
 it('forwards inspector rich field edits to the session', () => {
   const setTopicNotes = vi.fn(async () => {})
   const setTopicLink = vi.fn(async () => {})
@@ -1812,7 +1825,7 @@ it('forwards inspector rich field edits to the session', () => {
     />,
   )
 
-  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const inspector = openInspectorStyleTab()
 
   // 备注编辑：输入后失焦触发保存
   const notesField = inspector.getByPlaceholderText('为该主题添加详细备注…')
@@ -1908,9 +1921,13 @@ it('switches inspector tabs to reveal context-aware panels', () => {
 
   const inspector = within(screen.getByLabelText('右侧检查器'))
 
-  // 默认在“样式”子页：富内容编辑可见，画布级表单不可见
+  // 默认停在“画布”子页（XMind 默认页）：画布级表单可见，节点级富内容编辑不可见
+  expect(inspector.queryByPlaceholderText('为该主题添加详细备注…')).not.toBeInTheDocument()
+  expect(inspector.getByRole('button', { name: '骨架：思维导图' })).toBeInTheDocument()
+
+  // 切到“样式”子页：富内容编辑出现
+  fireEvent.click(inspector.getByRole('tab', { name: '样式' }))
   expect(inspector.getByPlaceholderText('为该主题添加详细备注…')).toBeInTheDocument()
-  expect(inspector.queryByRole('button', { name: '创建关系线' })).not.toBeInTheDocument()
 
   // 切换到“演说”子页：放映入口出现，富内容编辑消失
   fireEvent.click(inspector.getByRole('tab', { name: '演说' }))
@@ -1977,7 +1994,7 @@ it('applies node color overrides from the inspector color editor', () => {
     />,
   )
 
-  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const inspector = openInspectorStyleTab()
 
   // 快速预设色板：点击应用 fill 覆盖
   const preset = inspector.getByRole('button', { name: '应用填充色 #ea580c' })
@@ -2028,7 +2045,7 @@ it('applies node shape override from the inspector style panel', () => {
     />,
   )
 
-  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const inspector = openInspectorStyleTab()
 
   // 形状分段控件：点击"胶囊"应用 shape 覆盖（其余 draft 为空，仅提交 shape）
   fireEvent.click(inspector.getByRole('button', { name: '胶囊' }))
@@ -2073,7 +2090,7 @@ it('applies node font weight and border width overrides from the inspector style
     />,
   )
 
-  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const inspector = openInspectorStyleTab()
 
   // 字重分段控件：点击"粗体"应用 fontWeight=700
   fireEvent.click(inspector.getByRole('button', { name: '粗体' }))
@@ -2472,7 +2489,7 @@ it('commits branch style overrides from the inspector style subpage', () => {
 
   renderBatch14Workspace({ setSheetBranchStyle })
 
-  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const inspector = openInspectorStyleTab()
 
   // 分支样式是主题外观配置，3 子页改造后与主题属性/富内容同归「样式」页（默认页）
   const styleTab = inspector.getByRole('tab', { name: '样式' })
@@ -2532,7 +2549,7 @@ it('clears branch style overrides by clicking default values or reset button', (
     />,
   )
 
-  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const inspector = openInspectorStyleTab()
 
   // 分支样式在默认的「样式」子页里，无需切页
   // 已有覆盖时"折线"高亮
@@ -2664,10 +2681,37 @@ it('enters ZEN with Alt + Cmd/Ctrl + F without opening search', () => {
   expect(screen.getByRole('button', { name: '退出专注模式' })).toBeInTheDocument()
 })
 
-it('toggles the bottom tab bar with Shift + Cmd/Ctrl + T', () => {
+it('hides the sheet tab bar while the document has a single canvas', () => {
+  // XMind 只有一个画布时不显示标签栏
   renderBatch14Workspace()
+  expect(screen.queryByRole('tablist', { name: '画布标签栏' })).not.toBeInTheDocument()
+})
 
-  // 标签页栏默认显示（渲染在状态条左段）
+it('shows the sheet tab bar once there are two canvases', () => {
+  const multiSheetDocument: typeof twoChildDocument = {
+    ...twoChildDocument,
+    sheets: [
+      twoChildDocument.sheets[0],
+      { ...twoChildDocument.sheets[0], id: 'sheet_extra', title: '画布 2' },
+    ],
+  }
+
+  renderBatch14Workspace({ document: multiSheetDocument })
+  expect(screen.getByRole('tablist', { name: '画布标签栏' })).toBeInTheDocument()
+})
+
+it('toggles the bottom tab bar with Shift + Cmd/Ctrl + T', () => {
+  const multiSheetDocument: typeof twoChildDocument = {
+    ...twoChildDocument,
+    sheets: [
+      twoChildDocument.sheets[0],
+      { ...twoChildDocument.sheets[0], id: 'sheet_extra', title: '画布 2' },
+    ],
+  }
+
+  renderBatch14Workspace({ document: multiSheetDocument })
+
+  // 多画布时标签页栏默认显示（渲染在状态条左段）
   expect(screen.getByRole('tablist', { name: '画布标签栏' })).toBeInTheDocument()
 
   fireEvent.keyDown(window, { key: 't', metaKey: true, shiftKey: true })

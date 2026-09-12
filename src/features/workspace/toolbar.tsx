@@ -288,9 +288,13 @@ export function Toolbar({
   ]
 
   return (
-    <header className="toolbar" aria-label="主工具栏">
+    <header className="toolbar" aria-label="主工具栏" data-tauri-drag-region>
       <div className="toolbar__left">
-        <h1 className="toolbar__filename" title={session.filePath || '未命名文档'}>
+        <h1
+          className="toolbar__filename"
+          title={session.filePath || '未命名文档'}
+          data-tauri-drag-region
+        >
           {formatFileLabel(session)}
         </h1>
         <span className="toolbar__save-hint">{savedHint}</span>

@@ -427,6 +427,9 @@ pub struct DocumentSession {
 }
 
 impl DocumentSnapshot {
+    /// 新建文档的默认主题 id（与 TS 侧 `built-in-themes` 的 `rainbow` 对齐）。
+    pub const DEFAULT_THEME_ID: &'static str = "rainbow";
+
     pub fn new_default() -> Self {
         let sheet = SheetSnapshot::new("主画布");
 
@@ -438,7 +441,12 @@ impl DocumentSnapshot {
             sheets: vec![sheet],
             relationships: Vec::new(),
             settings: None,
-            theme: None,
+            // 新建文档默认用「彩虹」缤纷主题：中心主题深色 + 多色分支 + 白字，
+            // 与 XMind 新建导图的默认观感一致（经典主题仍可在右栏切回）。
+            // 字符串 id 必须与 TS 侧 built-in-themes 的 id 保持一致。
+            theme: Some(ThemeRef {
+                id: Self::DEFAULT_THEME_ID.into(),
+            }),
             extensions: None,
             extra: serde_json::Map::new(),
         }
