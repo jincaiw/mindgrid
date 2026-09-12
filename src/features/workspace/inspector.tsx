@@ -1789,6 +1789,24 @@ export function Inspector({
               <label className="accordion-card">
                 <input
                   type="checkbox"
+                  checked={canvasSettings.stackTopics}
+                  onChange={(event) =>
+                    void session.setDocumentSetting(
+                      CANVAS_SETTINGS_KEYS.stackTopics,
+                      event.target.checked,
+                    )
+                  }
+                  aria-label="主题层叠"
+                />
+                <span>主题层叠</span>
+              </label>
+              <p className="panel__muted">
+                允许主题互相重叠：打开时摆到哪就是哪；关闭后，被自由摆放的分支会自动避开
+                它上方的主题往下让位。
+              </p>
+              <label className="accordion-card">
+                <input
+                  type="checkbox"
                   checked={canvasSettings.freeTopic}
                   onChange={(event) =>
                     void session.setDocumentSetting(

@@ -40,6 +40,8 @@ export const CANVAS_SETTINGS_KEYS = {
   freeBranchLayout: 'canvas.freeBranchLayout',
   /** 用户自建配色方案列表（数组，见 CustomPalette）。损坏项逐条丢弃，不整表回落。 */
   customPalettes: 'canvas.customPalettes',
+  /** 布尔：主题层叠（允许主题重叠）。缺省 true——与 XMind 默认勾选一致。 */
+  stackTopics: 'canvas.stackTopics',
 } as const
 
 // ---- 全局字体 ----
@@ -198,6 +200,8 @@ export interface DocumentCanvasSettings {
   freeBranchLayout: boolean
   /** 用户自建配色方案（可选；内置预设不在此列表里）。 */
   customPalettes: CustomPalette[]
+  /** 主题层叠：为 false 时，自由摆放的分支会避开上方主题自动下移。 */
+  stackTopics: boolean
 }
 
 /** 全默认配置。所有字段缺省即"跟随主题 / XMind 默认行为"。 */
@@ -215,6 +219,7 @@ export const DEFAULT_CANVAS_SETTINGS: DocumentCanvasSettings = {
   freeTopic: true,
   freeBranchLayout: false,
   customPalettes: [],
+  stackTopics: true,
 }
 
 const FONT_IDS = GLOBAL_FONT_OPTIONS.map((option) => option.id)
@@ -266,6 +271,7 @@ export function resolveCanvasSettings(
     freeTopic: readBool(settings, CANVAS_SETTINGS_KEYS.freeTopic, true),
     freeBranchLayout: readBool(settings, CANVAS_SETTINGS_KEYS.freeBranchLayout, false),
     customPalettes,
+    stackTopics: readBool(settings, CANVAS_SETTINGS_KEYS.stackTopics, true),
   }
 }
 

@@ -63,14 +63,52 @@ async function main() {
     after && before && (Math.abs(after.x - before.x) > 40 || Math.abs(after.y - before.y) > 40)
   console.log(moved ? 'PASS 拖拽改变了分支位置' : 'FAIL 拖拽后分支位置几乎没变')
 
+  // 2b) 关掉「主题层叠」后，把两个分支叠在一起应自动让开
+  const stackToggle = page.getByLabel('主题层叠', { exact: true })
+  if ((await stackToggle.count()) > 0) {
+    await stackToggle.first().uncheck()
+    await page.waitForTimeout(300)
+
+    const target = await branchBox(page, '行动项')
+    const dragFrom = await branchBox(page, '关键洞察')
+    await page.mouse.move(
+      dragFrom.x + dragFrom.width / 2,
+      dragFrom.y + dragFrom.height / 2,
+    )
+    await page.mouse.down()
+    // 直接拖到另一个分支的正中间，制造重叠
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, {
+      steps: 12,
+    })
+    await page.mouse.up()
+    await page.waitForTimeout(600)
+
+    const a = await branchBox(page, '行动项')
+    const b = await branchBox(page, '关键洞察')
+    const [upper, lower] = a.y <= b.y ? [a, b] : [b, a]
+    const verticalGap = lower.y - (upper.y + upper.height)
+    await page.screenshot({ path: path.join(outDir, '04-stacking-off.png') })
+    console.log('层叠关闭后两条分支的纵向间隙:', Math.round(verticalGap))
+    console.log(
+      verticalGap > -2 ? 'PASS 层叠关闭时自动让开（不再重叠）' : 'FAIL 仍然重叠',
+    )
+  } else {
+    console.log('skip: 未找到「主题层叠」开关')
+  }
+
   // 3) 刷新后位置是否持久化（说明确实写进了文档并落盘到恢复快照）
+  // 注意基准要取"刷新前一刻"的坐标：中间若又拖过，用更早的 after 比会假失败
+  const beforeReload = await branchBox(page, '关键洞察')
   await page.reload({ waitUntil: 'load' })
   await page.waitForTimeout(1500)
   const reloaded = await branchBox(page, '关键洞察')
   await page.screenshot({ path: path.join(outDir, '03-after-reload.png') })
   console.log('reload:', reloaded && { x: Math.round(reloaded.x), y: Math.round(reloaded.y) })
   const persisted =
-    reloaded && after && Math.abs(reloaded.x - after.x) < 6 && Math.abs(reloaded.y - after.y) < 6
+    reloaded &&
+    beforeReload &&
+    Math.abs(reloaded.x - beforeReload.x) < 6 &&
+    Math.abs(reloaded.y - beforeReload.y) < 6
   console.log(persisted ? 'PASS 刷新后位置保持' : 'FAIL 刷新后位置丢失')
 
   await browser.close()

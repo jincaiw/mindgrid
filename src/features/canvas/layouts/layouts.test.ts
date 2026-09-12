@@ -291,6 +291,51 @@ describe('computeLayout with floating topics', () => {
     expect(freeEdge.end.x).toBeCloseTo(freeNode.x - freeNode.width / 2, 5)
   })
 
+  it('separates overlapping free branches when topic stacking is off', () => {
+    const root = makeRoot()
+    const [first, second] = root.children
+    // 把两个分支摆到几乎同一位置（故意重叠）
+    const moved = {
+      ...root,
+      children: [
+        { ...first, layoutHints: { offsetX: 300, offsetY: 0 } },
+        { ...second, layoutHints: { offsetX: 300, offsetY: 4 } },
+        ...root.children.slice(2),
+      ],
+    }
+
+    const stacked = computeLayout(moved, 'mindmap', undefined, {
+      freeBranch: true,
+      stackTopics: true,
+    })
+    const separated = computeLayout(moved, 'mindmap', undefined, {
+      freeBranch: true,
+      stackTopics: false,
+      stackGap: 20,
+    })
+
+    const box = (layout: ReturnType<typeof computeLayout>, id: string) =>
+      layout.nodes.find((n) => n.id === id)!
+
+    // 层叠打开：保持用户摆放的重叠
+    const stackedGap =
+      Math.abs(box(stacked, second.id).y - box(stacked, first.id).y)
+    expect(stackedGap).toBeLessThan(10)
+
+    // 层叠关闭：自动让开，间隙不小于设定的 stackGap
+    const top = box(separated, first.id)
+    const bottom = box(separated, second.id)
+    const [upper, lower] = top.y <= bottom.y ? [top, bottom] : [bottom, top]
+    expect(lower.y - lower.height / 2 - (upper.y + upper.height / 2)).toBeGreaterThanOrEqual(
+      20 - 0.001,
+    )
+
+    // 只动被摆放过的分支：自动定位的第三个分支坐标不受影响
+    const auto = computeLayout(moved, 'mindmap', undefined, { freeBranch: true })
+    const thirdId = root.children[2].id
+    expect(box(separated, thirdId).y).toBeCloseTo(box(auto, thirdId).y, 5)
+  })
+
   it('ignores stored branch positions when free branch layout is off', () => {
     const root = makeRoot()
     const branch = root.children[0]

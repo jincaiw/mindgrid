@@ -93,6 +93,13 @@ describe('resolveCanvasSettings', () => {
     })
   })
 
+  it('主题层叠默认打开（与 XMind 默认勾选一致），可显式关闭', () => {
+    expect(DEFAULT_CANVAS_SETTINGS.stackTopics).toBe(true)
+    expect(
+      resolveCanvasSettings({ [CANVAS_SETTINGS_KEYS.stackTopics]: false }).stackTopics,
+    ).toBe(false)
+  })
+
   it('分支自由布局默认关闭，可显式打开', () => {
     expect(DEFAULT_CANVAS_SETTINGS.freeBranchLayout).toBe(false)
     expect(

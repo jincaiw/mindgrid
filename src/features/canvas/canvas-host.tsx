@@ -345,6 +345,7 @@ function MindMapScene({
         alignSiblings: canvasSettings.alignSiblings,
         direction: layoutDirection,
         freeBranch: canvasSettings.freeBranchLayout,
+        stackTopics: canvasSettings.stackTopics,
       }),
     [
       rootTopic,
@@ -354,6 +355,7 @@ function MindMapScene({
       canvasSettings.compact,
       canvasSettings.alignSiblings,
       canvasSettings.freeBranchLayout,
+      canvasSettings.stackTopics,
       layoutDirection,
     ],
   )

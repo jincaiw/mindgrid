@@ -410,6 +410,7 @@ async function buildExportScene(document: DocumentSnapshot) {
     alignSiblings: canvasSettings.alignSiblings,
     direction: sheet.layoutConfig?.direction,
     freeBranch: canvasSettings.freeBranchLayout,
+    stackTopics: canvasSettings.stackTopics,
   })
   const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
 

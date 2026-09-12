@@ -36,6 +36,15 @@ export interface MindMapLayoutOptions {
   balance?: boolean
   alignSiblings?: boolean
   /**
+   * 主题层叠：允许主题互相重叠。
+   *
+   * 默认 true（与 XMind 默认勾选一致）＝不干预，用户放哪就哪；
+   * 显式 false 时，分支自由布局下**被摆放过的**分支会避开上方主题自动下移。
+   */
+  stackTopics?: boolean
+  /** 层叠关闭时主题之间的最小纵向间隙（px），缺省 VERTICAL_GAP。内部/测试用。 */
+  stackGap?: number
+  /**
    * 分支自由布局：一级分支若带 layoutHints.offsetX/offsetY，就按存的坐标摆放
    * （不再走自动纵向分配），其子树整体跟随。对应画布设置 `canvas.freeBranchLayout`。
    */
@@ -322,6 +331,30 @@ export function computeMindMapLayout(
     placeSubtree(topic, rootNode, 'right', centerY, 1)
   })
 
+  /** 把某个分支的子树（节点 + 相关连线）整体平移。 */
+  const translateBranchSubtree = (branch: TopicSnapshot, deltaX: number, deltaY: number) => {
+    const subtreeIds = new Set<string>()
+    const collect = (topic: TopicSnapshot) => {
+      subtreeIds.add(topic.id)
+      for (const child of topic.children) collect(child)
+    }
+    collect(branch)
+
+    for (const node of nodes) {
+      if (subtreeIds.has(node.id)) {
+        node.x += deltaX
+        node.y += deltaY
+      }
+    }
+    for (const edge of edges) {
+      if (!subtreeIds.has(edge.childId)) continue
+      edge.start = { x: edge.start.x + deltaX, y: edge.start.y + deltaY }
+      edge.end = { x: edge.end.x + deltaX, y: edge.end.y + deltaY }
+      edge.control1 = { x: edge.control1.x + deltaX, y: edge.control1.y + deltaY }
+      edge.control2 = { x: edge.control2.x + deltaX, y: edge.control2.y + deltaY }
+    }
+  }
+
   // 分支自由布局：把带位置提示的一级分支（及其子树）整体平移到存的坐标。
   // 位置提示以**中心主题为原点**（与浮动主题同一坐标系），rootNode 就在 (0,0)，
   // 所以目标点直接就是 offsets 本身。
@@ -341,25 +374,51 @@ export function computeMindMapLayout(
       const deltaY = hints.offsetY - pivot.y
       if (deltaX === 0 && deltaY === 0) continue
 
-      const subtreeIds = new Set<string>()
-      const collect = (topic: TopicSnapshot) => {
-        subtreeIds.add(topic.id)
-        for (const child of topic.children) collect(child)
-      }
-      collect(branch)
+      translateBranchSubtree(branch, deltaX, deltaY)
+    }
 
-      for (const node of nodes) {
-        if (subtreeIds.has(node.id)) {
-          node.x += deltaX
-          node.y += deltaY
+    // 主题层叠关闭：被摆放过的分支要避开**所有**同级分支（含自动定位的），
+    // 否则把它拖到某个自动分支身上就仍然叠着。推动的永远是被摆放的那个，
+    // 自动定位的分支不动，避免整幅图跟着抖。
+    if (options.stackTopics === false) {
+      const stackGap = options.stackGap ?? verticalGap
+      const nodeById = new Map(nodes.map((node) => [node.id, node]))
+      const movedBranches = rootTopic.children
+        .filter(
+          (branch) =>
+            branch.layoutHints?.offsetX != null && branch.layoutHints?.offsetY != null,
+        )
+        .sort((a, b) => (nodeById.get(a.id)?.y ?? 0) - (nodeById.get(b.id)?.y ?? 0))
+
+      for (const branch of movedBranches) {
+        // 逐个障碍排除：每次找出最大的需要下移量，直到不再和任何同级分支重叠。
+        // 上限只是防御性写法（病态输入下不进入死循环）。
+        for (let guard = 0; guard < 50; guard += 1) {
+          const node = nodeById.get(branch.id)
+          if (!node) break
+
+          const top = node.y - node.height / 2
+          const bottom = node.y + node.height / 2
+          let shift = 0
+
+          for (const other of rootTopic.children) {
+            if (other.id === branch.id) continue
+            const otherNode = nodeById.get(other.id)
+            if (!otherNode) continue
+            // 只和同一侧的分支比较：左右两侧各自成列，互不影响
+            if ((otherNode.x >= 0) !== (node.x >= 0)) continue
+
+            const otherTop = otherNode.y - otherNode.height / 2
+            const otherBottom = otherNode.y + otherNode.height / 2
+            const overlaps = top < otherBottom + stackGap && bottom > otherTop - stackGap
+            if (!overlaps) continue
+
+            shift = Math.max(shift, otherBottom + stackGap - top)
+          }
+
+          if (shift <= 0.001) break
+          translateBranchSubtree(branch, 0, shift)
         }
-      }
-      for (const edge of edges) {
-        if (!subtreeIds.has(edge.childId)) continue
-        edge.start = { x: edge.start.x + deltaX, y: edge.start.y + deltaY }
-        edge.end = { x: edge.end.x + deltaX, y: edge.end.y + deltaY }
-        edge.control1 = { x: edge.control1.x + deltaX, y: edge.control1.y + deltaY }
-        edge.control2 = { x: edge.control2.x + deltaX, y: edge.control2.y + deltaY }
       }
     }
   }
