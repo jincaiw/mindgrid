@@ -1444,10 +1444,47 @@ button {
   background: var(--color-surface-panel-strong);
 }
 
+/* 标签在左、控件在右的**同一行**——这是 XMind 格式侧边栏的排布范式，
+ * 也是两边密度差距的根因：原先「标签一行 + 控件一行」上下堆叠，
+ * 同样面板高度里 XMind 能排下 21 行标注设置，我们只有 12 行（实测中位行距 34 vs 39lp，
+ * 而堆叠让每个设置实占 70–135lp）。
+ *
+ * 段落类子元素（panel__muted 等说明文字）跨两列并保持左对齐：
+ * 它们本来就该整行显示，挤进右列会又窄又右对齐。 */
 .panel__field {
   display: grid;
-  gap: 6px;
-  margin-top: 12px;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 10px;
+}
+
+.panel__field > :not(span) {
+  justify-self: end;
+}
+
+.panel__field > p,
+.panel__field > .panel__field-note {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+/* 标签列给一个最小宽度：XMind 的控件全部左边缘对齐，靠的就是标签列等宽。
+ * 不定宽的话，标签长短不同会把控件推到不同位置，整页看起来"参差不齐"。 */
+.panel__field > span {
+  min-width: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* 滑杆整行：挤在右列里只有一半宽度，拖起来也难受。
+ * 于是变成「标签 + 数值」一行、滑杆占满下一行。 */
+.panel__field > input[type='range'] {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  width: 100%;
 }
 
 .panel__field > span {
@@ -3483,20 +3520,6 @@ button {
   }
 }
 
-@media (max-width: 760px) {
-  .workspace-shell__body,
-  .workspace-shell__body--sidebar-visible,
-  .workspace-shell__body--sidebar-visible.workspace-shell__body--inspector-hidden,
-  .workspace-shell__body--sidebar-hidden,
-  .workspace-shell__body--sidebar-hidden.workspace-shell__body--inspector-hidden {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .panel--inspector,
-  .panel--sidebar {
-    display: none;
-  }
-}
 
 /* 工具栏三区内容较多：窄屏时先隐藏保存提示，再压缩文件名宽度 */
 @media (max-width: 1440px) {
@@ -3515,7 +3538,13 @@ button {
   }
 }
 
-@media (max-width: 960px) {
+/* 窄屏收起两个面板的阈值。
+ *
+ * **必须是 880 而不是 960**：XMind 基准图（默认整窗）的逻辑宽度正好是 960，
+ * 而它在 960 下**完整显示格式面板**（画布 677 + 右栏 283）。原来卡在 960 会把
+ * 面板全部藏掉——笔记本上窗口稍微一缩就丢掉导航与格式面板，是与基准最刺眼的差距。
+ * 880 下画布仍有 600px，够用。 */
+@media (max-width: 880px) {
   .workspace-shell__body {
     grid-template-columns: minmax(0, 1fr);
   }

@@ -939,139 +939,11 @@ export function Inspector({
             aria-labelledby="inspector-tab-style"
             className="panel__tab-panel"
           >
-            <PanelSection title="主题属性">
-              <div className="accordion-card">
-                <span>{hasMultipleSelectedTopics ? '当前选择' : '当前主题'}</span>
-                <span>
-                  {hasMultipleSelectedTopics
-                    ? `已选中 ${normalizedSelectedTopicIds.length} 个主题`
-                    : activeTopic?.text ?? '未选中'}
-                </span>
-              </div>
-              <div className="accordion-card">
-                <span>子主题数</span>
-                <span>{activeTopic?.children.length ?? 0}</span>
-              </div>
-            </PanelSection>
-
+            {/* 小节顺序对齐 XMind 样式页：形状 → 文本 → 结构 → 分支 → 编号。
+                节点级富内容（备注/链接/标签/标记/样式引用）与主题属性是 XMind 放在画布内联
+                或别处的编辑入口，排在这些外观分组之后，不再挡在首屏。 */}
             {activeTopic && !hasMultipleSelectedTopics ? (
               <>
-                <PanelSection title="富内容编辑">
-                <p className="panel__muted">
-                  编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
-                </p>
-
-                <label className="panel__field">
-                  <span>备注</span>
-                  <textarea
-                    value={notesDraft}
-                    onChange={(e) => setNotesDraft(e.target.value)}
-                    onBlur={() => {
-                      const next = notesDraft.trim() || null
-                      if ((activeTopic.notes ?? null) !== next) {
-                        void session.setTopicNotes(activeTopic.id, next)
-                      }
-                    }}
-                    placeholder="为该主题添加详细备注…"
-                  />
-                </label>
-
-                <label className="panel__field">
-                  <span>链接地址</span>
-                  <input
-                    type="url"
-                    value={linkUrlDraft}
-                    onChange={(e) => setLinkUrlDraft(e.target.value)}
-                    onBlur={() => {
-                      const url = linkUrlDraft.trim()
-                      const title = linkTitleDraft.trim()
-                      const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
-                      const currentLink = activeTopic.link ?? null
-                      const same =
-                        currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
-                      if (!same) {
-                        void session.setTopicLink(activeTopic.id, nextLink)
-                      }
-                    }}
-                    placeholder="https://example.com"
-                  />
-                </label>
-                <label className="panel__field">
-                  <span>链接标题</span>
-                  <input
-                    type="text"
-                    value={linkTitleDraft}
-                    onChange={(e) => setLinkTitleDraft(e.target.value)}
-                    onBlur={() => {
-                      const url = linkUrlDraft.trim()
-                      const title = linkTitleDraft.trim()
-                      const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
-                      const currentLink = activeTopic.link ?? null
-                      const same =
-                        currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
-                      if (!same) {
-                        void session.setTopicLink(activeTopic.id, nextLink)
-                      }
-                    }}
-                    placeholder="可选的链接显示文字"
-                  />
-                </label>
-
-                <label className="panel__field">
-                  <span>标签（逗号分隔）</span>
-                  <input
-                    type="text"
-                    value={labelsDraft}
-                    onChange={(e) => setLabelsDraft(e.target.value)}
-                    onBlur={() => {
-                      const next = labelsDraft
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                      const current = activeTopic.labels ?? []
-                      if (JSON.stringify(current) !== JSON.stringify(next)) {
-                        void session.setTopicLabels(activeTopic.id, next)
-                      }
-                    }}
-                    placeholder="重要, 待办, 项目A"
-                  />
-                </label>
-
-                <div className="panel__field">
-                  <span>标记</span>
-                  <MarkerSelector
-                    markers={activeTopic.markers ?? []}
-                    onChange={(next) => {
-                      const current = activeTopic.markers ?? []
-                      const same =
-                        current.length === next.length &&
-                        current.every((m, i) => m.id === next[i]?.id)
-                      if (!same) {
-                        void session.setTopicMarkers(activeTopic.id, next)
-                      }
-                    }}
-                  />
-                </div>
-
-                <label className="panel__field">
-                  <span>样式引用</span>
-                  <input
-                    type="text"
-                    value={styleRefDraft}
-                    onChange={(e) => setStyleRefDraft(e.target.value)}
-                    onBlur={() => {
-                      const next = styleRefDraft.trim() || null
-                      if ((activeTopic.styleRef ?? null) !== next) {
-                        void session.setTopicStyleRef(activeTopic.id, next)
-                      }
-                    }}
-                    placeholder="styles.json 中的样式 ID"
-                  />
-                </label>
-
-            </PanelSection>
-
-            {/* XMind 样式页把「形状」「文本」放在富内容之前；这里保持同样的分组与命名 */}
             <PanelSection title="形状">
                 <div className="panel__field">
                   <span>节点颜色覆盖</span>
@@ -1519,79 +1391,6 @@ export function Inspector({
                 </div>
                 </PanelSection>
               </>
-            ) : (
-              <p className="panel__muted">
-                {hasMultipleSelectedTopics
-                  ? '当前为多选状态，富内容编辑不可用。请按 Esc 回到单选后再编辑。'
-                  : '在画布或左侧大纲中选中一个主题，即可编辑其备注、链接、标签、任务与样式。'}
-              </p>
-            )}
-
-            {activeTopic && !hasMultipleSelectedTopics ? (
-              <PanelSection title="主题图片">
-                <p className="panel__muted">
-                  为选中主题插入一张本地图片，图片显示在节点标题上方并参与节点尺寸计算；插入与移除均可撤销。
-                </p>
-
-                <div className="panel__field">
-                  <span>图片</span>
-                  {topicImageUrl ? (
-                    <img
-                      className="panel__image-preview"
-                      src={topicImageUrl}
-                      alt={`${activeTopic.text} 的主题图片`}
-                    />
-                  ) : (
-                    <p className="panel__muted">
-                      {activeTopic.image ? '图片加载中…' : '当前主题没有图片。'}
-                    </p>
-                  )}
-                  <input
-                    ref={imageFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="panel__hidden-file-input"
-                    aria-label="选择主题图片文件"
-                    onChange={(event) => {
-                      const file = event.target.files?.[0] ?? null
-                      // 清空 value，保证连续选择同一文件也能触发 change
-                      event.target.value = ''
-
-                      if (!file) {
-                        return
-                      }
-
-                      const reader = new FileReader()
-                      reader.onload = () => {
-                        const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-
-                        if (dataUrl) {
-                          void insertTopicImage(dataUrl)
-                        }
-                      }
-                      reader.readAsDataURL(file)
-                    }}
-                  />
-                  <div className="panel__field-row">
-                    <button
-                      className="panel__action"
-                      type="button"
-                      onClick={() => void handlePickTopicImage()}
-                    >
-                      {activeTopic.image ? '更换图片' : '插入图片'}
-                    </button>
-                    {activeTopic.image ? (
-                      <button
-                        className="panel__action panel__action--ghost"
-                        type="button"
-                        onClick={() => void session.removeTopicImage(activeTopic.id)}
-                      >
-                        移除图片
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </PanelSection>
             ) : null}
 
             {/* 节点级「结构 / 方向」：XMind 允许单个分支用不同于整幅图的骨架 */}
@@ -1945,6 +1744,213 @@ export function Inspector({
                 </>
               ) : null}
             </PanelSection>
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <PanelSection title="主题图片">
+                <p className="panel__muted">
+                  为选中主题插入一张本地图片，图片显示在节点标题上方并参与节点尺寸计算；插入与移除均可撤销。
+                </p>
+
+                <div className="panel__field">
+                  <span>图片</span>
+                  {topicImageUrl ? (
+                    <img
+                      className="panel__image-preview"
+                      src={topicImageUrl}
+                      alt={`${activeTopic.text} 的主题图片`}
+                    />
+                  ) : (
+                    <p className="panel__muted">
+                      {activeTopic.image ? '图片加载中…' : '当前主题没有图片。'}
+                    </p>
+                  )}
+                  <input
+                    ref={imageFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="panel__hidden-file-input"
+                    aria-label="选择主题图片文件"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null
+                      // 清空 value，保证连续选择同一文件也能触发 change
+                      event.target.value = ''
+
+                      if (!file) {
+                        return
+                      }
+
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+
+                        if (dataUrl) {
+                          void insertTopicImage(dataUrl)
+                        }
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <div className="panel__field-row">
+                    <button
+                      className="panel__action"
+                      type="button"
+                      onClick={() => void handlePickTopicImage()}
+                    >
+                      {activeTopic.image ? '更换图片' : '插入图片'}
+                    </button>
+                    {activeTopic.image ? (
+                      <button
+                        className="panel__action panel__action--ghost"
+                        type="button"
+                        onClick={() => void session.removeTopicImage(activeTopic.id)}
+                      >
+                        移除图片
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </PanelSection>
+            ) : null}
+
+            <PanelSection title="主题属性">
+              <div className="accordion-card">
+                <span>{hasMultipleSelectedTopics ? '当前选择' : '当前主题'}</span>
+                <span>
+                  {hasMultipleSelectedTopics
+                    ? `已选中 ${normalizedSelectedTopicIds.length} 个主题`
+                    : activeTopic?.text ?? '未选中'}
+                </span>
+              </div>
+              <div className="accordion-card">
+                <span>子主题数</span>
+                <span>{activeTopic?.children.length ?? 0}</span>
+              </div>
+            </PanelSection>
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <>
+                <PanelSection title="富内容编辑">
+                <p className="panel__muted">
+                  编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
+                </p>
+
+                <label className="panel__field">
+                  <span>备注</span>
+                  <textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    onBlur={() => {
+                      const next = notesDraft.trim() || null
+                      if ((activeTopic.notes ?? null) !== next) {
+                        void session.setTopicNotes(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="为该主题添加详细备注…"
+                  />
+                </label>
+
+                <label className="panel__field">
+                  <span>链接地址</span>
+                  <input
+                    type="url"
+                    value={linkUrlDraft}
+                    onChange={(e) => setLinkUrlDraft(e.target.value)}
+                    onBlur={() => {
+                      const url = linkUrlDraft.trim()
+                      const title = linkTitleDraft.trim()
+                      const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
+                      const currentLink = activeTopic.link ?? null
+                      const same =
+                        currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
+                      if (!same) {
+                        void session.setTopicLink(activeTopic.id, nextLink)
+                      }
+                    }}
+                    placeholder="https://example.com"
+                  />
+                </label>
+                <label className="panel__field">
+                  <span>链接标题</span>
+                  <input
+                    type="text"
+                    value={linkTitleDraft}
+                    onChange={(e) => setLinkTitleDraft(e.target.value)}
+                    onBlur={() => {
+                      const url = linkUrlDraft.trim()
+                      const title = linkTitleDraft.trim()
+                      const nextLink: TopicLink | null = url ? { url, ...(title ? { title } : {}) } : null
+                      const currentLink = activeTopic.link ?? null
+                      const same =
+                        currentLink?.url === nextLink?.url && currentLink?.title === nextLink?.title
+                      if (!same) {
+                        void session.setTopicLink(activeTopic.id, nextLink)
+                      }
+                    }}
+                    placeholder="可选的链接显示文字"
+                  />
+                </label>
+
+                <label className="panel__field">
+                  <span>标签（逗号分隔）</span>
+                  <input
+                    type="text"
+                    value={labelsDraft}
+                    onChange={(e) => setLabelsDraft(e.target.value)}
+                    onBlur={() => {
+                      const next = labelsDraft
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                      const current = activeTopic.labels ?? []
+                      if (JSON.stringify(current) !== JSON.stringify(next)) {
+                        void session.setTopicLabels(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="重要, 待办, 项目A"
+                  />
+                </label>
+
+                <div className="panel__field">
+                  <span>标记</span>
+                  <MarkerSelector
+                    markers={activeTopic.markers ?? []}
+                    onChange={(next) => {
+                      const current = activeTopic.markers ?? []
+                      const same =
+                        current.length === next.length &&
+                        current.every((m, i) => m.id === next[i]?.id)
+                      if (!same) {
+                        void session.setTopicMarkers(activeTopic.id, next)
+                      }
+                    }}
+                  />
+                </div>
+
+                <label className="panel__field">
+                  <span>样式引用</span>
+                  <input
+                    type="text"
+                    value={styleRefDraft}
+                    onChange={(e) => setStyleRefDraft(e.target.value)}
+                    onBlur={() => {
+                      const next = styleRefDraft.trim() || null
+                      if ((activeTopic.styleRef ?? null) !== next) {
+                        void session.setTopicStyleRef(activeTopic.id, next)
+                      }
+                    }}
+                    placeholder="styles.json 中的样式 ID"
+                  />
+                </label>
+
+            </PanelSection>
+              </>
+            ) : (
+              <p className="panel__muted">
+                {hasMultipleSelectedTopics
+                  ? '当前为多选状态，富内容编辑不可用。请按 Esc 回到单选后再编辑。'
+                  : '在画布或左侧大纲中选中一个主题，即可编辑其备注、链接、标签、任务与样式。'}
+              </p>
+            )}
           </div>
         ) : null}
 
