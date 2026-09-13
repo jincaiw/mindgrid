@@ -17,6 +17,7 @@ import {
   findTopicById,
   collectVisibleTopicIds,
 } from '../../lib/document/tree'
+import { resolveZoomShortcut } from './zoom-shortcut'
 import { getActiveSheet } from '../../lib/document/sheets'
 import type {
   Boundary,
@@ -1119,32 +1120,22 @@ function MindMapScene({
         return
       }
 
-      const isModifierPressed = event.metaKey || event.ctrlKey
-
-      // 缩放快捷键（XMind 标配：Cmd/Ctrl + -/=/0/1）。
-      // 显式排除 Alt：⌥⌘0 是菜单的「重设样式」，⌥⌘C/V 已在上方消费掉，
-      // 但 ⌥⌘0 会落到这里被当成「适应画布」——不排 Alt 就是两个动作同时触发。
-      if (isModifierPressed && !event.altKey) {
-        if (event.key === '=' || event.key === '+') {
-          event.preventDefault()
+      // 缩放快捷键（Cmd/Ctrl + -/=/0/1）。
+      // 映射抽在 zoom-shortcut.ts 里：它在 jsdom 中无法用行为断言守住
+      // （测试视口下 fit 与 100% 不可区分），只能对映射表本身做单测。
+      const zoomAction = resolveZoomShortcut(event)
+      if (zoomAction) {
+        event.preventDefault()
+        if (zoomAction === 'in') {
           setZoomFromViewportCenter(cameraRef.current.zoom * 1.15)
-          return
-        }
-        if (event.key === '-') {
-          event.preventDefault()
+        } else if (zoomAction === 'out') {
           setZoomFromViewportCenter(cameraRef.current.zoom / 1.15)
-          return
-        }
-        if (event.key === '0') {
-          event.preventDefault()
-          fitToView()
-          return
-        }
-        if (event.key === '1') {
-          event.preventDefault()
+        } else if (zoomAction === 'actual') {
           setZoomFromViewportCenter(1)
-          return
+        } else {
+          fitToView()
         }
+        return
       }
 
       // 方向键导航：在相邻节点间移动焦点（编辑中禁用）
