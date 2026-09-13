@@ -14,7 +14,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computeLayout } from '../canvas/layouts'
 import { renderScene } from '../canvas/runtime/canvas-renderer'
 import { buildScene } from '../canvas/runtime/scene-builder'
-import type { TopicVisualStates } from '../canvas/runtime/scene-builder'
 import type {
   Boundary,
   ChartType,
@@ -32,6 +31,7 @@ import {
   interpolateCamera,
   type PresentationCamera,
 } from './presentation-controller'
+import { EMPTY_OVERLAYS, EMPTY_VISUAL_STATES } from './empty-scene-state'
 
 const ANIMATION_DURATION_MS = 480
 
@@ -40,22 +40,6 @@ interface PresentationViewProps {
   onExit: () => void
 }
 
-const EMPTY_VISUAL_STATES: TopicVisualStates = {
-  activeTopicId: null,
-  selectedTopicIds: new Set<string>(),
-  editingTopicId: null,
-  searchMatchedTopicIds: new Set<string>(),
-  activeSearchTopicId: null,
-  historyFocusTopicId: null,
-  dropTargetTopicId: null,
-  draggingTopicId: null,
-}
-
-const EMPTY_OVERLAYS = {
-  selectionBox: null,
-  dragPreview: null,
-  dropIndicator: null,
-}
 
 export function PresentationView({ document, onExit }: PresentationViewProps) {
   const activeSheet = document.sheets.find((s) => s.id === document.activeSheetId) ?? document.sheets[0]

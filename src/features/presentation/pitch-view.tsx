@@ -15,7 +15,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computeLayout } from '../canvas/layouts'
 import { renderScene } from '../canvas/runtime/canvas-renderer'
 import { buildScene } from '../canvas/runtime/scene-builder'
-import type { TopicVisualStates } from '../canvas/runtime/scene-builder'
 import type {
   Boundary,
   ChartType,
@@ -38,6 +37,7 @@ import {
   type PitchAspectRatio,
   type PitchThemeStyle,
 } from './pitch-controller'
+import { EMPTY_OVERLAYS, EMPTY_VISUAL_STATES } from './empty-scene-state'
 
 const ANIMATION_DURATION_MS = 420
 
@@ -50,22 +50,6 @@ interface PitchViewProps {
   onThemeStyleChange?: (value: PitchThemeStyle) => void
 }
 
-const EMPTY_VISUAL_STATES: TopicVisualStates = {
-  activeTopicId: null,
-  selectedTopicIds: new Set<string>(),
-  editingTopicId: null,
-  searchMatchedTopicIds: new Set<string>(),
-  activeSearchTopicId: null,
-  historyFocusTopicId: null,
-  dropTargetTopicId: null,
-  draggingTopicId: null,
-}
-
-const EMPTY_OVERLAYS = {
-  selectionBox: null,
-  dragPreview: null,
-  dropIndicator: null,
-}
 
 /**
  * 空集合复用模块级常量。
