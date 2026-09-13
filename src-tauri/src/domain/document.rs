@@ -968,10 +968,11 @@ impl DocumentSession {
         topic_id: &str,
         target_parent_id: &str,
         action_label: Option<&str>,
+        target_index: Option<usize>,
     ) -> Result<DocumentSessionSnapshot, String> {
         let label = action_label.unwrap_or("移动主题");
         self.apply_change_set(label, |editor| {
-            editor.move_topic_to_parent(topic_id, target_parent_id)
+            editor.move_topic_to_parent_at(topic_id, target_parent_id, target_index)
         })
     }
 
@@ -1768,6 +1769,59 @@ mod tests {
         assert!(redone.can_undo);
     }
 
+    /// 「减少缩进」依赖的**带位置**移动：主题要落在目标父主题的指定下标，
+    /// 而不是被追加到末尾——XMind 的减少缩进要求落在原父主题之后，
+    /// 追加到末尾会让它在多兄弟场景里跳到最后一个。
+    #[test]
+    fn move_topic_at_inserts_at_requested_index() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let target_parent_id = root_topic.children[0].id.clone();
+        let moved_topic_id = root_topic.children[2].id.clone();
+
+        let moved = session
+            .move_topic(&moved_topic_id, &target_parent_id, Some("减少缩进"), Some(0))
+            .expect("带下标的移动应成功");
+        let target_parent =
+            super::find_topic(moved.document.root_topic(), &target_parent_id)
+                .expect("目标父主题应存在");
+
+        assert_eq!(target_parent.children.len(), 1);
+        assert_eq!(target_parent.children[0].id, moved_topic_id);
+    }
+
+    /// 下标越界时夹到末尾而不是报错：前端算出的下标可能因为同一批操作里
+    /// 先移动过别的主题而略微过期，夹取比失败更合适。
+    #[test]
+    fn move_topic_at_clamps_out_of_range_index() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let target_parent_id = root_topic.children[0].id.clone();
+        let moved_topic_id = root_topic.children[1].id.clone();
+
+        let moved = session
+            .move_topic(&moved_topic_id, &target_parent_id, None, Some(99))
+            .expect("越界下标应夹到末尾");
+        let target_parent =
+            super::find_topic(moved.document.root_topic(), &target_parent_id)
+                .expect("目标父主题应存在");
+
+        assert_eq!(
+            target_parent.children.last().map(|topic| topic.id.as_str()),
+            Some(moved_topic_id.as_str())
+        );
+    }
+
     #[test]
     fn move_topic_reparents_branch_and_supports_undo() {
         let mut session = DocumentSession::create_default();
@@ -1781,7 +1835,7 @@ mod tests {
         let target_parent_id = root_topic.children[1].id.clone();
 
         let moved = session
-            .move_topic(&source_topic_id, &target_parent_id, None)
+            .move_topic(&source_topic_id, &target_parent_id, None, None)
             .expect("move should succeed");
         let target_parent = super::find_topic(moved.document.root_topic(), &target_parent_id)
             .expect("target parent should exist");

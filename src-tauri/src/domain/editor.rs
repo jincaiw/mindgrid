@@ -1833,6 +1833,20 @@ impl<'a> DocumentEditor<'a> {
     }
 
     pub fn move_topic_to_parent(&mut self, topic_id: &str, target_parent_id: &str) -> Result<String, String> {
+        self.move_topic_to_parent_at(topic_id, target_parent_id, None)
+    }
+
+    /// 移动主题到指定父主题下的**指定位置**。
+    ///
+    /// `target_index` 为 None 时追加到末尾（与 `move_topic_to_parent` 一致）。
+    /// 需要位置参数是因为「减少缩进」要求主题落在**原父主题之后**，
+    /// 而不是被丢到目标父主题的末尾——否则在多兄弟场景里会跳到最后一位。
+    pub fn move_topic_to_parent_at(
+        &mut self,
+        topic_id: &str,
+        target_parent_id: &str,
+        target_index: Option<usize>,
+    ) -> Result<String, String> {
         let sheet_id = self.active_sheet_id();
         if self.document.root_topic().id == topic_id {
             return Err("根主题不能移动".into());
@@ -1853,10 +1867,15 @@ impl<'a> DocumentEditor<'a> {
             }
             let (from_parent_id, from_index) = find_parent_id_and_index(&sheet.root_topic, topic_id)
                 .ok_or_else(|| "找不到需要移动的主题".to_string())?;
-            let to_index = find_topic(&sheet.root_topic, target_parent_id)
+            let target_children = &find_topic(&sheet.root_topic, target_parent_id)
                 .ok_or_else(|| "找不到目标父主题".to_string())?
-                .children
-                .len();
+                .children;
+            // 越界一律夹到末尾；调用方（前端）从树里算出的下标可能因为
+            // 同一批操作里先移动过别的主题而略微过期，夹取比报错合适。
+            let to_index = match target_index {
+                Some(index) => index.min(target_children.len()),
+                None => target_children.len(),
+            };
             (from_parent_id, from_index, to_index)
         };
 

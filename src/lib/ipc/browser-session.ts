@@ -1432,7 +1432,21 @@ export async function invokeBrowserCommand<TResult>(
         }
 
         targetParent.collapsed = false
-        targetParent.children.push(detachedTopic)
+        const rawIndex = payload.target_index
+        const targetIndex =
+          typeof rawIndex === 'number' && Number.isFinite(rawIndex)
+            ? Math.max(0, Math.trunc(rawIndex))
+            : null
+        if (targetIndex === null) {
+          targetParent.children.push(detachedTopic)
+        } else {
+          // 越界夹到末尾，与 Rust 侧 move_topic_to_parent_at 的夹取口径一致
+          targetParent.children.splice(
+            Math.min(targetIndex, targetParent.children.length),
+            0,
+            detachedTopic,
+          )
+        }
 
         return topicId
       }) as TResult

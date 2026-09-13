@@ -141,6 +141,9 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &format!("删除主题{}", plain("Delete")),
         )?)
         .separator()
+        .item(&item(handle, "edit.indent", "缩进")?)
+        .item(&item(handle, "edit.outdent", "减少缩进")?)
+        .separator()
         .item(&item(
             handle,
             "edit.copy-style",

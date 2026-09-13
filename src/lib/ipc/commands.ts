@@ -354,11 +354,18 @@ export function deleteSummary(sheetId: string, summaryId: string) {
   })
 }
 
-export function moveTopic(topicId: string, targetParentId: string, actionLabel?: string) {
+export function moveTopic(
+  topicId: string,
+  targetParentId: string,
+  actionLabel?: string,
+  targetIndex?: number,
+) {
   return invokeCommand<DocumentSessionSnapshot>('move_topic', {
     topic_id: topicId,
     target_parent_id: targetParentId,
     action_label: actionLabel,
+    // 省略 = 追加到末尾；「减少缩进」需要落在原父主题之后，必须给位置
+    target_index: targetIndex,
   })
 }
 

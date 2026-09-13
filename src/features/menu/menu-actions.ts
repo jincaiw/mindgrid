@@ -45,6 +45,8 @@ export type MenuActionId =
   | 'edit.expand-subtopics'
   | 'edit.expand-all'
   | 'edit.collapse'
+  | 'edit.indent'
+  | 'edit.outdent'
   | 'edit.find'
   // 插入
   | 'insert.child'
@@ -114,6 +116,8 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'edit.expand-subtopics',
   'edit.expand-all',
   'edit.collapse',
+  'edit.indent',
+  'edit.outdent',
   'edit.find',
   // 插入
   'insert.child',

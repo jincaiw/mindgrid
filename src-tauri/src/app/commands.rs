@@ -1123,13 +1123,20 @@ pub fn move_topic(
     topic_id: String,
     target_parent_id: String,
     action_label: Option<String>,
+    // 目标父主题下的插入位置；缺省追加到末尾。
+    target_index: Option<usize>,
 ) -> Result<DocumentSessionSnapshot, String> {
     let mut guard = state
         .document_session
         .lock()
         .map_err(|_| "unable to acquire document state".to_string())?;
 
-    guard.move_topic(&topic_id, &target_parent_id, action_label.as_deref())?;
+    guard.move_topic(
+        &topic_id,
+        &target_parent_id,
+        action_label.as_deref(),
+        target_index,
+    )?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }

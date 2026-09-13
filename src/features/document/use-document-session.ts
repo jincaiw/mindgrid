@@ -179,7 +179,12 @@ export interface DocumentSession extends DocumentSessionState {
   deleteBoundary: (sheetId: string, boundaryId: string) => Promise<void>
   createSummary: (sheetId: string, topicIds: string[], label: string) => Promise<void>
   deleteSummary: (sheetId: string, summaryId: string) => Promise<void>
-  moveTopic: (topicId: string, targetParentId: string, actionLabel?: string) => Promise<void>
+  moveTopic: (
+    topicId: string,
+    targetParentId: string,
+    actionLabel?: string,
+    targetIndex?: number,
+  ) => Promise<void>
   moveTopics: (topicIds: string[], targetParentId: string, actionLabel?: string) => Promise<void>
   moveTopicInParent: (topicId: string, direction: 'up' | 'down') => Promise<void>
   moveTopicToSheet: (
@@ -1452,8 +1457,15 @@ export function useDocumentSession(): DocumentSession {
   )
 
   const moveActiveTopic = useCallback(
-    async (topicId: string, targetParentId: string, actionLabel = '移动主题') => {
-      await runCommand(actionLabel, () => moveTopic(topicId, targetParentId, actionLabel))
+    async (
+      topicId: string,
+      targetParentId: string,
+      actionLabel = '移动主题',
+      targetIndex?: number,
+    ) => {
+      await runCommand(actionLabel, () =>
+        moveTopic(topicId, targetParentId, actionLabel, targetIndex),
+      )
     },
     [runCommand],
   )

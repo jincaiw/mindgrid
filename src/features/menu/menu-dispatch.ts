@@ -1,6 +1,7 @@
 import {
   collectSubtreeTopicIds,
   collectVisibleTopicIds,
+  findParentTopicByChildId,
   findTopicById,
 } from '../../lib/document/tree'
 import type { DocumentSession } from '../document/use-document-session'
@@ -153,6 +154,51 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       if (topicId) {
         void session.deleteTopic(topicId)
       }
+      return
+    }
+    // —— 缩进 / 减少缩进（对齐 XMind 编辑菜单）——
+    // 缩进 = 成为**上一个同级主题**的最后一个子主题（XMind/大纲工具的通行语义）。
+    // 没有上一个同级主题（自己是第一个）时无处可缩，给一句提示而不是静默失败。
+    case 'edit.indent': {
+      const topicId = resolveTopicId(ctx)
+      if (!topicId || !activeSheet) {
+        return
+      }
+      const match = findParentTopicByChildId(activeSheet.rootTopic, topicId)
+      if (!match) {
+        return
+      }
+      if (match.index === 0) {
+        ctx.notify('已是第一个同级主题，无法缩进')
+        return
+      }
+      const previousSibling = match.parent.children[match.index - 1]
+      void session.moveTopic(topicId, previousSibling.id, '缩进')
+      return
+    }
+    // 减少缩进 = 挂到**祖父主题**之下，位置落在**原父主题之后**。
+    // 位置必须显式指定：默认的「追加到末尾」会让主题在多兄弟场景里跳到最后一位，
+    // 与 XMind 的表现不符（这也是本轮给 moveTopic 加 targetIndex 的原因）。
+    case 'edit.outdent': {
+      const topicId = resolveTopicId(ctx)
+      if (!topicId || !activeSheet) {
+        return
+      }
+      const parentMatch = findParentTopicByChildId(activeSheet.rootTopic, topicId)
+      if (!parentMatch) {
+        return
+      }
+      const grandMatch = findParentTopicByChildId(activeSheet.rootTopic, parentMatch.parent.id)
+      if (!grandMatch) {
+        ctx.notify('父主题已是中心主题，无法减少缩进')
+        return
+      }
+      void session.moveTopic(
+        topicId,
+        grandMatch.parent.id,
+        '减少缩进',
+        grandMatch.index + 1,
+      )
       return
     }
     // 重设样式 = 清掉 styleRef 与 styleOverrides，回到文档主题的样子。

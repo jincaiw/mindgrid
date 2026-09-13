@@ -54,6 +54,9 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setTopicStyleRef: asyncNoop(),
     setTopicStyleOverrides: asyncNoop(),
     createChildTopic: asyncNoop(),
+    // 缩进 / 减少缩进走的就是这两个（本轮给 moveTopic 加了插入位置参数）
+    moveTopic: asyncNoop(),
+    moveTopics: asyncNoop(),
     createSiblingTopic: asyncNoop(),
     createParentTopic: asyncNoop(),
     createRelationship: asyncNoop(),
@@ -396,5 +399,62 @@ describe('查看', () => {
     runMenuCommand('edit.expand-all', ctx)
     expect(setSelectedTopicIds).not.toHaveBeenCalled()
     expect(session.setTopicsCollapsed).not.toHaveBeenCalled()
+  })
+})
+
+describe('缩进 / 减少缩进', () => {
+  it('缩进 = 挂到上一个同级主题下面（追加，不给位置）', () => {
+    // 夹具：root → [topic_a(含 topic_a1), topic_b]；topic_b 是第 2 个
+    const { ctx, session } = makeHarness({ activeTopicId: 'topic_b' })
+
+    runMenuCommand('edit.indent', ctx)
+
+    expect(session.moveTopic).toHaveBeenCalledWith('topic_b', 'topic_a', '缩进')
+  })
+
+  it('已是第一个同级主题时缩进给出提示且不移动', () => {
+    const { ctx, session, notify } = makeHarness({ activeTopicId: 'topic_a' })
+
+    runMenuCommand('edit.indent', ctx)
+
+    expect(notify).toHaveBeenCalled()
+    expect(session.moveTopic).not.toHaveBeenCalled()
+  })
+
+  it('减少缩进 = 挂到祖父下、位置落在原父主题之后', () => {
+    // topic_a1 的父是 topic_a，topic_a 在 root 里排第 0 → 目标下标 1
+    const { ctx, session } = makeHarness({ activeTopicId: 'topic_a1' })
+
+    runMenuCommand('edit.outdent', ctx)
+
+    expect(session.moveTopic).toHaveBeenCalledWith('topic_a1', 'topic_root', '减少缩进', 1)
+  })
+
+  it('父主题已是中心主题时减少缩进给出提示且不移动', () => {
+    const { ctx, session, notify } = makeHarness({ activeTopicId: 'topic_a' })
+
+    runMenuCommand('edit.outdent', ctx)
+
+    expect(notify).toHaveBeenCalled()
+    expect(session.moveTopic).not.toHaveBeenCalled()
+  })
+
+  it('缩进与减少缩进互为反向：缩进后位置回到原处', () => {
+    // 夹具是静态的，替身不会真的改树，所以"反向"要用**缩进后**的树再跑一次减少缩进。
+    // 缩进后 topic_b 成了 topic_a 的子主题；减少缩进要把它放回 root 下、topic_a 之后（下标 1）。
+    const nested = makeSheet()
+    const topicA = nested.rootTopic.children[0]
+    const [topicB] = nested.rootTopic.children.splice(1, 1)
+    topicA.children.push(topicB)
+
+    const { ctx, session } = makeHarness({
+      activeTopicId: 'topic_b',
+      activeSheet: nested,
+    })
+
+    runMenuCommand('edit.outdent', ctx)
+
+    // 原父 topic_a 在 root 里排第 0 → 插到 1，即缩进前它所在的位置
+    expect(session.moveTopic).toHaveBeenCalledWith('topic_b', 'topic_root', '减少缩进', 1)
   })
 })
