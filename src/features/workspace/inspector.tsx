@@ -7,22 +7,35 @@ import {
   normalizeTopicIdsForBatch,
 } from '../../lib/document/tree'
 import { resolveTopicStyle } from '../canvas/runtime/style-resolver'
+import { computeLayout } from '../canvas/layouts'
+import { renderScene } from '../canvas/runtime/canvas-renderer'
+import { buildScene } from '../canvas/runtime/scene-builder'
+import { EMPTY_OVERLAYS, EMPTY_VISUAL_STATES } from '../presentation/empty-scene-state'
+import {
+  buildPresentationSlides,
+  buildPresentationTraversal,
+  computeFocusCamera,
+  filterLayoutByRevealed,
+} from '../presentation/presentation-controller'
 import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
 import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
 import {
   BRANCH_CHART_TYPES,
+  type Boundary,
   type ChartType,
   type DocumentSnapshot,
   type EdgeEndpoint,
   type EdgeType,
   type NumberingFormat,
   type Relationship,
+  type SummaryNode,
   type SheetBranchStyle,
   type SheetNumbering,
   type TopicDirection,
   type TopicLink,
   type TopicBorderStyle,
   type TopicShape,
+  type TopicSnapshot,
   type TopicStructure,
   type TopicStyleOverrides,
   type TopicTextAlign,
@@ -114,6 +127,92 @@ function PalettePreviewThumb({ colors }: { colors: readonly string[] }) {
         )
       })}
     </svg>
+  )
+}
+
+/** 演说预览的画布逻辑尺寸（16:9）；显示大小由 CSS 缩放。 */
+const PRESENTATION_PREVIEW_WIDTH = 256
+const PRESENTATION_PREVIEW_HEIGHT = 144
+
+/**
+ * 演说模式预览：把**第一张幻灯片**真实渲染出来（对齐 XMind 演说页顶部的预览区）。
+ *
+ * **不是占位框**：走放映台**完全相同**的链路
+ * （computeLayout → buildPresentationSlides → filterLayoutByRevealed → computeFocusCamera
+ * → buildScene → renderScene），所以"预览里看到的"就是"按下开始放映后第一屏看到的"。
+ *
+ * 上一轮这条链路画不出东西，根因是**相机坐标约定不一致**（放映控制器与渲染器各一套），
+ * 已在 presentation-controller 里统一（见那里的注释）。约定修好后这里直接可用。
+ */
+function PresentationPreview({
+  rootTopic,
+  chartType,
+  themeId,
+  relationships,
+  boundaries,
+  summaries,
+}: {
+  rootTopic: TopicSnapshot
+  chartType: ChartType
+  themeId: string | undefined
+  relationships: Relationship[]
+  boundaries: Boundary[]
+  summaries: SummaryNode[]
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    // jsdom 没有 canvas 实现，getContext 返回 null —— 跳过绘制，不视为错误
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const viewport = {
+      width: PRESENTATION_PREVIEW_WIDTH,
+      height: PRESENTATION_PREVIEW_HEIGHT,
+    }
+    const slides = buildPresentationSlides(buildPresentationTraversal(rootTopic))
+    const firstSlide = slides[0]
+    if (!firstSlide) return
+
+    const layout = computeLayout(rootTopic, chartType)
+    const revealed = filterLayoutByRevealed(layout, firstSlide.revealUpTo)
+    // 用放映台同款的聚焦相机（会带上 layout.offsetX/offsetY）
+    const camera = computeFocusCamera(revealed, firstSlide.topicId, viewport)
+    const scene = buildScene({
+      layout: revealed,
+      viewport,
+      camera,
+      visualStates: { ...EMPTY_VISUAL_STATES, activeTopicId: firstSlide.topicId },
+      overlays: EMPTY_OVERLAYS,
+      relationships,
+      boundaries,
+      summaries,
+      themeId,
+      enableCulling: false,
+    })
+
+    const dpr = window.devicePixelRatio || 1
+    canvas.width = viewport.width * dpr
+    canvas.height = viewport.height * dpr
+    ctx.setTransform(1, 0, 0, 1, 0, 0)
+    ctx.clearRect(0, 0, canvas.width, canvas.height)
+    renderScene(ctx, scene, viewport, camera, dpr, {
+      drawBackground: true,
+      drawTopics: true,
+      drawOverlays: false,
+      themeId,
+    })
+  }, [rootTopic, chartType, themeId, relationships, boundaries, summaries])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="panel__slide-preview"
+      aria-label="演说模式预览"
+      role="img"
+    />
   )
 }
 
@@ -2178,6 +2277,17 @@ export function Inspector({
             aria-labelledby="inspector-tab-pitch"
             className="panel__tab-panel"
           >
+            <PanelSection title="演说模式预览">
+              <PresentationPreview
+                rootTopic={activeSheet?.rootTopic ?? session.document!.sheets[0].rootTopic}
+                chartType={activeSheet?.chartType ?? 'mindmap'}
+                themeId={session.document?.theme?.id}
+                relationships={session.document?.relationships ?? []}
+                boundaries={activeSheet?.boundaries ?? []}
+                summaries={activeSheet?.summaries ?? []}
+              />
+            </PanelSection>
+
             <PanelSection title="演说放映">
               <p className="panel__muted">
                 按当前画布的大纲顺序逐主题全屏放映。演讲词写在主题的备注里，放映时不会显示。

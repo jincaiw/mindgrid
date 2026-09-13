@@ -3236,3 +3236,21 @@ it('画布页配色方案有内联预览网格，点击即应用该配色', () =
   expect(setDocumentSetting).toHaveBeenCalled()
   expect(setDocumentSetting.mock.calls[0][0]).toBe('canvas.branchPalette')
 })
+
+/**
+ * 演说页首元素的预览画布。
+ *
+ * jsdom 没有 canvas 实现（getContext 返回 null），所以这里只能验"元素在、且挂载不炸"。
+ * 真正的渲染验证靠浏览器实拍 + 像素探测：
+ * 预览画布的非背景像素数 > 0，且节点包围盒中心与画布中心偏差 ≈ 0
+ * （这条同时复证了相机坐标约定的修复——约定错时画布只剩背景色）。
+ */
+it('演说页挂载预览画布', () => {
+  renderWithApp(<WorkspaceScreen session={sessionStub} />)
+
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  fireEvent.click(inspector.getByRole('tab', { name: '演说' }))
+
+  const preview = inspector.getByLabelText('演说模式预览')
+  expect(preview.tagName).toBe('CANVAS')
+})

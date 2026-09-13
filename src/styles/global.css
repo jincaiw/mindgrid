@@ -1401,6 +1401,16 @@ button {
   color: var(--color-text-primary);
 }
 
+/* 演说模式预览：16:9 画布，等比铺满右栏内容宽度 */
+.panel__slide-preview {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-background-canvas);
+}
+
 /* 配色方案的内联预览网格：3 列卡片，每张是"用该配色渲染的迷你导图" */
 .panel__palette-grid {
   display: grid;
