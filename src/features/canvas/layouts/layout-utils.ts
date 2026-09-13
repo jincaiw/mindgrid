@@ -7,6 +7,7 @@
 
 import type { TopicSnapshot } from '../../../lib/document/types'
 import type { MindMapEdgeLayout, MindMapNodeLayout } from '../mindmap-layout'
+import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../mindmap-layout'
 
 export type LayoutSide = 'left' | 'right' | 'center'
 
@@ -29,10 +30,15 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
         ? { lineHeight: 19, padX: 14, padY: 11, minW: 100, maxW: 250, charW: 13 }
         : { lineHeight: 18, padX: 12, padY: 9, minW: 90, maxW: 220, charW: 12 }
 
-  const width = Math.min(
-    metrics.maxW,
-    Math.max(metrics.minW, Math.round(textLength * metrics.charW + metrics.padX * 2)),
-  )
+  // 节点级固定宽度（XMind 样式页的「宽度」）：设了就照用，不再按文字自适应
+  const fixedWidth = topic.styleOverrides?.width
+  const width =
+    typeof fixedWidth === 'number' && fixedWidth > 0
+      ? Math.min(MAX_FIXED_WIDTH, Math.max(MIN_FIXED_WIDTH, Math.round(fixedWidth)))
+      : Math.min(
+          metrics.maxW,
+          Math.max(metrics.minW, Math.round(textLength * metrics.charW + metrics.padX * 2)),
+        )
   const usable = Math.max(1, width - metrics.padX * 2)
   const lineCount = Math.max(1, Math.ceil((textLength * metrics.charW) / usable))
   const height = metrics.padY * 2 + lineCount * metrics.lineHeight

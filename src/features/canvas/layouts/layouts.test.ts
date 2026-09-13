@@ -291,6 +291,27 @@ describe('computeLayout with floating topics', () => {
     expect(freeEdge.end.x).toBeCloseTo(freeNode.x - freeNode.width / 2, 5)
   })
 
+  it('honours a per-topic fixed width from style overrides', () => {
+    const root = makeRoot()
+    const branch = { ...root.children[0], styleOverrides: { width: 320 } }
+    const withWidth = { ...root, children: [branch, ...root.children.slice(1)] }
+
+    const auto = computeLayout(root, 'mindmap')
+    const fixed = computeLayout(withWidth, 'mindmap')
+
+    const autoNode = auto.nodes.find((n) => n.id === root.children[0].id)!
+    const fixedNode = fixed.nodes.find((n) => n.id === root.children[0].id)!
+
+    expect(fixedNode.width).toBe(320)
+    expect(fixedNode.width).not.toBe(autoNode.width)
+    // 固定宽度会被夹到合法区间，防止极端值把布局撑坏
+    const clamped = computeLayout(
+      { ...root, children: [{ ...root.children[0], styleOverrides: { width: 9999 } }, ...root.children.slice(1)] },
+      'mindmap',
+    )
+    expect(clamped.nodes.find((n) => n.id === root.children[0].id)!.width).toBeLessThanOrEqual(800)
+  })
+
   it('separates overlapping free branches when topic stacking is off', () => {
     const root = makeRoot()
     const [first, second] = root.children

@@ -70,6 +70,10 @@ export interface MindMapLayoutResult {
 // 中心→一级、以及层间的水平间距（节点中心距）。
 // 节点尺寸按 XMind 实机量出来的值调大后，原来 160/120 会让分支贴到中心主题上，
 // 这里一并放宽，保持 XMind 那种疏朗的分支间距。
+/** 节点固定宽度（样式页「宽度」）的可设范围，防止极端值把布局撑坏。 */
+export const MIN_FIXED_WIDTH = 60
+export const MAX_FIXED_WIDTH = 800
+
 const ROOT_HORIZONTAL_GAP = 210
 const DEPTH_HORIZONTAL_GAP = 150
 const VERTICAL_GAP = 18
@@ -102,7 +106,13 @@ function nodeMetrics(depth: number) {
 export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
   const m = nodeMetrics(depth)
-  const width = Math.min(m.maxW, Math.max(m.minW, Math.round(textLength * m.charW + m.padX * 2)))
+  // 节点级固定宽度（XMind 样式页的「宽度」）：设了就照用，不再按文字自适应；
+  // 未设时维持自适应，行为与历史一致。
+  const fixedWidth = topic.styleOverrides?.width
+  const width =
+    typeof fixedWidth === 'number' && fixedWidth > 0
+      ? Math.min(MAX_FIXED_WIDTH, Math.max(MIN_FIXED_WIDTH, Math.round(fixedWidth)))
+      : Math.min(m.maxW, Math.max(m.minW, Math.round(textLength * m.charW + m.padX * 2)))
   const usable = Math.max(1, width - m.padX * 2)
   const lineCount = Math.max(1, Math.ceil((textLength * m.charW) / usable))
   const height = m.padY * 2 + lineCount * m.lineHeight

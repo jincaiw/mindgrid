@@ -110,6 +110,8 @@ describe('resolveTopicStyle', () => {
       fontSize: 16,
       fontWeight: 600,
       borderWidth: 2,
+      borderStyle: 'solid',
+      textAlign: 'left',
     })
     expect(style).toEqual({
       fill: '#abcdef',
@@ -120,6 +122,8 @@ describe('resolveTopicStyle', () => {
       fontSize: 16,
       fontWeight: 600,
       borderWidth: 2,
+      borderStyle: 'solid',
+      textAlign: 'left',
     })
   })
 

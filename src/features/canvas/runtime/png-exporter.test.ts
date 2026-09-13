@@ -78,6 +78,7 @@ function setupMockCanvas() {
     set fillStyle(_v: unknown) {},
     set strokeStyle(_v: unknown) {},
     set lineWidth(_v: unknown) {},
+  setLineDash(_v: unknown) {},
     set lineCap(_v: unknown) {},
     set font(_v: unknown) {},
     set textBaseline(_v: unknown) {},

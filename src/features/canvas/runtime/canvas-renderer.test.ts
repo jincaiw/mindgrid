@@ -4,7 +4,7 @@ import { computeMindMapLayout } from '../mindmap-layout'
 import { renderScene } from './canvas-renderer'
 import { COLORS } from './style-constants'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
-import type { CameraProjection, Viewport } from './render-tree'
+import type { CameraProjection, TopicRenderNode, Viewport } from './render-tree'
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
@@ -64,6 +64,7 @@ function createMockCtx() {
     set fillStyle(v: unknown) { calls.push({ method: 'fillStyle', args: [v] }) },
     set strokeStyle(v: unknown) { calls.push({ method: 'strokeStyle', args: [v] }) },
     set lineWidth(v: unknown) { calls.push({ method: 'lineWidth', args: [v] }) },
+  setLineDash(v: unknown) { calls.push({ method: 'setLineDash', args: [v] }) },
     set lineCap(v: unknown) { calls.push({ method: 'lineCap', args: [v] }) },
     set font(v: unknown) { calls.push({ method: 'font', args: [v] }) },
     set textBaseline(v: unknown) { calls.push({ method: 'textBaseline', args: [v] }) },
@@ -273,6 +274,38 @@ describe('renderScene', () => {
     // No fillRect calls (background uses fillRect; edges use stroke)
     const fillRectCalls = calls.filter((c) => c.method === 'fillRect')
     expect(fillRectCalls.length).toBe(0)
+  })
+
+  it('draws dashed borders and right-aligned titles from node overrides', () => {
+    const scene = buildScene({
+      layout: computeMindMapLayout(makeRoot()),
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      themeId: 'classic-blue',
+      enableCulling: false,
+    })
+
+    // 给一个分支节点打上虚线边框 + 右对齐覆盖
+    const branch = scene.nodes.find(
+      (n): n is TopicRenderNode => n.type === 'topic' && n.depth === 1,
+    )!
+    branch.style = { ...branch.style, borderStyle: 'dashed', textAlign: 'right', borderWidth: 2 }
+
+    const { ctx, calls } = createMockCtx()
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    // 虚线：setLineDash 收到非空数组（solid 时是空数组）
+    const dashes = calls.filter((c) => c.method === 'setLineDash')
+    expect(dashes.some((c) => Array.isArray(c.args[0]) && (c.args[0] as number[]).length > 0)).toBe(
+      true,
+    )
+
+    // 右对齐：写文本前 textAlign 被设成 right，且绘制后复位为 left
+    const textAligns = calls.filter((c) => c.method === 'textAlign').map((c) => c.args[0])
+    expect(textAligns).toContain('right')
+    expect(textAligns[textAligns.length - 1]).toBe('left')
   })
 
   it('skips topic text when drawTopics is false but still draws edges', () => {

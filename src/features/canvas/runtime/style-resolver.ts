@@ -79,6 +79,8 @@ export function resolveTopicStyle(
     fontSize: overrides?.fontSize ?? getTitleFontSize(depth),
     fontWeight: overrides?.fontWeight ?? getTitleFontWeight(depth),
     borderWidth: overrides?.borderWidth ?? DEFAULT_BORDER_WIDTH,
+    borderStyle: overrides?.borderStyle ?? 'solid',
+    textAlign: overrides?.textAlign ?? 'left',
   }
 }
 

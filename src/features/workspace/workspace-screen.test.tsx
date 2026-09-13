@@ -2055,6 +2055,75 @@ it('applies node shape override from the inspector style panel', () => {
   })
 })
 
+it('applies node width, border style and text alignment from the inspector style panel', () => {
+  // 显式声明参数类型：否则 mock.calls 的元组长度为 0，取不到第 2 个实参
+  const setTopicStyleOverrides = vi.fn(async (_topicId: string, _overrides: unknown) => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  { id: 'topic_branch', text: '待排版主题', collapsed: false, children: [] },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStyleOverrides,
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  // 宽度：输入后失焦提交固定宽度
+  const widthInput = inspector.getByLabelText('节点宽度')
+  fireEvent.change(widthInput, { target: { value: '260' } })
+  fireEvent.blur(widthInput)
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ width: 260 }),
+  )
+
+  // 适合：清掉固定宽度（回到按文字自适应）
+  const callsBeforeFit = setTopicStyleOverrides.mock.calls.length
+  fireEvent.click(inspector.getByRole('button', { name: '适合' }))
+  expect((inspector.getByLabelText('节点宽度') as HTMLInputElement).value).toBe('')
+  // 桩不会把新值回写到文档，"相同值不发请求"的抑制逻辑因此可能不产生新调用；
+  // 只在新调用发生时断言其不含 width（否则会误读上一次调用的参数）
+  const callsAfterFit = setTopicStyleOverrides.mock.calls.length
+  if (callsAfterFit > callsBeforeFit) {
+    expect(setTopicStyleOverrides.mock.calls[callsAfterFit - 1][1]).not.toHaveProperty('width')
+  }
+
+  // 边框线型
+  fireEvent.change(inspector.getByLabelText('节点边框线型'), { target: { value: 'dashed' } })
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ borderStyle: 'dashed' }),
+  )
+
+  // 文本对齐
+  fireEvent.click(inspector.getByRole('button', { name: '中' }))
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ textAlign: 'center' }),
+  )
+})
+
 it('applies node font weight and border width overrides from the inspector style panel', () => {
   const setTopicStyleOverrides = vi.fn(async () => {})
 

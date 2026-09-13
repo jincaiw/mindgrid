@@ -104,6 +104,33 @@ pub struct TopicStyleOverrides {
     pub font_weight: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_width: Option<f32>,
+    /// 节点固定宽度（px）；None = 按文字自适应。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<f32>,
+    /// 边框线型：solid / dashed / dotted。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border_style: Option<TopicBorderStyle>,
+    /// 标题对齐：left / center / right。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_align: Option<TopicTextAlign>,
+}
+
+/// 节点边框线型，与 TS 侧 `TopicBorderStyle` 一致。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TopicBorderStyle {
+    Solid,
+    Dashed,
+    Dotted,
+}
+
+/// 标题对齐方式，与 TS 侧 `TopicTextAlign` 一致。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TopicTextAlign {
+    Left,
+    Center,
+    Right,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

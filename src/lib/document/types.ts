@@ -88,7 +88,19 @@ export interface TopicStyleOverrides {
   fontWeight?: number
   /** 节点边框粗细（px），建议范围 0–6，0 表示无边框。 */
   borderWidth?: number
+  /** 节点固定宽度（px）。设置后不再按文字自适应；`适合` 会清掉该字段。 */
+  width?: number
+  /** 边框线型，缺省 solid；边框粗细为 0 时线型无意义。 */
+  borderStyle?: TopicBorderStyle
+  /** 标题对齐方式，缺省 left。 */
+  textAlign?: TopicTextAlign
 }
+
+/** 节点边框线型（对齐 XMind「边框」下方的线型下拉）。 */
+export type TopicBorderStyle = 'solid' | 'dashed' | 'dotted'
+
+/** 标题在节点内的对齐方式。 */
+export type TopicTextAlign = 'left' | 'center' | 'right'
 
 export interface TopicSnapshot {
   id: string

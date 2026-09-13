@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { TopicSnapshot } from '../../../lib/document/types'
 import { computeMindMapLayout } from '../mindmap-layout'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
+import type { TopicRenderNode } from './render-tree'
 import { renderSceneToSvg } from './svg-renderer'
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
@@ -112,6 +113,21 @@ describe('renderSceneToSvg', () => {
     expect(svg).toContain(' C ')
     expect(svg).toContain('fill="none"')
     expect(svg).toContain('stroke-linecap="round"')
+  })
+
+  it('renders dashed borders and aligned titles from node overrides', () => {
+    // 复用文件内的 buildTestScene，避免另一套默认值命名
+    const scene = buildTestScene()
+
+    const branch = scene.nodes.find(
+      (n): n is TopicRenderNode => n.type === 'topic' && n.depth === 1,
+    )!
+    branch.style = { ...branch.style, borderStyle: 'dotted', textAlign: 'center', borderWidth: 2 }
+
+    const svg = renderSceneToSvg(scene, { themeId: 'classic-blue' })
+
+    expect(svg).toContain('stroke-dasharray')
+    expect(svg).toContain('text-anchor="middle"')
   })
 
   it('renders toggle button for topics with children', () => {

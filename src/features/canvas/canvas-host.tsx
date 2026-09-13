@@ -1840,6 +1840,8 @@ function MindMapNode({
           background: resolvedStyle.fill,
           borderColor: resolvedStyle.borderColor,
           borderWidth: `${resolvedStyle.borderWidth}px`,
+          // 边框线型与 Canvas/SVG 的 dash 语义一致（solid 时不写，走 CSS 默认）
+          borderStyle: resolvedStyle.borderStyle,
         }),
     ...(shapeRadius != null ? { borderRadius: `${shapeRadius}px` } : {}),
     transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
@@ -1848,6 +1850,8 @@ function MindMapNode({
   const titleStyle: CSSProperties = {
     fontSize: resolvedStyle.fontSize,
     fontWeight: resolvedStyle.fontWeight,
+    // 标题对齐（XMind 样式页「对齐」）：左/中/右
+    textAlign: resolvedStyle.textAlign,
     ...(fontFamily ? { fontFamily } : {}),
   }
   // XMind 式：折叠 toggle 位于"连线起点侧"——中心节点贴下缘、

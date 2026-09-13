@@ -376,6 +376,14 @@ function drawStateRing(ctx: CanvasRenderingContext2D, node: TopicRenderNode): vo
 }
 
 /** 在节点包围盒外 2px 处绘制 2px 描边（对应 DOM `outline: 2px solid; outline-offset: 2px`）。 */
+/** 把线型转成 Canvas 的虚线数组；solid 返回空数组（实线）。 */
+function borderDashPattern(style: 'solid' | 'dashed' | 'dotted', width: number): number[] {
+  const w = Math.max(1, width)
+  if (style === 'dashed') return [w * 4, w * 2.5]
+  if (style === 'dotted') return [w, w * 2]
+  return []
+}
+
 function drawStateOutline(
   ctx: CanvasRenderingContext2D,
   bounds: { x: number; y: number; width: number; height: number },
@@ -410,17 +418,24 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
     borderColor = COLORS.searchMatchBorder
   }
 
+  // 边框线型：dashed/dotted 用 setLineDash 表达（与 SVG 的 stroke-dasharray 同语义）
+  ctx.setLineDash(borderDashPattern(style.borderStyle, style.borderWidth))
+
   // underline 形状：仅绘制底部下划线（对齐 XMind 下划线主题），
   // 线色取 borderColor（若透明则回退 textColor），线宽取 style.borderWidth。
   if (style.shape === 'underline') {
     const lineColor = borderColor === 'transparent' ? style.textColor : borderColor
-    if (style.borderWidth <= 0) return
+    if (style.borderWidth <= 0) {
+      ctx.setLineDash([])
+      return
+    }
     ctx.strokeStyle = lineColor
     ctx.lineWidth = style.borderWidth
     ctx.beginPath()
     ctx.moveTo(bounds.x, bounds.y + bounds.height)
     ctx.lineTo(bounds.x + bounds.width, bounds.y + bounds.height)
     ctx.stroke()
+    ctx.setLineDash([])
     return
   }
 
@@ -428,10 +443,14 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
   ctx.strokeStyle = isRoot ? 'transparent' : borderColor
   ctx.lineWidth = style.borderWidth
   // borderWidth=0 表示无边框，跳过描边以避免 0 宽度描边伪影
-  if (style.borderWidth <= 0) return
+  if (style.borderWidth <= 0) {
+    ctx.setLineDash([])
+    return
+  }
   const radius = getNodeRadiusForShape(style.shape, depth, bounds.height)
   roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius)
   ctx.stroke()
+  ctx.setLineDash([])
 }
 
 function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, fontFamily: string): void {
@@ -447,14 +466,22 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, font
   ctx.font = `${style.fontWeight} ${style.fontSize}px ${fontFamily}`
   ctx.fillStyle = style.textColor
   ctx.textBaseline = 'top'
-  ctx.textAlign = 'left'
+  // 标题对齐（XMind 样式页的文本对齐）：左/中/右都相对节点的内边距盒子
+  ctx.textAlign = style.textAlign
 
   const lines = wrapText(displayText, bounds.width - padding * 2, ctx.font)
   const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding + titleOffsetY
+  const textX =
+    style.textAlign === 'left'
+      ? bounds.x + padding
+      : style.textAlign === 'right'
+        ? bounds.x + bounds.width - padding
+        : bounds.x + bounds.width / 2
   for (let i = 0; i < lines.length; i++) {
-    ctx.fillText(lines[i], bounds.x + padding, titleY + i * lineHeight)
+    ctx.fillText(lines[i], textX, titleY + i * lineHeight)
   }
+  ctx.textAlign = 'left'
 
   // 元信息已移除（参考 XMind：折叠状态由节点角的 +/− 按钮表达，不再显示文字元信息）
 }

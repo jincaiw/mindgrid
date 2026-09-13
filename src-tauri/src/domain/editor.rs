@@ -2483,6 +2483,9 @@ mod tests {
             font_size: None,
             font_weight: None,
             border_width: None,
+            width: None,
+            border_style: None,
+            text_align: None,
         };
         document
             .find_sheet_mut(&document.active_sheet_id.clone())

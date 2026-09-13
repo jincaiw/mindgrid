@@ -163,6 +163,14 @@ function buildDefs(): string {
 
 // ---- 各节点序列化 ----
 
+/** 线型对应的 stroke-dasharray（与 canvas-renderer 的 setLineDash 同语义）。 */
+function borderDashArray(style: 'solid' | 'dashed' | 'dotted', width: number): string {
+  const w = Math.max(1, width)
+  if (style === 'dashed') return ` stroke-dasharray="${fmt(w * 4)},${fmt(w * 2.5)}"`
+  if (style === 'dotted') return ` stroke-dasharray="${fmt(w)},${fmt(w * 2)}"`
+  return ''
+}
+
 function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
   const { bounds, text, number, depth, collapsed, childCount, style, side } = node
   const isRoot = depth === 0
@@ -194,7 +202,7 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
     // 边框（根节点无边框，与 canvas-renderer 一致；borderWidth=0 表示无边框）
     if (!isRoot && style.borderWidth > 0) {
       elements.push(
-        `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="none" stroke="${style.borderColor}" stroke-width="${fmt(style.borderWidth)}"/>`,
+        `    <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="none" stroke="${style.borderColor}" stroke-width="${fmt(style.borderWidth)}"${borderDashArray(style.borderStyle, style.borderWidth)}/>`,
       )
     }
     elements.push(`  </g>`)
@@ -205,7 +213,7 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
     )
     if (style.borderWidth > 0) {
       elements.push(
-        `  <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="none" stroke="${style.borderColor}" stroke-width="${fmt(style.borderWidth)}"/>`,
+        `  <rect x="${fmt(bounds.x)}" y="${fmt(bounds.y)}" width="${fmt(bounds.width)}" height="${fmt(bounds.height)}" rx="${fmt(radius)}" ry="${fmt(radius)}" fill="none" stroke="${style.borderColor}" stroke-width="${fmt(style.borderWidth)}"${borderDashArray(style.borderStyle, style.borderWidth)}/>`,
       )
     }
   }
@@ -219,10 +227,19 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
   const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding + titleOffsetY
 
+  // 标题对齐：与 canvas-renderer 用同一套内边距盒子（左/中/右）
+  const textAnchor =
+    style.textAlign === 'left' ? 'start' : style.textAlign === 'right' ? 'end' : 'middle'
+  const textX =
+    style.textAlign === 'left'
+      ? bounds.x + padding
+      : style.textAlign === 'right'
+        ? bounds.x + bounds.width - padding
+        : bounds.x + bounds.width / 2
   const tspans = lines
     .map(
       (line, i) =>
-        `      <tspan x="${fmt(bounds.x + padding)}" dy="${i === 0 ? 0 : fmt(lineHeight)}">${escapeXml(line)}</tspan>`,
+        `      <tspan x="${fmt(textX)}" dy="${i === 0 ? 0 : fmt(lineHeight)}">${escapeXml(line)}</tspan>`,
     )
     .join('\n')
 
@@ -235,7 +252,7 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
   }
 
   elements.push(
-    `  <text x="${fmt(bounds.x + padding)}" y="${fmt(titleY)}" font-size="${fmt(style.fontSize)}" font-weight="${style.fontWeight}" fill="${style.textColor}" dominant-baseline="hanging">`,
+    `  <text x="${fmt(textX)}" y="${fmt(titleY)}" font-size="${fmt(style.fontSize)}" font-weight="${style.fontWeight}" fill="${style.textColor}" text-anchor="${textAnchor}" dominant-baseline="hanging">`,
     tspans,
     `  </text>`,
   )

@@ -69,6 +69,10 @@ export interface ResolvedTopicStyle {
   fontWeight: number
   /** 节点边框粗细（px，默认 1）。 */
   borderWidth: number
+  /** 边框线型（默认 solid）。 */
+  borderStyle: 'solid' | 'dashed' | 'dotted'
+  /** 标题对齐（默认 left）。 */
+  textAlign: 'left' | 'center' | 'right'
 }
 
   /** 主题上的富内容投影（image / marker / label / note / link / task），全部可选。 */

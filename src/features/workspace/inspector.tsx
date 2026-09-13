@@ -12,13 +12,16 @@ import type {
   SheetBranchStyle,
   SheetNumbering,
   TopicLink,
+  TopicBorderStyle,
   TopicShape,
   TopicStyleOverrides,
+  TopicTextAlign,
   TopicTask,
   TopicTaskStatus,
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
+import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../canvas/mindmap-layout'
 import {
   TOPIC_IMAGE_DIALOG_OPTIONS,
   toSelectedImagePath,
@@ -162,6 +165,9 @@ function buildStyleOverrides(
   fontSize: number | '',
   fontWeight: number | '',
   borderWidth: number | '',
+  width: number | '' = '',
+  borderStyle: TopicBorderStyle | '' = '',
+  textAlign: TopicTextAlign | '' = '',
 ): TopicStyleOverrides | null {
   const f = fill.trim() || undefined
   const t = textColor.trim() || undefined
@@ -170,7 +176,16 @@ function buildStyleOverrides(
   const fs = toOptionalNumber(fontSize)
   const fw = toOptionalNumber(fontWeight)
   const bw = toOptionalNumber(borderWidth)
-  if (!f && !t && !b && !sh && fs == null && fw == null && bw == null) return null
+  // 宽度走同一个规范化入口：空串/NaN 视为未设置（= 按文字自适应）
+  const w = toOptionalNumber(width)
+  const bs = borderStyle || undefined
+  const ta = textAlign || undefined
+  if (
+    !f && !t && !b && !sh && fs == null && fw == null && bw == null &&
+    w == null && !bs && !ta
+  ) {
+    return null
+  }
   return {
     ...(f ? { fill: f } : {}),
     ...(t ? { textColor: t } : {}),
@@ -179,6 +194,9 @@ function buildStyleOverrides(
     ...(fs != null ? { fontSize: fs } : {}),
     ...(fw != null ? { fontWeight: fw } : {}),
     ...(bw != null ? { borderWidth: bw } : {}),
+    ...(w != null ? { width: w } : {}),
+    ...(bs ? { borderStyle: bs } : {}),
+    ...(ta ? { textAlign: ta } : {}),
   }
 }
 
@@ -225,6 +243,13 @@ const NUMBERING_SEPARATOR_OPTIONS = [
   { value: '.', label: '1.1（点）' },
   { value: '-', label: '1-1（连字符）' },
   { value: ')', label: '1)1（右括号）' },
+]
+
+/** 标题对齐选项（XMind 样式页「对齐」三段按钮）。 */
+const TEXT_ALIGN_OPTIONS: { value: TopicTextAlign; label: string }[] = [
+  { value: 'left', label: '左' },
+  { value: 'center', label: '中' },
+  { value: 'right', label: '右' },
 ]
 
 const EDGE_ENDPOINT_OPTIONS: { value: EdgeEndpoint; label: string }[] = [
@@ -420,6 +445,16 @@ export function Inspector({
   const [fontWeightDraft, setFontWeightDraft] = useState<number | ''>(
     activeTopic?.styleOverrides?.fontWeight ?? '',
   )
+  // 宽度（XMind 样式页「宽度」）：空串 = 按文字自适应
+  const [widthDraft, setWidthDraft] = useState<number | ''>(
+    activeTopic?.styleOverrides?.width ?? '',
+  )
+  const [borderStyleDraft, setBorderStyleDraft] = useState<TopicBorderStyle | ''>(
+    activeTopic?.styleOverrides?.borderStyle ?? '',
+  )
+  const [textAlignDraft, setTextAlignDraft] = useState<TopicTextAlign | ''>(
+    activeTopic?.styleOverrides?.textAlign ?? '',
+  )
   const [borderWidthDraft, setBorderWidthDraft] = useState<number | ''>(
     activeTopic?.styleOverrides?.borderWidth ?? '',
   )
@@ -547,6 +582,9 @@ export function Inspector({
     setFontSizeDraft(activeTopic?.styleOverrides?.fontSize ?? '')
     setFontWeightDraft(activeTopic?.styleOverrides?.fontWeight ?? '')
     setBorderWidthDraft(activeTopic?.styleOverrides?.borderWidth ?? '')
+    setWidthDraft(activeTopic?.styleOverrides?.width ?? '')
+    setBorderStyleDraft(activeTopic?.styleOverrides?.borderStyle ?? '')
+    setTextAlignDraft(activeTopic?.styleOverrides?.textAlign ?? '')
     setTaskStatusDraft(activeTopic?.task?.status ?? 'none')
     setTaskPriorityDraft(
       activeTopic?.task?.priority != null ? String(activeTopic.task.priority) : '',
@@ -716,6 +754,9 @@ export function Inspector({
       fontSize: number | ''
       fontWeight: number | ''
       borderWidth: number | ''
+      width: number | ''
+      borderStyle: TopicBorderStyle | ''
+      textAlign: TopicTextAlign | ''
     }>,
   ) => {
     const f = patch.fill !== undefined ? patch.fill : fillDraft
@@ -725,6 +766,9 @@ export function Inspector({
     const fs = patch.fontSize !== undefined ? patch.fontSize : fontSizeDraft
     const fw = patch.fontWeight !== undefined ? patch.fontWeight : fontWeightDraft
     const bw = patch.borderWidth !== undefined ? patch.borderWidth : borderWidthDraft
+    const w = patch.width !== undefined ? patch.width : widthDraft
+    const bs = patch.borderStyle !== undefined ? patch.borderStyle : borderStyleDraft
+    const ta = patch.textAlign !== undefined ? patch.textAlign : textAlignDraft
     if (patch.fill !== undefined) setFillDraft(patch.fill)
     if (patch.textColor !== undefined) setTextColorDraft(patch.textColor)
     if (patch.borderColor !== undefined) setBorderColorDraft(patch.borderColor)
@@ -732,8 +776,11 @@ export function Inspector({
     if (patch.fontSize !== undefined) setFontSizeDraft(patch.fontSize)
     if (patch.fontWeight !== undefined) setFontWeightDraft(patch.fontWeight)
     if (patch.borderWidth !== undefined) setBorderWidthDraft(patch.borderWidth)
+    if (patch.width !== undefined) setWidthDraft(patch.width)
+    if (patch.borderStyle !== undefined) setBorderStyleDraft(patch.borderStyle)
+    if (patch.textAlign !== undefined) setTextAlignDraft(patch.textAlign)
     if (!activeTopic) return
-    const next = buildStyleOverrides(f, t, b, sh, fs, fw, bw)
+    const next = buildStyleOverrides(f, t, b, sh, fs, fw, bw, w, bs, ta)
     if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
       void session.setTopicStyleOverrides(activeTopic.id, next)
     }
@@ -787,7 +834,8 @@ export function Inspector({
             </PanelSection>
 
             {activeTopic && !hasMultipleSelectedTopics ? (
-              <PanelSection title="富内容编辑">
+              <>
+                <PanelSection title="富内容编辑">
                 <p className="panel__muted">
                   编辑选中主题的备注、链接、标签、标记、任务与样式引用，失焦后自动保存并支持撤销。
                 </p>
@@ -900,6 +948,10 @@ export function Inspector({
                   />
                 </label>
 
+            </PanelSection>
+
+            {/* XMind 样式页把「形状」「文本」放在富内容之前；这里保持同样的分组与命名 */}
+            <PanelSection title="形状">
                 <div className="panel__field">
                   <span>节点颜色覆盖</span>
                   <div className="panel__field-row">
@@ -967,7 +1019,87 @@ export function Inspector({
                     })}
                   </div>
                 </div>
+                <div className="panel__field">
+                  <span>
+                    边框粗细
+                    <output className="panel__value-out">
+                      {borderWidthDraft === '' ? '默认' : `${borderWidthDraft}px`}
+                    </output>
+                  </span>
+                  <input
+                    type="range"
+                    aria-label="节点边框粗细"
+                    min={BORDER_WIDTH_MIN}
+                    max={BORDER_WIDTH_MAX}
+                    step={0.5}
+                    value={borderWidthDraft === '' ? 1 : borderWidthDraft}
+                    onChange={(e) => setBorderWidthDraft(Number(e.target.value))}
+                    onPointerUp={() => applyStyleOverride({})}
+                    onKeyUp={() => applyStyleOverride({})}
+                    onBlur={() => applyStyleOverride({})}
+                  />
+                </div>
 
+                <div className="panel__field">
+                  <span>边框线型</span>
+                  <select
+                    aria-label="节点边框线型"
+                    value={borderStyleDraft || 'solid'}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      if (next === 'none') {
+                        // 无边框 = 线宽置 0（与渲染端「borderWidth<=0 不描边」一致）
+                        setBorderWidthDraft(0)
+                        applyStyleOverride({ borderWidth: 0, borderStyle: 'solid' })
+                        return
+                      }
+                      applyStyleOverride({ borderStyle: next as TopicBorderStyle })
+                    }}
+                  >
+                    <option value="none">无</option>
+                    <option value="solid">实线</option>
+                    <option value="dashed">虚线</option>
+                    <option value="dotted">点线</option>
+                  </select>
+                </div>
+
+                <div className="panel__field">
+                  <span>宽度</span>
+                  <div className="panel__field-row">
+                    <input
+                      type="number"
+                      aria-label="节点宽度"
+                      min={MIN_FIXED_WIDTH}
+                      max={MAX_FIXED_WIDTH}
+                      step={2}
+                      value={widthDraft === '' ? '' : widthDraft}
+                      placeholder="自动"
+                      onChange={(e) => {
+                        const raw = e.target.value
+                        setWidthDraft(raw === '' ? '' : Number(raw))
+                      }}
+                      onBlur={() => applyStyleOverride({})}
+                      onKeyUp={(e) => {
+                        if (e.key === 'Enter') applyStyleOverride({})
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="panel__action panel__action--ghost"
+                      title="按文字内容自适应宽度"
+                      onClick={() => {
+                        setWidthDraft('')
+                        applyStyleOverride({ width: '' })
+                      }}
+                    >
+                      适合
+                    </button>
+                  </div>
+                </div>
+
+            </PanelSection>
+
+            <PanelSection title="文本">
                 <div className="panel__field">
                   <span>
                     字号
@@ -1011,24 +1143,23 @@ export function Inspector({
                 </div>
 
                 <div className="panel__field">
-                  <span>
-                    边框粗细
-                    <output className="panel__value-out">
-                      {borderWidthDraft === '' ? '默认' : `${borderWidthDraft}px`}
-                    </output>
-                  </span>
-                  <input
-                    type="range"
-                    aria-label="节点边框粗细"
-                    min={BORDER_WIDTH_MIN}
-                    max={BORDER_WIDTH_MAX}
-                    step={0.5}
-                    value={borderWidthDraft === '' ? 1 : borderWidthDraft}
-                    onChange={(e) => setBorderWidthDraft(Number(e.target.value))}
-                    onPointerUp={() => applyStyleOverride({})}
-                    onKeyUp={() => applyStyleOverride({})}
-                    onBlur={() => applyStyleOverride({})}
-                  />
+                  <span>对齐</span>
+                  <div className="panel__segmented" role="group" aria-label="标题对齐">
+                    {TEXT_ALIGN_OPTIONS.map((opt) => {
+                      const active = (textAlignDraft || 'left') === opt.value
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                          aria-pressed={active}
+                          onClick={() => applyStyleOverride({ textAlign: opt.value })}
+                        >
+                          {opt.label}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 <div className="panel__field-row">
@@ -1173,7 +1304,8 @@ export function Inspector({
                     }}
                   />
                 </div>
-              </PanelSection>
+                </PanelSection>
+              </>
             ) : (
               <p className="panel__muted">
                 {hasMultipleSelectedTopics
