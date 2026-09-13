@@ -83,9 +83,11 @@ describe('presentation-controller', () => {
       const node = layout.nodes.find((n) => n.id === 'a')!
       const cx = node.x + layout.offsetX
       const cy = node.y + layout.offsetY
-      // 节点世界中心应投影到视口中心
-      const screenX = (cx - camera.x) * camera.zoom
-      const screenY = (cy - camera.y) * camera.zoom
+      // 节点世界中心应投影到视口中心。
+      // 投影式必须与 canvas-renderer 一致：屏幕 = 相机 + 世界 * 缩放
+      // （原来是 `(cx - camera.x) * zoom`，那是另一套约定，导致这条断言一直绿、UI 一直错）
+      const screenX = camera.x + cx * camera.zoom
+      const screenY = camera.y + cy * camera.zoom
       expect(screenX).toBeCloseTo(viewport.width / 2, 5)
       expect(screenY).toBeCloseTo(viewport.height / 2, 5)
     })

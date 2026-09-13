@@ -107,9 +107,10 @@ function focusCameraOnNode(
     MIN_FOCUS_ZOOM,
     MAX_FOCUS_ZOOM,
   )
+  // 相机是**屏幕坐标偏移**：screen = cam + world * zoom（见 computeFitAllCamera 的说明）
   return {
-    x: cx - viewport.width / (2 * targetZoom),
-    y: cy - viewport.height / (2 * targetZoom),
+    x: viewport.width / 2 - cx * targetZoom,
+    y: viewport.height / 2 - cy * targetZoom,
     zoom: targetZoom,
   }
 }
@@ -132,9 +133,17 @@ export function computeFitAllCamera(
     MIN_FOCUS_ZOOM,
     MAX_FOCUS_ZOOM,
   )
+  // 相机约定：**相机是屏幕坐标偏移**，屏幕上 screen = cam + world * zoom
+  // （与 canvas-renderer 的 `translate(cam); scale(zoom)` 及编辑画布的
+  //  `centerCameraOnWorldPoint` 一致）。布局世界坐标从 (0,0) 起、跨 [0, worldW]×[0, worldH]，
+  // 居中即让这段世界范围落在视口正中。
+  //
+  // 这里与 focusCameraOnNode 曾写成「相机=世界坐标左上角」的另一套约定
+  // （`(worldW - vw/zoom)/2`），与渲染器不符 —— 后果是放映/简报的取景整体错位
+  // （旧取证图 outputs/native/ui-states/12-presentation.png 里「中心主题」明显偏左上）。
   return {
-    x: (worldW - viewport.width / zoom) / 2,
-    y: (worldH - viewport.height / zoom) / 2,
+    x: (viewport.width - worldW * zoom) / 2,
+    y: (viewport.height - worldH * zoom) / 2,
     zoom,
   }
 }
