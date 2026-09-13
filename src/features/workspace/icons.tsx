@@ -280,13 +280,13 @@ export function SubTopicIcon(props: IconProps) {
 
 /** 新建同级主题（树状平级节点） */
 export function SiblingTopicIcon(props: IconProps) {
+  // 单个主题节点：圆角方块 + 向右的连线。
+  // XMind 的「主题」就是这个形（一个节点），与「子主题」（节点 + 子节点）成对；
+  // 原来是"盒子 + 三条横线"的列表形，两者看不出层级关系。
   return (
     <Svg {...props}>
-      <path d="M21 12h-8" />
-      <path d="M21 6H8" />
-      <path d="M21 18h-8" />
-      <path d="M3 6v4c0 1.1.9 2 2 2h3" />
-      <path d="M3 10v6c0 1.1.9 2 2 2h3" />
+      <rect x="3" y="8" width="12" height="8" rx="1.5" />
+      <path d="M15 12h6" />
     </Svg>
   )
 }
@@ -306,11 +306,11 @@ export function TrashIcon(props: IconProps) {
 
 /** 插入（圆形加号） */
 export function InsertIcon(props: IconProps) {
+  // 裸加号：XMind 工具栏的「插入」不带外圈（原来是圈起来的 ⊕）
   return (
     <Svg {...props}>
-      <circle cx="12" cy="12" r="10" />
-      <path d="M8 12h8" />
-      <path d="M12 8v8" />
+      <path d="M12 5.5v13" />
+      <path d="M5.5 12h13" />
     </Svg>
   )
 }
