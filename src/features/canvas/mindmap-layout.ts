@@ -1,4 +1,9 @@
 import type { TopicSnapshot } from '../../lib/document/types'
+import {
+  footprintBlocks,
+  footprintHalfHeight,
+  type SubtreeFootprintResolver,
+} from './layouts/mixed-structure'
 import { getFontScale } from './runtime/style-constants'
 import { TOPIC_IMAGE_BLOCK, TOPIC_IMAGE_MIN_WIDTH } from './runtime/topic-image-constants'
 
@@ -6,6 +11,16 @@ type LayoutSide = 'left' | 'right' | 'center'
 
 interface SubtreeMetrics {
   leafCount: number
+}
+
+/** 纵向留白度量所需的上下文：叶子块高度 + 子树足迹查询。 */
+interface BlockContext {
+  /**
+   * 子树足迹查询：命中表示该子树已换骨架（见 layouts/mixed-structure），
+   * 此时按它的**真实占地**折算块数，并且不再往下钻（最近的覆盖说了算）。
+   */
+  footprint?: SubtreeFootprintResolver
+  leafBlock: number
 }
 
 export interface MindMapNodeLayout {
@@ -57,6 +72,19 @@ export interface MindMapLayoutOptions {
    * - balanced/undefined：按 balance 选项或默认交替分配
    */
   direction?: 'left' | 'right' | 'balanced'
+  /**
+   * 深度基准：本次布局的根主题在**整幅图**里的真实层级。
+   *
+   * 子树换骨架时要单独把该子树算一遍，此时它的根是这次调用的根，但它在整幅图里
+   * 并不是 depth 0（不该套用中心主题的字号/内边距）。所有引擎都只在
+   * 「取节点尺寸」和「写 node.depth」两处加上这个基准，内部几何仍用相对层级。
+   */
+  depthBase?: number
+  /**
+   * 子树足迹查询：返回该子树换骨架后的真实占地（见 layouts/mixed-structure）。
+   * 由 `computeLayout` 在存在节点级骨架覆盖时注入；缺省 null 表示不预留。
+   */
+  subtreeFootprint?: SubtreeFootprintResolver
 }
 
 export interface MindMapLayoutResult {
@@ -133,26 +161,33 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   return { width, height }
 }
 
-function measureSubtree(topic: TopicSnapshot): SubtreeMetrics {
+function measureSubtree(topic: TopicSnapshot, ctx: BlockContext): SubtreeMetrics {
+  // 换过骨架的子树：按真实占地折算等价块数，**不再往下钻**——
+  // 更深的覆盖已经被这次子树布局自己消化，父骨架看到的就是一个黑盒。
+  const footprint = ctx.footprint?.(topic.id)
+  if (footprint) {
+    return { leafCount: footprintBlocks(footprintHalfHeight(footprint), ctx.leafBlock) }
+  }
+
   if (topic.collapsed || topic.children.length === 0) {
     return { leafCount: 1 }
   }
 
   return {
     leafCount: topic.children.reduce(
-      (sum, child) => sum + measureSubtree(child).leafCount,
+      (sum, child) => sum + measureSubtree(child, ctx).leafCount,
       0,
     ),
   }
 }
 
-function assignRootSides(children: TopicSnapshot[]) {
+function assignRootSides(children: TopicSnapshot[], ctx: BlockContext) {
   const weights = new Map<string, Exclude<LayoutSide, 'center'>>()
   let leftWeight = 0
   let rightWeight = 0
 
   for (const child of children) {
-    const nextWeight = measureSubtree(child).leafCount
+    const nextWeight = measureSubtree(child, ctx).leafCount
     const nextSide = leftWeight <= rightWeight ? 'left' : 'right'
 
     weights.set(child.id, nextSide)
@@ -192,7 +227,7 @@ function distributeCenters(
   centerY: number,
   side: Exclude<LayoutSide, 'center'>,
   sideMap: Map<string, Exclude<LayoutSide, 'center'>>,
-  leafBlock = LEAF_BLOCK,
+  ctx: BlockContext,
   verticalGap = VERTICAL_GAP,
   alignSiblings = false,
 ) {
@@ -200,18 +235,18 @@ function distributeCenters(
     side === 'left'
       ? topics.filter((topic) => sideMap.get(topic.id) === 'left')
       : topics.filter((topic) => sideMap.get(topic.id) !== 'left')
-  const metrics = relevantTopics.map((topic) => measureSubtree(topic))
+  const metrics = relevantTopics.map((topic) => measureSubtree(topic, ctx))
   const totalLeafCount = Math.max(
     1,
     metrics.reduce((sum, metric) => sum + metric.leafCount, 0),
   )
-  const totalHeight = totalLeafCount * leafBlock + (relevantTopics.length - 1) * verticalGap
+  const totalHeight = totalLeafCount * ctx.leafBlock + (relevantTopics.length - 1) * verticalGap
   let cursor = centerY - totalHeight / 2
 
   return relevantTopics.map((topic, index) => {
-    const blockHeight = metrics[index].leafCount * leafBlock
+    const blockHeight = metrics[index].leafCount * ctx.leafBlock
     const nodeCenterY = alignSiblings
-      ? centerY + (index - (relevantTopics.length - 1) / 2) * (leafBlock + verticalGap)
+      ? centerY + (index - (relevantTopics.length - 1) / 2) * (ctx.leafBlock + verticalGap)
       : cursor + blockHeight / 2
 
     cursor += blockHeight + verticalGap
@@ -220,17 +255,64 @@ function distributeCenters(
   })
 }
 
+/**
+ * 计算一级分支的朝向分配。
+ *
+ * 优先级：画布级 `direction` > `balance` 自动平衡 > 默认左右交替；
+ * 之后再由**节点级** `structure.direction` 覆盖（更具体者胜）。
+ *
+ * 独立导出：混合骨架在给「子树换骨架」的子布局定朝向时，必须复用同一套规则，
+ * 否则同一份文档在屏幕与导出、或改动前后会落到不同的一侧。
+ */
+export function resolveRootSideMap(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+  ctx: { footprint?: SubtreeFootprintResolver } = {},
+): Map<string, 'left' | 'right'> {
+  const blockCtx: BlockContext = {
+    footprint: ctx.footprint,
+    leafBlock: options.compact ? 64 : LEAF_BLOCK,
+  }
+
+  const sideMap: Map<string, 'left' | 'right'> =
+    options.direction === 'left'
+      ? new Map(rootTopic.children.map((topic) => [topic.id, 'left'] as const))
+      : options.direction === 'right'
+        ? new Map(rootTopic.children.map((topic) => [topic.id, 'right'] as const))
+        : options.balance
+          ? assignRootSides(rootTopic.children, blockCtx)
+          : new Map(
+              rootTopic.children.map(
+                (topic, index) => [topic.id, index % 2 === 0 ? 'right' : 'left'] as const,
+              ),
+            )
+
+  // 节点级「分支方向」：一级分支自己声明了左右就固定在该侧
+  // （'balanced' 与缺省一样表示"不指定"，交给上面的自动分配）
+  for (const child of rootTopic.children) {
+    const declared = child.structure?.direction
+    if (declared === 'left' || declared === 'right') {
+      sideMap.set(child.id, declared)
+    }
+  }
+
+  return sideMap
+}
+
 export function computeMindMapLayout(
   rootTopic: TopicSnapshot,
   options: MindMapLayoutOptions = {},
 ): MindMapLayoutResult {
   const verticalGap = options.compact ? 8 : VERTICAL_GAP
   const leafBlock = options.compact ? 64 : LEAF_BLOCK
-  const rootSize = estimateNodeSize(rootTopic, 0)
+  const ctx: BlockContext = { footprint: options.subtreeFootprint, leafBlock }
+  // 该子树在整幅图里的真实层级（子树单独布局时由调用方给出）
+  const depthBase = options.depthBase ?? 0
+  const rootSize = estimateNodeSize(rootTopic, depthBase)
   const rootNode: MindMapNodeLayout = {
     id: rootTopic.id,
     topic: rootTopic,
-    depth: 0,
+    depth: depthBase,
     side: 'center',
     x: 0,
     y: 0,
@@ -251,15 +333,9 @@ export function computeMindMapLayout(
     }
   }
 
-  // 分支方向优先级：显式 direction > balance 自动平衡 > 默认左右交替
-  const sideMap =
-    options.direction === 'left'
-      ? new Map(rootTopic.children.map((topic) => [topic.id, 'left'] as const))
-      : options.direction === 'right'
-        ? new Map(rootTopic.children.map((topic) => [topic.id, 'right'] as const))
-        : options.balance
-          ? assignRootSides(rootTopic.children)
-          : new Map(rootTopic.children.map((topic, index) => [topic.id, index % 2 === 0 ? 'right' : 'left'] as const))
+  // 分支方向优先级：画布级 direction > balance 自动平衡 > 默认左右交替；
+  // 之后再由**节点级** direction 覆盖（更具体者胜）——与混合骨架的子布局共用同一函数
+  const sideMap = resolveRootSideMap(rootTopic, options, { footprint: options.subtreeFootprint })
 
   const placeSubtree = (
     topic: TopicSnapshot,
@@ -268,7 +344,7 @@ export function computeMindMapLayout(
     centerY: number,
     depth: number,
   ) => {
-    const size = estimateNodeSize(topic, depth)
+    const size = estimateNodeSize(topic, depth + depthBase)
     const x =
       side === 'right'
         ? ROOT_HORIZONTAL_GAP + (depth - 1) * DEPTH_HORIZONTAL_GAP
@@ -276,7 +352,7 @@ export function computeMindMapLayout(
     const node: MindMapNodeLayout = {
       id: topic.id,
       topic,
-      depth,
+      depth: depth + depthBase,
       side,
       x,
       y: centerY,
@@ -302,7 +378,13 @@ export function computeMindMapLayout(
       return
     }
 
-    const childMetrics = topic.children.map((child) => measureSubtree(child))
+    // 子主题朝哪边展开：该主题自己声明了左右就照它，否则沿用所在分支。
+    // 这让深处节点也能单独改方向（XMind 的「分支方向」对任意层级生效）。
+    const declared = topic.structure?.direction
+    const childSide: Exclude<LayoutSide, 'center'> =
+      declared === 'left' || declared === 'right' ? declared : side
+
+    const childMetrics = topic.children.map((child) => measureSubtree(child, ctx))
     const totalChildLeafCount = childMetrics.reduce(
       (sum, metric) => sum + metric.leafCount,
       0,
@@ -316,7 +398,7 @@ export function computeMindMapLayout(
       const childCenterY = cursor + blockHeight / 2
 
       cursor += blockHeight + verticalGap
-      placeSubtree(child, node, side, childCenterY, depth + 1)
+      placeSubtree(child, node, childSide, childCenterY, depth + 1)
     })
   }
 
@@ -325,7 +407,7 @@ export function computeMindMapLayout(
     0,
     'left',
     sideMap,
-    leafBlock,
+    ctx,
     verticalGap,
     options.alignSiblings,
   )
@@ -334,7 +416,7 @@ export function computeMindMapLayout(
     0,
     'right',
     sideMap,
-    leafBlock,
+    ctx,
     verticalGap,
     options.alignSiblings,
   )

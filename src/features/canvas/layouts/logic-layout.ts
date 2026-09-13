@@ -7,12 +7,13 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import {
   computeLayoutBounds,
   createEdgeGeometry,
   estimateNodeSize,
   measureSubtree,
+  type BlockContext,
 } from './layout-utils'
 
 const COL_GAP = 150
@@ -21,12 +22,18 @@ const ROW_GAP = 18
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
 
-export function computeLogicLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const rootSize = estimateNodeSize(rootTopic, 0)
+export function computeLogicLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const ctx: BlockContext = { leafBlock: LEAF_BLOCK, footprint: options.subtreeFootprint }
+  /** 该子树在整幅图里的真实层级（子树单独布局时由调用方给出）。 */
+  const depthBase = options.depthBase ?? 0
+  const rootSize = estimateNodeSize(rootTopic, depthBase)
   const rootNode: MindMapNodeLayout = {
     id: rootTopic.id,
     topic: rootTopic,
-    depth: 0,
+    depth: depthBase,
     side: 'center',
     x: 0,
     y: 0,
@@ -47,12 +54,12 @@ export function computeLogicLayout(rootTopic: TopicSnapshot): MindMapLayoutResul
     centerY: number,
     depth: number,
   ) => {
-    const size = estimateNodeSize(topic, depth)
+    const size = estimateNodeSize(topic, depth + depthBase)
     const x = COL_GAP * depth
     const node: MindMapNodeLayout = {
       id: topic.id,
       topic,
-      depth,
+      depth: depth + depthBase,
       side: 'right',
       x,
       y: centerY,
@@ -72,7 +79,7 @@ export function computeLogicLayout(rootTopic: TopicSnapshot): MindMapLayoutResul
       return
     }
 
-    const metrics = topic.children.map((child) => measureSubtree(child))
+    const metrics = topic.children.map((child) => measureSubtree(child, ctx))
     const totalLeafCount = metrics.reduce((sum, m) => sum + m.leafCount, 0)
     const totalHeight = totalLeafCount * LEAF_BLOCK + (topic.children.length - 1) * ROW_GAP
     let cursor = centerY - totalHeight / 2
@@ -85,7 +92,7 @@ export function computeLogicLayout(rootTopic: TopicSnapshot): MindMapLayoutResul
     })
   }
 
-  const metrics = rootTopic.children.map((child) => measureSubtree(child))
+  const metrics = rootTopic.children.map((child) => measureSubtree(child, ctx))
   const totalLeafCount = metrics.reduce((sum, m) => sum + m.leafCount, 0)
   const totalHeight = totalLeafCount * LEAF_BLOCK + (rootTopic.children.length - 1) * ROW_GAP
   let cursor = -totalHeight / 2

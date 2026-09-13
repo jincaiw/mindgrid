@@ -16,6 +16,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ChartType } from '../../lib/document/types'
+import { CHART_TYPE_LABELS } from './chart-type-labels'
 import { ChevronDownIcon } from './icons'
 import { usePopoverAnchor } from './use-popover-anchor'
 
@@ -232,27 +233,27 @@ const STRUCTURE_GROUPS: readonly StructureGroup[] = [
   {
     title: '思维导图',
     options: [
-      { value: 'mindmap', label: '思维导图', thumbnail: <MindMapThumb /> },
-      { value: 'bubble', label: '气泡图', thumbnail: <BubbleThumb /> },
+      { value: 'mindmap', label: CHART_TYPE_LABELS.mindmap, thumbnail: <MindMapThumb /> },
+      { value: 'bubble', label: CHART_TYPE_LABELS.bubble, thumbnail: <BubbleThumb /> },
     ],
   },
-  { title: '逻辑图', options: [{ value: 'logic', label: '逻辑图', thumbnail: <LogicThumb /> }] },
-  { title: '括号图', options: [{ value: 'brace', label: '括号图', thumbnail: <BraceThumb /> }] },
+  { title: '逻辑图', options: [{ value: 'logic', label: CHART_TYPE_LABELS.logic, thumbnail: <LogicThumb /> }] },
+  { title: '括号图', options: [{ value: 'brace', label: CHART_TYPE_LABELS.brace, thumbnail: <BraceThumb /> }] },
   {
     title: '组织结构图',
-    options: [{ value: 'org', label: '组织结构图', thumbnail: <OrgThumb /> }],
+    options: [{ value: 'org', label: CHART_TYPE_LABELS.org, thumbnail: <OrgThumb /> }],
   },
-  { title: '树形图', options: [{ value: 'tree', label: '树状图', thumbnail: <TreeThumb /> }] },
+  { title: '树形图', options: [{ value: 'tree', label: CHART_TYPE_LABELS.tree, thumbnail: <TreeThumb /> }] },
   {
     title: '时间轴',
-    options: [{ value: 'timeline', label: '时间线', thumbnail: <TimelineThumb /> }],
+    options: [{ value: 'timeline', label: CHART_TYPE_LABELS.timeline, thumbnail: <TimelineThumb /> }],
   },
-  { title: '鱼骨图', options: [{ value: 'fishbone', label: '鱼骨图', thumbnail: <FishboneThumb /> }] },
+  { title: '鱼骨图', options: [{ value: 'fishbone', label: CHART_TYPE_LABELS.fishbone, thumbnail: <FishboneThumb /> }] },
   {
     title: '树型表格',
-    options: [{ value: 'treetable', label: '树型表格', thumbnail: <TreeTableThumb /> }],
+    options: [{ value: 'treetable', label: CHART_TYPE_LABELS.treetable, thumbnail: <TreeTableThumb /> }],
   },
-  { title: '矩阵图', options: [{ value: 'matrix', label: '矩阵图', thumbnail: <MatrixThumb /> }] },
+  { title: '矩阵图', options: [{ value: 'matrix', label: CHART_TYPE_LABELS.matrix, thumbnail: <MatrixThumb /> }] },
 ]
 
 /** 扁平索引，供「当前骨架」卡片回查缩略图与名称。 */

@@ -13,7 +13,7 @@ use crate::domain::document::{
     ChartType, DocumentSnapshot, LayoutBalance, LayoutConfig, Relationship, SheetBranchStyle,
     SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
-    TopicSnapshot, TopicStyleOverrides, TopicTask,
+    TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask,
 };
 
 /// 主题字段级变更（正向 old→new，逆操作只需交换 old/new）。
@@ -42,6 +42,11 @@ pub enum TopicFieldChange {
     Image {
         old: Option<TopicImage>,
         new: Option<TopicImage>,
+    },
+    /// 节点级骨架覆盖（结构 / 方向）。
+    Structure {
+        old: Option<TopicStructure>,
+        new: Option<TopicStructure>,
     },
 }
 
@@ -210,6 +215,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     new: old.clone(),
                 },
                 TopicFieldChange::Image { old, new } => TopicFieldChange::Image {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
+                TopicFieldChange::Structure { old, new } => TopicFieldChange::Structure {
                     old: new.clone(),
                     new: old.clone(),
                 },
@@ -388,6 +397,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::StyleRef { new, .. } => topic.style_ref = new.clone(),
         TopicFieldChange::StyleOverrides { new, .. } => topic.style_overrides = new.clone(),
         TopicFieldChange::Image { new, .. } => topic.image = new.clone(),
+        TopicFieldChange::Structure { new, .. } => topic.structure = new.clone(),
     }
 }
 
@@ -891,6 +901,22 @@ impl<'a> DocumentEditor<'a> {
             |t| t.style_overrides.clone(),
             |new, old| TopicFieldChange::StyleOverrides { old, new },
             |t, v| t.style_overrides = v,
+        );
+    }
+
+    fn set_topic_structure_raw(
+        &mut self,
+        sheet_id: &str,
+        topic_id: &str,
+        new_structure: Option<TopicStructure>,
+    ) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_structure,
+            |t| t.structure.clone(),
+            |new, old| TopicFieldChange::Structure { old, new },
+            |t, v| t.structure = v,
         );
     }
 
@@ -1578,6 +1604,17 @@ impl<'a> DocumentEditor<'a> {
     ) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑样式的")?;
         self.set_topic_style_overrides_raw(&sheet_id, topic_id, style_overrides);
+        Ok(())
+    }
+
+    /// 设置节点级骨架覆盖（结构 / 方向）。`None` 表示清除，回退到画布骨架。
+    pub fn set_topic_structure(
+        &mut self,
+        topic_id: &str,
+        structure: Option<TopicStructure>,
+    ) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑结构的")?;
+        self.set_topic_structure_raw(&sheet_id, topic_id, structure);
         Ok(())
     }
 

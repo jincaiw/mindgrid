@@ -59,6 +59,7 @@ import {
   setTopicLink,
   setTopicMarkers,
   setTopicNotes,
+  setTopicStructure,
   setTopicStyleOverrides,
   applyTopicStyleToSiblings,
   setTopicPosition,
@@ -77,6 +78,7 @@ import type {
   TopicLink,
   TopicMarker,
   TopicSnapshot,
+  TopicStructure,
   TopicStyleOverrides,
   TopicTask,
 } from '../../lib/document/types'
@@ -168,6 +170,7 @@ export interface DocumentSession extends DocumentSessionState {
     topicId: string,
     styleOverrides: TopicStyleOverrides | null,
   ) => Promise<void>
+  setTopicStructure: (topicId: string, structure: TopicStructure | null) => Promise<void>
   setDocumentTheme: (themeId: string | null) => Promise<void>
   createRelationship: (fromTopicId: string, toTopicId: string, label: string | null) => Promise<void>
   deleteRelationship: (relationshipId: string) => Promise<void>
@@ -1379,6 +1382,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicStructure = useCallback(
+    async (topicId: string, structure: TopicStructure | null) => {
+      await runCommand('编辑结构', () => setTopicStructure(topicId, structure))
+    },
+    [runCommand],
+  )
+
   const updateDocumentTheme = useCallback(
     async (themeId: string | null) => {
       await runCommand('切换文档主题', () => setDocumentTheme(themeId))
@@ -1631,6 +1641,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicTask: updateTopicTask,
       setTopicStyleRef: updateTopicStyleRef,
       setTopicStyleOverrides: updateTopicStyleOverrides,
+      setTopicStructure: updateTopicStructure,
       applyTopicStyleToSiblings: applyTopicStyleToSiblingsAction,
       moveTopicFreely,
       setDocumentTheme: updateDocumentTheme,

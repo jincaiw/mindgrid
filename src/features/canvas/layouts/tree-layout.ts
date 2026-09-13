@@ -7,17 +7,24 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import {
   computeLayoutBounds,
   createVerticalEdgeGeometry,
   estimateNodeSize,
 } from './layout-utils'
+import { footprintHalfWidth, type SubtreeFootprintResolver } from './mixed-structure'
 
 const ROW_HEIGHT = 104
 const SIBLING_GAP = 28
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
+
+/** 布局上下文：深度基准 + 子树足迹查询（见 layouts/mixed-structure）。 */
+interface SubtreeContext {
+  depthBase: number
+  footprint?: SubtreeFootprintResolver
+}
 
 interface SubtreeLayout {
   node: MindMapNodeLayout
@@ -30,12 +37,13 @@ function layoutSubtree(
   topic: TopicSnapshot,
   depth: number,
   centerX: number,
+  ctx: SubtreeContext,
 ): SubtreeLayout {
-  const size = estimateNodeSize(topic, depth)
+  const size = estimateNodeSize(topic, depth + ctx.depthBase)
   const node: MindMapNodeLayout = {
     id: topic.id,
     topic,
-    depth,
+    depth: depth + ctx.depthBase,
     side: 'center',
     x: centerX,
     y: depth * ROW_HEIGHT,
@@ -47,7 +55,29 @@ function layoutSubtree(
     return { node, width: size.width, children: [] }
   }
 
-  const children = topic.children.map((child) => layoutSubtree(child, depth + 1, 0))
+  const children = topic.children.map((child) => {
+    const footprint = ctx.footprint?.(child.id)
+    if (footprint) {
+      // 换过骨架的子树当黑盒：按真实占地留出**对称**槽位（半宽取左右较大的一侧，
+      // 内容才一定落得进去），并且不再往下递归——更深的层级由那份子布局自己负责。
+      const childSize = estimateNodeSize(child, depth + 1 + ctx.depthBase)
+      return {
+        node: {
+          id: child.id,
+          topic: child,
+          depth: depth + 1 + ctx.depthBase,
+          side: 'center' as const,
+          x: 0,
+          y: (depth + 1) * ROW_HEIGHT,
+          width: childSize.width,
+          height: childSize.height,
+        },
+        width: footprintHalfWidth(footprint) * 2,
+        children: [],
+      }
+    }
+    return layoutSubtree(child, depth + 1, 0, ctx)
+  })
   const childrenWidth = children.reduce((sum, child, i) => {
     return sum + child.width + (i > 0 ? SIBLING_GAP : 0)
   }, 0)
@@ -90,8 +120,14 @@ function collectNodesAndEdges(
   }
 }
 
-export function computeTreeLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const tree = layoutSubtree(rootTopic, 0, 0)
+export function computeTreeLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const tree = layoutSubtree(rootTopic, 0, 0, {
+    depthBase: options.depthBase ?? 0,
+    footprint: options.subtreeFootprint,
+  })
   const nodes: MindMapNodeLayout[] = []
   const edges: MindMapLayoutResult['edges'] = []
   collectNodesAndEdges(tree, nodes, edges)

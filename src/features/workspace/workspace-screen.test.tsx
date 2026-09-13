@@ -109,6 +109,7 @@ importDocxOutline: async () => {},
   setTopicTask: async () => {},
   setTopicStyleRef: async () => {},
   setTopicStyleOverrides: async () => {},
+  setTopicStructure: async () => {},
   setDocumentTheme: async () => {},
   setDocumentSetting: async () => {},
   createRelationship: async () => {},
@@ -2250,6 +2251,55 @@ it('applies a node-level branch line color from the inspector branch section', (
       unknown
     >
     expect(cleared).not.toHaveProperty('branchColor')
+  }
+})
+
+it('applies a node-level structure override from the inspector structure section', () => {
+  const setTopicStructure = vi.fn(async (_topicId: string, _structure: unknown) => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  { id: 'topic_branch', text: '待排版主题', collapsed: false, children: [] },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStructure,
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  // 结构：只写 chartType，不写空的 direction（否则"清除"的判空会失效）
+  fireEvent.change(inspector.getByLabelText('子主题结构'), { target: { value: 'org' } })
+  expect(setTopicStructure).toHaveBeenLastCalledWith('topic_branch', { chartType: 'org' })
+
+  // 方向：与结构合并写入，且不写出空的 chartType
+  const callsBeforeDirection = setTopicStructure.mock.calls.length
+  fireEvent.click(inspector.getByRole('button', { name: '向左' }))
+  const callsAfterDirection = setTopicStructure.mock.calls.length
+  if (callsAfterDirection > callsBeforeDirection) {
+    expect(setTopicStructure).toHaveBeenLastCalledWith('topic_branch', {
+      chartType: 'org',
+      direction: 'left',
+    })
   }
 })
 

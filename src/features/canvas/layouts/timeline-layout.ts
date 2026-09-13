@@ -7,7 +7,7 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import {
   computeLayoutBounds,
   createStraightEdgeGeometry,
@@ -19,12 +19,22 @@ const SUB_EVENT_ROW_HEIGHT = 90
 const SCENE_PADDING_X = 200
 const SCENE_PADDING_Y = 140
 
-export function computeTimelineLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const rootSize = estimateNodeSize(rootTopic, 0)
+/**
+ * 时间线的排布是**固定步距**的（事件按等距横排、子事件按等距下排），
+ * 没有"槽位"可留白，因此它作为父骨架时不为换骨架的子树预留额外空间
+ * （`subtreeFootprint` 不参与）；换骨架的子树仍会被正常嫁接。
+ */
+export function computeTimelineLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  /** 该子树在整幅图里的真实层级（子树单独布局时由调用方给出）。 */
+  const depthBase = options.depthBase ?? 0
+  const rootSize = estimateNodeSize(rootTopic, depthBase)
   const rootNode: MindMapNodeLayout = {
     id: rootTopic.id,
     topic: rootTopic,
-    depth: 0,
+    depth: depthBase,
     side: 'center',
     x: 0,
     y: 0,
@@ -41,11 +51,11 @@ export function computeTimelineLayout(rootTopic: TopicSnapshot): MindMapLayoutRe
 
   rootTopic.children.forEach((event, index) => {
     const eventX = (index + 1) * EVENT_GAP
-    const eventSize = estimateNodeSize(event, 1)
+    const eventSize = estimateNodeSize(event, 1 + depthBase)
     const eventNode: MindMapNodeLayout = {
       id: event.id,
       topic: event,
-      depth: 1,
+      depth: 1 + depthBase,
       side: 'right',
       x: eventX,
       y: 0,
@@ -80,11 +90,11 @@ export function computeTimelineLayout(rootTopic: TopicSnapshot): MindMapLayoutRe
 
     event.children.forEach((subEvent, subIndex) => {
       const subY = (subIndex + 1) * SUB_EVENT_ROW_HEIGHT
-      const subSize = estimateNodeSize(subEvent, 2)
+      const subSize = estimateNodeSize(subEvent, 2 + depthBase)
       const subNode: MindMapNodeLayout = {
         id: subEvent.id,
         topic: subEvent,
-        depth: 2,
+        depth: 2 + depthBase,
         side: 'right',
         x: eventX,
         y: subY,

@@ -7,17 +7,20 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import {
   computeLayoutBounds,
   createStraightEdgeGeometry,
   estimateNodeSize,
 } from './layout-utils'
+import { footprintBlocks, footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
 const BASE_RADIUS = 300
 const RING_GAP = 220
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
+/** 环上弧段分配用的"叶子块"参考高度（换骨架的子树按占地折算成等价份额）。 */
+const LEAF_BLOCK = 80
 
 interface BfsEntry {
   topic: TopicSnapshot
@@ -26,19 +29,31 @@ interface BfsEntry {
   leafCount: number
 }
 
-function countLeaves(topic: TopicSnapshot): number {
+function countLeaves(topic: TopicSnapshot, footprint?: SubtreeFootprintResolver): number {
+  // 换过骨架的子树：按真实占地折算弧段份额，并不再往下钻（更深的覆盖已被它自己消化）
+  const override = footprint?.(topic.id)
+  if (override) {
+    return footprintBlocks(footprintHalfHeight(override), LEAF_BLOCK)
+  }
+
   if (topic.collapsed || topic.children.length === 0) {
     return 1
   }
-  return topic.children.reduce((sum, child) => sum + countLeaves(child), 0)
+  return topic.children.reduce((sum, child) => sum + countLeaves(child, footprint), 0)
 }
 
-export function computeBubbleLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const rootSize = estimateNodeSize(rootTopic, 0)
+export function computeBubbleLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const footprint = options.subtreeFootprint
+  /** 该子树在整幅图里的真实层级（子树单独布局时由调用方给出）。 */
+  const depthBase = options.depthBase ?? 0
+  const rootSize = estimateNodeSize(rootTopic, depthBase)
   const rootNode: MindMapNodeLayout = {
     id: rootTopic.id,
     topic: rootTopic,
-    depth: 0,
+    depth: depthBase,
     side: 'center',
     x: 0,
     y: 0,
@@ -59,7 +74,7 @@ export function computeBubbleLayout(rootTopic: TopicSnapshot): MindMapLayoutResu
         topic: child,
         depth: 1,
         parentId: rootTopic.id,
-        leafCount: countLeaves(child),
+        leafCount: countLeaves(child, footprint),
       })),
   ]
   if (rootTopic.collapsed) {
@@ -78,7 +93,7 @@ export function computeBubbleLayout(rootTopic: TopicSnapshot): MindMapLayoutResu
           topic: child,
           depth: entry.depth + 1,
           parentId: entry.topic.id,
-          leafCount: countLeaves(child),
+          leafCount: countLeaves(child, footprint),
         })
       }
     }
@@ -92,14 +107,14 @@ export function computeBubbleLayout(rootTopic: TopicSnapshot): MindMapLayoutResu
 
     let angle = -Math.PI / 2 // 从正上方开始
     for (const entry of level) {
-      const size = estimateNodeSize(entry.topic, entry.depth)
+      const size = estimateNodeSize(entry.topic, entry.depth + depthBase)
       const share = entry.leafCount / Math.max(totalLeaves, 1)
       const nodeAngle = angle + (share * Math.PI) / 2
 
       const node: MindMapNodeLayout = {
         id: entry.topic.id,
         topic: entry.topic,
-        depth: entry.depth,
+        depth: entry.depth + depthBase,
         side: 'center',
         x: radius * Math.cos(nodeAngle),
         y: radius * Math.sin(nodeAngle),

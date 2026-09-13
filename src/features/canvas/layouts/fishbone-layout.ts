@@ -9,7 +9,7 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import {
   computeLayoutBounds,
   createStraightEdgeGeometry,
@@ -23,12 +23,22 @@ const SUB_BRANCH_LENGTH = 120
 const SCENE_PADDING_X = 200
 const SCENE_PADDING_Y = 160
 
-export function computeFishboneLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const rootSize = estimateNodeSize(rootTopic, 0)
+/**
+ * 鱼骨图的排布是**固定角度 + 固定臂长**的，没有"槽位"可留白，
+ * 因此它作为父骨架时不为换骨架的子树预留额外空间（`subtreeFootprint` 不参与），
+ * 换骨架的子树仍会被正常嫁接进对应分支的位置。
+ */
+export function computeFishboneLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  /** 该子树在整幅图里的真实层级（子树单独布局时由调用方给出）。 */
+  const depthBase = options.depthBase ?? 0
+  const rootSize = estimateNodeSize(rootTopic, depthBase)
   const rootNode: MindMapNodeLayout = {
     id: rootTopic.id,
     topic: rootTopic,
-    depth: 0,
+    depth: depthBase,
     side: 'center',
     x: SPINE_LENGTH,
     y: 0,
@@ -60,11 +70,11 @@ export function computeFishboneLayout(rootTopic: TopicSnapshot): MindMapLayoutRe
     const branchEndX = branchX - Math.cos(BRANCH_ANGLE) * BRANCH_LENGTH
     const branchEndY = Math.sin(BRANCH_ANGLE) * BRANCH_LENGTH * direction
 
-    const causeSize = estimateNodeSize(cause, 1)
+    const causeSize = estimateNodeSize(cause, 1 + depthBase)
     const causeNode: MindMapNodeLayout = {
       id: cause.id,
       topic: cause,
-      depth: 1,
+      depth: 1 + depthBase,
       side: isAbove ? 'left' : 'right',
       x: branchEndX,
       y: branchEndY,
@@ -96,11 +106,11 @@ export function computeFishboneLayout(rootTopic: TopicSnapshot): MindMapLayoutRe
       const subX = branchEndX - Math.cos(subAngle) * subOffset
       const subY = branchEndY + Math.sin(subAngle) * subOffset * direction
 
-      const subSize = estimateNodeSize(subCause, 2)
+      const subSize = estimateNodeSize(subCause, 2 + depthBase)
       const subNode: MindMapNodeLayout = {
         id: subCause.id,
         topic: subCause,
-        depth: 2,
+        depth: 2 + depthBase,
         side: isAbove ? 'left' : 'right',
         x: subX,
         y: subY,

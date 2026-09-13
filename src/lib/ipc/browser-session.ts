@@ -11,6 +11,7 @@ import type {
   TopicLink,
   TopicMarker,
   TopicSnapshot,
+  TopicStructure,
   TopicStyleOverrides,
   TopicTask,
 } from '../document/types'
@@ -1197,6 +1198,20 @@ export async function invokeBrowserCommand<TResult>(
           throw new Error('找不到需要编辑样式的主题')
         }
         topic.styleOverrides = nextOverrides
+        return activeTopicId ?? topicId
+      }) as TResult
+    }
+    case 'set_topic_structure': {
+      const topicId = String(payload.topic_id)
+      const nextStructure =
+        payload.structure == null ? undefined : (payload.structure as TopicStructure)
+
+      return applyMutation('编辑结构', (draft) => {
+        const topic = findTopicById(getActiveRootTopic(draft), topicId)
+        if (!topic) {
+          throw new Error('找不到需要编辑结构的主题')
+        }
+        topic.structure = nextStructure
         return activeTopicId ?? topicId
       }) as TResult
     }

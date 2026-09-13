@@ -94,6 +94,7 @@ pub fn run() {
             app::commands::set_topic_task,
             app::commands::set_topic_style_ref,
             app::commands::set_topic_style_overrides,
+            app::commands::set_topic_structure,
             app::commands::set_topic_image,
             app::commands::remove_topic_image,
             app::commands::read_asset_data_url,

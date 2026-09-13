@@ -7,12 +7,9 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
-import {
-  computeLayoutBounds,
-  estimateNodeSize,
-  measureSubtree,
-} from './layout-utils'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import { computeLayoutBounds, estimateNodeSize } from './layout-utils'
+import { footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
 const COLUMN_GAP = 120
 const SIBLING_GAP = 16
@@ -25,17 +22,24 @@ interface SubtreeLayout {
   children: SubtreeLayout[]
 }
 
+/** 布局上下文：深度基准 + 子树足迹查询（见 layouts/mixed-structure）。 */
+interface BraceContext {
+  depthBase: number
+  footprint?: SubtreeFootprintResolver
+}
+
 /** 递归布局子树：列内纵向堆叠，返回子树总高度。 */
 function layoutSubtree(
   topic: TopicSnapshot,
   depth: number,
   centerY: number,
+  ctx: BraceContext,
 ): SubtreeLayout {
-  const size = estimateNodeSize(topic, depth)
+  const size = estimateNodeSize(topic, depth + ctx.depthBase)
   const node: MindMapNodeLayout = {
     id: topic.id,
     topic,
-    depth,
+    depth: depth + ctx.depthBase,
     side: 'center',
     x: depth * COLUMN_GAP,
     y: centerY,
@@ -47,7 +51,29 @@ function layoutSubtree(
     return { node, height: size.height, children: [] }
   }
 
-  const children = topic.children.map((child) => layoutSubtree(child, depth + 1, 0))
+  const children = topic.children.map((child) => {
+    const footprint = ctx.footprint?.(child.id)
+    if (footprint) {
+      // 换过骨架的子树当黑盒：按真实占地的一半留出**对称**槽位（取上下较大的一侧），
+      // 不再往下递归——更深的层级由那份子布局自己负责。
+      const childSize = estimateNodeSize(child, depth + 1 + ctx.depthBase)
+      return {
+        node: {
+          id: child.id,
+          topic: child,
+          depth: depth + 1 + ctx.depthBase,
+          side: 'center' as const,
+          x: (depth + 1) * COLUMN_GAP,
+          y: 0,
+          width: childSize.width,
+          height: childSize.height,
+        },
+        height: footprintHalfHeight(footprint) * 2,
+        children: [] as SubtreeLayout[],
+      }
+    }
+    return layoutSubtree(child, depth + 1, 0, ctx)
+  })
   const childrenHeight = children.reduce(
     (sum, child, i) => sum + child.height + (i > 0 ? SIBLING_GAP : 0),
     0,
@@ -112,8 +138,14 @@ function createBraceEdgeGeometry(
   }
 }
 
-export function computeBraceLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const tree = layoutSubtree(rootTopic, 0, 0)
+export function computeBraceLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const tree = layoutSubtree(rootTopic, 0, 0, {
+    depthBase: options.depthBase ?? 0,
+    footprint: options.subtreeFootprint,
+  })
   const nodes: MindMapNodeLayout[] = []
   const edges: MindMapLayoutResult['edges'] = []
   collectNodesAndEdges(tree, nodes, edges)
@@ -121,6 +153,3 @@ export function computeBraceLayout(rootTopic: TopicSnapshot): MindMapLayoutResul
   const bounds = computeLayoutBounds(nodes, SCENE_PADDING_X, SCENE_PADDING_Y)
   return { nodes, edges, ...bounds }
 }
-
-// measureSubtree 保留导出供潜在扩展（与 logic 布局的子树度量保持一致）
-export { measureSubtree }

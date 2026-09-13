@@ -200,6 +200,9 @@ pub struct TopicSnapshot {
     pub task: Option<TopicTask>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub layout_hints: Option<TopicLayoutHints>,
+    /// 节点级骨架覆盖（结构 / 方向），优先于画布级 chartType 与 layoutConfig.direction。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub structure: Option<TopicStructure>,
     /// 应用层扩展命名空间，不覆盖核心字段。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Extensions>,
@@ -222,6 +225,30 @@ pub enum ChartType {
     Matrix,
     Bubble,
     Treetable,
+}
+
+/// 节点级分支方向，与 TS 侧 `TopicDirection` 一致。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TopicDirection {
+    Left,
+    Right,
+    Balanced,
+}
+
+/// 节点级骨架覆盖（对齐 XMind 样式页的「结构 / 方向」）。
+///
+/// XMind 允许单个分支用不同于整幅图的骨架；两个字段都可缺省并逐级继承
+/// （`chart_type` 继承画布骨架，`direction` 继承所在分支朝向）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicStructure {
+    /// 该主题的子主题用哪种骨架排布。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chart_type: Option<ChartType>,
+    /// 该主题的子主题向哪边展开。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<TopicDirection>,
 }
 
 impl Default for ChartType {
@@ -1077,6 +1104,18 @@ impl DocumentSession {
         })
     }
 
+    /// 设置节点级骨架覆盖（结构 / 方向）；`None` 清除，回退到画布骨架。
+    pub fn set_topic_structure(
+        &mut self,
+        topic_id: &str,
+        structure: Option<TopicStructure>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("编辑结构", |editor| {
+            editor.set_topic_structure(topic_id, structure)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     pub fn set_topic_markers(
         &mut self,
         topic_id: &str,
@@ -1397,6 +1436,7 @@ impl TopicSnapshot {
             image: None,
             task: None,
             layout_hints: None,
+            structure: None,
             extensions: None,
             extra: serde_json::Map::new(),
         }
@@ -1426,6 +1466,7 @@ impl SheetSnapshot {
                 image: None,
                 task: None,
                 layout_hints: None,
+                structure: None,
                 extensions: None,
                 extra: serde_json::Map::new(),
             },
@@ -1593,6 +1634,7 @@ pub(crate) fn clone_topic_branch(topic: &TopicSnapshot) -> TopicSnapshot {
         image: topic.image.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
+        structure: topic.structure.clone(),
         extensions: topic.extensions.clone(),
         extra: topic.extra.clone(),
     }
@@ -1624,6 +1666,7 @@ fn clone_topic_branch_with_map(
         image: topic.image.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
+        structure: topic.structure.clone(),
         extensions: topic.extensions.clone(),
         extra: topic.extra.clone(),
     }
@@ -2350,6 +2393,7 @@ mod tests {
             image: None,
             task: None,
             layout_hints: None,
+            structure: None,
             extensions: None,
             extra: serde_json::Map::new(),
         });
@@ -2367,6 +2411,7 @@ mod tests {
             image: None,
             task: None,
             layout_hints: None,
+            structure: None,
             extensions: None,
             extra: serde_json::Map::new(),
         });
@@ -2570,5 +2615,42 @@ mod tests {
             serde_json::to_value(&branch).unwrap()["branchColor"],
             serde_json::json!("#ff2d55")
         );
+    }
+
+    /// 节点级骨架覆盖的线格式契约。
+    ///
+    /// 锁三件事：① 键名 camelCase、枚举值 lowercase（与 TS 侧一致）；
+    /// ② 两个字段都可缺省（只写方向、只写结构都能解析）；③ 空结构不写出。
+    #[test]
+    fn topic_structure_matches_ts_wire_format() {
+        let both: super::TopicStructure = serde_json::from_value(serde_json::json!({
+            "chartType": "org",
+            "direction": "left"
+        }))
+        .expect("应能解析结构与方向");
+        assert_eq!(both.chart_type, Some(super::ChartType::Org));
+        assert_eq!(both.direction, Some(super::TopicDirection::Left));
+
+        // 只写其中一个字段
+        let only_type: super::TopicStructure =
+            serde_json::from_value(serde_json::json!({ "chartType": "treetable" }))
+                .expect("只有结构应可解析");
+        assert_eq!(only_type.chart_type, Some(super::ChartType::Treetable));
+        assert!(only_type.direction.is_none());
+
+        let only_direction: super::TopicStructure =
+            serde_json::from_value(serde_json::json!({ "direction": "balanced" }))
+                .expect("只有方向应可解析");
+        assert_eq!(only_direction.direction, Some(super::TopicDirection::Balanced));
+        assert!(only_direction.chart_type.is_none());
+
+        // 空结构序列化后不写出任何键（避免文档里留噪音）
+        let empty = super::TopicStructure::default();
+        assert_eq!(serde_json::to_value(&empty).unwrap(), serde_json::json!({}));
+
+        // 往返后键名与取值不变
+        let back = serde_json::to_value(&both).unwrap();
+        assert_eq!(back["chartType"], "org");
+        assert_eq!(back["direction"], "left");
     }
 }

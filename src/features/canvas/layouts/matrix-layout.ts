@@ -6,14 +6,21 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import { computeLayoutBounds, estimateNodeSize } from './layout-utils'
+import { footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
 const HEADER_GAP = 100
 const ROW_GAP = 20
 const COLUMN_GAP = 48
 const SCENE_PADDING_X = 220
 const SCENE_PADDING_Y = 140
+
+/** 布局上下文：深度基准 + 子树足迹查询（见 layouts/mixed-structure）。 */
+interface MatrixContext {
+  depthBase: number
+  footprint?: SubtreeFootprintResolver
+}
 
 interface ColumnCell {
   node: MindMapNodeLayout
@@ -32,18 +39,19 @@ function collectColumnCells(
   topic: TopicSnapshot,
   columnX: number,
   cells: ColumnCell[],
+  ctx: MatrixContext,
 ) {
   for (const child of topic.children) {
     if (child.collapsed) {
-      const size = estimateNodeSize(child, 2)
+      const size = estimateNodeSize(child, 2 + ctx.depthBase)
       cells.push({
-        node: makeNode(child, 2, columnX, 0, size),
+        node: makeNode(child, 2 + ctx.depthBase, columnX, 0, size),
         height: size.height,
       })
       continue
     }
 
-    appendSubtreeFlat(child, 2, columnX, cells)
+    appendSubtreeFlat(child, 2, columnX, cells, ctx)
   }
 }
 
@@ -53,16 +61,25 @@ function appendSubtreeFlat(
   depth: number,
   columnX: number,
   cells: ColumnCell[],
+  ctx: MatrixContext,
 ) {
-  const size = estimateNodeSize(topic, depth)
-  cells.push({ node: makeNode(topic, depth, columnX, 0, size), height: size.height })
+  const size = estimateNodeSize(topic, depth + ctx.depthBase)
+  cells.push({ node: makeNode(topic, depth + ctx.depthBase, columnX, 0, size), height: size.height })
+
+  // 换过骨架的子树：占一格但按真实占地撑高，不再往下平铺
+  // （更深的层级由那份子布局自己排，平铺进去会与它的坐标系冲突）
+  const footprint = ctx.footprint?.(topic.id)
+  if (footprint) {
+    cells[cells.length - 1].height = footprintHalfHeight(footprint) * 2
+    return
+  }
 
   if (topic.collapsed) {
     return
   }
 
   for (const child of topic.children) {
-    appendSubtreeFlat(child, depth + 1, columnX, cells)
+    appendSubtreeFlat(child, depth + 1, columnX, cells, ctx)
   }
 }
 
@@ -85,9 +102,16 @@ function makeNode(
   }
 }
 
-export function computeMatrixLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const rootSize = estimateNodeSize(rootTopic, 0)
-  const rootNode = makeNode(rootTopic, 0, 0, 0, rootSize)
+export function computeMatrixLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const ctx: MatrixContext = {
+    depthBase: options.depthBase ?? 0,
+    footprint: options.subtreeFootprint,
+  }
+  const rootSize = estimateNodeSize(rootTopic, ctx.depthBase)
+  const rootNode = makeNode(rootTopic, ctx.depthBase, 0, 0, rootSize)
   const nodes: MindMapNodeLayout[] = [rootNode]
   const edges: MindMapLayoutResult['edges'] = []
 
@@ -101,12 +125,12 @@ export function computeMatrixLayout(rootTopic: TopicSnapshot): MindMapLayoutResu
   let cursorX = rootNode.width / 2 + HEADER_GAP
 
   for (const child of rootTopic.children) {
-    const headerSize = estimateNodeSize(child, 1)
-    const header = makeNode(child, 1, 0, 0, headerSize)
+    const headerSize = estimateNodeSize(child, 1 + ctx.depthBase)
+    const header = makeNode(child, 1 + ctx.depthBase, 0, 0, headerSize)
     const cells: ColumnCell[] = []
 
     if (!child.collapsed) {
-      collectColumnCells(child, 0, cells)
+      collectColumnCells(child, 0, cells, ctx)
     }
 
     // 列宽：表头与所有单元格的最大宽度

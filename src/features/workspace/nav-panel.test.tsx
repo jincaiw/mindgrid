@@ -114,6 +114,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setTopicTask: async () => {},
     setTopicStyleRef: async () => {},
     setTopicStyleOverrides: async () => {},
+    setTopicStructure: async () => {},
     setDocumentTheme: async () => {},
     setDocumentSetting: async () => {},
     createRelationship: async () => {},

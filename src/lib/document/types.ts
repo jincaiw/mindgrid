@@ -133,6 +133,45 @@ export type TopicTextAlign = 'left' | 'center' | 'right'
  */
 export type TopicTextTransform = 'none' | 'uppercase' | 'lowercase' | 'capitalize'
 
+/** 节点级分支方向（对齐 XMind 样式页「结构 → 方向」）。 */
+export type TopicDirection = 'left' | 'right' | 'balanced'
+
+/**
+ * 可以作为**单个分支**骨架的图表类型。
+ *
+ * 排除两种「整体版式」：
+ * - `bubble`：后代按同心圆环绕子根排布，会同时向四周伸展，挂在任一分支上都会压到中心主题；
+ * - `fishbone`：主干 + 斜向鱼刺描述的是整幅图的因果版式，作为某个分支的骨架没有可读语义。
+ *
+ * 其余骨架都能作为分支骨架：挂在左侧分支上时会自动**水平镜像**，朝外（向左）生长。
+ */
+export const BRANCH_CHART_TYPES: readonly ChartType[] = [
+  'mindmap',
+  'logic',
+  'tree',
+  'org',
+  'timeline',
+  'brace',
+  'matrix',
+  'treetable',
+]
+
+/**
+ * 节点级骨架覆盖（对齐 XMind 样式页的「结构 / 方向」）。
+ *
+ * XMind 允许**单个分支**用不同于整幅图的骨架：整张画布是思维导图，
+ * 某个分支可以是组织结构图或逻辑图。这里就是那条覆盖的载体。
+ *
+ * 两个字段都可缺省，缺省时逐级继承：`chartType` 继承画布骨架，
+ * `direction` 继承所在分支的朝向。所有字段可选，保证旧文档可直接加载。
+ */
+export interface TopicStructure {
+  /** 该主题的**子主题**用哪种骨架排布；缺省继承画布骨架。 */
+  chartType?: ChartType
+  /** 该主题的**子主题**向哪边展开；缺省继承所在分支。 */
+  direction?: TopicDirection
+}
+
 export interface TopicSnapshot {
   id: string
   text: string
@@ -149,6 +188,8 @@ export interface TopicSnapshot {
   image?: TopicImage
   task?: TopicTask
   layoutHints?: TopicLayoutHints
+  /** 节点级骨架覆盖（结构 / 方向），优先于画布级 `chartType` 与 `layoutConfig.direction`。 */
+  structure?: TopicStructure
   /** 应用层扩展命名空间，不覆盖核心字段。 */
   extensions?: Record<string, unknown>
 }

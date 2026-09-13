@@ -6,6 +6,7 @@ import type {
   TopicLink,
   TopicMarker,
   TopicSnapshot,
+  TopicStructure,
   TopicStyleOverrides,
   TopicTask,
 } from '../document/types'
@@ -285,6 +286,13 @@ export function setTopicStyleOverrides(
   return invokeCommand<DocumentSessionSnapshot>('set_topic_style_overrides', {
     topic_id: topicId,
     style_overrides: styleOverrides,
+  })
+}
+
+export function setTopicStructure(topicId: string, structure: TopicStructure | null) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_structure', {
+    topic_id: topicId,
+    structure,
   })
 }
 

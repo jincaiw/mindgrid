@@ -490,6 +490,7 @@ mod tests {
                 }),
                 task: None,
                 layout_hints: None,
+                structure: None,
                 extensions: None,
                 extra: serde_json::Map::new(),
             }],
@@ -502,6 +503,7 @@ mod tests {
             image: None,
             task: None,
             layout_hints: None,
+            structure: None,
             extensions: None,
             extra: serde_json::Map::new(),
         });

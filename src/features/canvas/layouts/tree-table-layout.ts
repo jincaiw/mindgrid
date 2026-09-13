@@ -13,8 +13,9 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import { computeLayoutBounds, estimateNodeSize } from './layout-utils'
+import { footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
 /** 单元格统一宽度：表格需要列对齐，不能用内容自适应宽度。 */
 const CELL_WIDTH = 200
@@ -65,7 +66,13 @@ function visibleDepth(topic: TopicSnapshot, depth = 0): number {
   )
 }
 
-export function computeTreeTableLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
+export function computeTreeTableLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  /** 该子树在整幅图里的真实层级（子树单独布局时由调用方给出）。 */
+  const depthBase = options.depthBase ?? 0
+  const footprint: SubtreeFootprintResolver | undefined = options.subtreeFootprint
   const maxDepth = visibleDepth(rootTopic)
   const columnCenters = computeColumnCenters(maxDepth)
 
@@ -83,15 +90,21 @@ export function computeTreeTableLayout(rootTopic: TopicSnapshot): MindMapLayoutR
 
   /** 递归排布：先排完后代得到顶/底边，再让当前主题精确覆盖这段纵向区间。 */
   const place = (topic: TopicSnapshot, depth: number): RowSpan => {
-    const children = topic.collapsed ? [] : topic.children
-    const estimated = estimateNodeSize(topic, depth)
+    const override = footprint?.(topic.id)
+    // 换过骨架的子树：按真实占地占一段行区间，**不再往下排**
+    // （更深的层级由那份子布局自己排，塞进表格坐标系会错位）
+    const children = topic.collapsed || override ? [] : topic.children
+    const estimated = estimateNodeSize(topic, depth + depthBase)
 
     let top: number
     let bottom: number
 
     if (children.length === 0) {
       top = cursorY
-      bottom = cursorY + Math.max(MIN_CELL_HEIGHT, estimated.height)
+      const contentHeight = override
+        ? Math.max(estimated.height, footprintHalfHeight(override) * 2)
+        : estimated.height
+      bottom = cursorY + Math.max(MIN_CELL_HEIGHT, contentHeight)
       cursorY = bottom + ROW_GAP
     } else {
       const childSpans = children.map((child) => place(child, depth + 1))
@@ -107,7 +120,7 @@ export function computeTreeTableLayout(rootTopic: TopicSnapshot): MindMapLayoutR
     const node: MindMapNodeLayout = {
       id: topic.id,
       topic,
-      depth,
+      depth: depth + depthBase,
       side: 'center',
       x: columnCenters[Math.min(depth, columnCenters.length - 1)],
       y: (top + bottom) / 2,

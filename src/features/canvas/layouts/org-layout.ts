@@ -7,12 +7,13 @@
  */
 
 import type { TopicSnapshot } from '../../../lib/document/types'
-import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
+import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import {
   computeLayoutBounds,
   createVerticalEdgeGeometry,
   estimateNodeSize,
 } from './layout-utils'
+import { footprintHalfWidth, type SubtreeFootprintResolver } from './mixed-structure'
 
 const ROW_HEIGHT = 100
 const SIBLING_GAP = 20
@@ -25,16 +26,23 @@ interface OrgSubtree {
   children: OrgSubtree[]
 }
 
+/** 布局上下文：深度基准 + 子树足迹查询（见 layouts/mixed-structure）。 */
+interface OrgContext {
+  depthBase: number
+  footprint?: SubtreeFootprintResolver
+}
+
 function layoutOrgSubtree(
   topic: TopicSnapshot,
   depth: number,
   centerX: number,
+  ctx: OrgContext,
 ): OrgSubtree {
-  const size = estimateNodeSize(topic, depth)
+  const size = estimateNodeSize(topic, depth + ctx.depthBase)
   const node: MindMapNodeLayout = {
     id: topic.id,
     topic,
-    depth,
+    depth: depth + ctx.depthBase,
     side: 'center',
     x: centerX,
     y: depth * ROW_HEIGHT,
@@ -46,7 +54,28 @@ function layoutOrgSubtree(
     return { node, halfWidth: size.width / 2, children: [] }
   }
 
-  const children = topic.children.map((child) => layoutOrgSubtree(child, depth + 1, 0))
+  const children = topic.children.map((child) => {
+    const footprint = ctx.footprint?.(child.id)
+    if (footprint) {
+      // 换过骨架的子树当黑盒：按真实占地的半宽留出对称槽位，不再往下递归
+      const childSize = estimateNodeSize(child, depth + 1 + ctx.depthBase)
+      return {
+        node: {
+          id: child.id,
+          topic: child,
+          depth: depth + 1 + ctx.depthBase,
+          side: 'center' as const,
+          x: 0,
+          y: (depth + 1) * ROW_HEIGHT,
+          width: childSize.width,
+          height: childSize.height,
+        },
+        halfWidth: footprintHalfWidth(footprint),
+        children: [] as OrgSubtree[],
+      }
+    }
+    return layoutOrgSubtree(child, depth + 1, 0, ctx)
+  })
 
   // 计算子节点需要的总宽度
   let totalChildrenWidth = 0
@@ -91,8 +120,14 @@ function collectOrgNodes(
   }
 }
 
-export function computeOrgLayout(rootTopic: TopicSnapshot): MindMapLayoutResult {
-  const tree = layoutOrgSubtree(rootTopic, 0, 0)
+export function computeOrgLayout(
+  rootTopic: TopicSnapshot,
+  options: MindMapLayoutOptions = {},
+): MindMapLayoutResult {
+  const tree = layoutOrgSubtree(rootTopic, 0, 0, {
+    depthBase: options.depthBase ?? 0,
+    footprint: options.subtreeFootprint,
+  })
   const nodes: MindMapNodeLayout[] = []
   const edges: MindMapLayoutResult['edges'] = []
   collectOrgNodes(tree, nodes, edges)

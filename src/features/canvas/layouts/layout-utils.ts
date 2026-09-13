@@ -9,11 +9,22 @@ import type { TopicSnapshot } from '../../../lib/document/types'
 import type { MindMapEdgeLayout, MindMapNodeLayout } from '../mindmap-layout'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../mindmap-layout'
 import { getFontScale } from '../runtime/style-constants'
+import { footprintBlocks, footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
 export type LayoutSide = 'left' | 'right' | 'center'
 
 export interface SubtreeMetrics {
   leafCount: number
+}
+
+/** 子树留白度量所需的上下文（叶子块尺寸 + 子树足迹查询）。 */
+export interface BlockContext {
+  /** 叶子块尺寸：纵向块状骨架传块高，横向块状骨架传块宽。 */
+  leafBlock: number
+  /**
+   * 子树足迹查询：命中表示该子树换过骨架，按真实占地折算块数并**停止下钻**。
+   */
+  footprint?: SubtreeFootprintResolver
 }
 
 /**
@@ -53,14 +64,24 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
 }
 
 /** 度量子树：叶子数量（用于垂直分配空间）。 */
-export function measureSubtree(topic: TopicSnapshot): SubtreeMetrics {
+export function measureSubtree(
+  topic: TopicSnapshot,
+  ctx: BlockContext = { leafBlock: 80 },
+): SubtreeMetrics {
+  // 换过骨架的子树：按真实占地折算等价块数，**不再往下钻**——
+  // 更深的覆盖已由那次子树布局自己消化，父骨架看到的是一个黑盒。
+  const footprint = ctx.footprint?.(topic.id)
+  if (footprint) {
+    return { leafCount: footprintBlocks(footprintHalfHeight(footprint), ctx.leafBlock) }
+  }
+
   if (topic.collapsed || topic.children.length === 0) {
     return { leafCount: 1 }
   }
 
   return {
     leafCount: topic.children.reduce(
-      (sum, child) => sum + measureSubtree(child).leafCount,
+      (sum, child) => sum + measureSubtree(child, ctx).leafCount,
       0,
     ),
   }

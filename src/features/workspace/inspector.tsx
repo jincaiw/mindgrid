@@ -3,22 +3,26 @@ import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { findTopicById, flattenTopicTree, normalizeTopicIdsForBatch } from '../../lib/document/tree'
 import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
 import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
-import type {
-  DocumentSnapshot,
-  EdgeEndpoint,
-  EdgeType,
-  NumberingFormat,
-  Relationship,
-  SheetBranchStyle,
-  SheetNumbering,
-  TopicLink,
-  TopicBorderStyle,
-  TopicShape,
-  TopicStyleOverrides,
-  TopicTextAlign,
-  TopicTask,
-  TopicTaskStatus,
-  TopicTextTransform,
+import {
+  BRANCH_CHART_TYPES,
+  type ChartType,
+  type DocumentSnapshot,
+  type EdgeEndpoint,
+  type EdgeType,
+  type NumberingFormat,
+  type Relationship,
+  type SheetBranchStyle,
+  type SheetNumbering,
+  type TopicDirection,
+  type TopicLink,
+  type TopicBorderStyle,
+  type TopicShape,
+  type TopicStructure,
+  type TopicStyleOverrides,
+  type TopicTextAlign,
+  type TopicTask,
+  type TopicTaskStatus,
+  type TopicTextTransform,
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
@@ -41,6 +45,7 @@ import {
   NUMBERING_SEPARATORS,
 } from '../canvas/numbering'
 import { StructurePicker } from './structure-picker'
+import { CHART_TYPE_LABELS } from './chart-type-labels'
 import { SwatchPicker } from './swatch-picker'
 import { PaletteEditor } from './palette-editor'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
@@ -256,6 +261,22 @@ const LAYOUT_DIRECTION_OPTIONS: {
   { value: 'left', label: '左侧' },
   { value: 'right', label: '右侧' },
   { value: 'balanced', label: '平衡' },
+]
+
+/**
+ * 节点级「结构」下拉的选项：空串 = 跟随画布骨架。
+ *
+ * 只列 `BRANCH_CHART_TYPES`（气泡图与鱼骨图是整体版式，不做单分支骨架），
+ * 与布局层对外承诺的能力保持一致。
+ */
+const NODE_STRUCTURE_OPTIONS: readonly { value: ChartType; label: string }[] =
+  BRANCH_CHART_TYPES.map((value) => ({ value, label: CHART_TYPE_LABELS[value] }))
+
+/** 节点级「方向」：空串 = 跟随所在分支。 */
+const NODE_DIRECTION_OPTIONS: readonly { value: TopicDirection | ''; label: string }[] = [
+  { value: '', label: '跟随分支' },
+  { value: 'left', label: '向左' },
+  { value: 'right', label: '向右' },
 ]
 
 /** 画布背景预设：浅色为主（XMind 背景色板同样以浅色打底），末两项是深色。 */
@@ -502,6 +523,13 @@ export function Inspector({
   const [branchColorDraft, setBranchColorDraft] = useState(
     activeTopic?.styleOverrides?.branchColor ?? '',
   )
+  // 节点级骨架覆盖（空串 = 跟随画布骨架 / 跟随所在分支）
+  const [structureChartTypeDraft, setStructureChartTypeDraft] = useState<ChartType | ''>(
+    activeTopic?.structure?.chartType ?? '',
+  )
+  const [structureDirectionDraft, setStructureDirectionDraft] = useState<TopicDirection | ''>(
+    activeTopic?.structure?.direction ?? '',
+  )
   const [borderWidthDraft, setBorderWidthDraft] = useState<number | ''>(
     activeTopic?.styleOverrides?.borderWidth ?? '',
   )
@@ -637,6 +665,8 @@ export function Inspector({
     setStrikethroughDraft(activeTopic?.styleOverrides?.strikethrough === true)
     setTextTransformDraft(activeTopic?.styleOverrides?.textTransform ?? 'none')
     setBranchColorDraft(activeTopic?.styleOverrides?.branchColor ?? '')
+    setStructureChartTypeDraft(activeTopic?.structure?.chartType ?? '')
+    setStructureDirectionDraft(activeTopic?.structure?.direction ?? '')
     setTaskStatusDraft(activeTopic?.task?.status ?? 'none')
     setTaskPriorityDraft(
       activeTopic?.task?.priority != null ? String(activeTopic.task.priority) : '',
@@ -848,6 +878,33 @@ export function Inspector({
     })
     if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
       void session.setTopicStyleOverrides(activeTopic.id, next)
+    }
+  }
+
+  /**
+   * 写入节点级骨架覆盖（对齐 XMind 样式页「结构」）。两项全空则清除，回退画布骨架。
+   *
+   * 空字段不写进对象：`{ chartType: undefined }` 落盘后是噪音，也会让"清除"的判空失效。
+   */
+  const applyTopicStructure = (
+    patch: Partial<{ chartType: ChartType | ''; direction: TopicDirection | '' }>,
+  ) => {
+    const chartType = patch.chartType !== undefined ? patch.chartType : structureChartTypeDraft
+    const direction =
+      patch.direction !== undefined ? patch.direction : structureDirectionDraft
+    if (patch.chartType !== undefined) setStructureChartTypeDraft(patch.chartType)
+    if (patch.direction !== undefined) setStructureDirectionDraft(patch.direction)
+    if (!activeTopic) return
+
+    const next: TopicStructure | null =
+      chartType === '' && direction === ''
+        ? null
+        : {
+            ...(chartType ? { chartType } : {}),
+            ...(direction ? { direction } : {}),
+          }
+    if (JSON.stringify(activeTopic.structure ?? null) !== JSON.stringify(next)) {
+      void session.setTopicStructure(activeTopic.id, next)
     }
   }
 
@@ -1537,6 +1594,70 @@ export function Inspector({
                 </div>
               </PanelSection>
             ) : null}
+
+            {/* 节点级「结构 / 方向」：XMind 允许单个分支用不同于整幅图的骨架 */}
+            <PanelSection title="结构">
+              <p className="panel__muted">
+                给当前主题的子主题单独指定骨架与朝向（对齐 XMind 的节点级「结构 / 方向」）。
+                缺省继承画布骨架；挂在左侧的分支会自动镜像，朝外生长。
+              </p>
+
+              <div className="panel__field">
+                <span>子主题结构</span>
+                <select
+                  aria-label="子主题结构"
+                  value={structureChartTypeDraft}
+                  onChange={(event) => {
+                    applyTopicStructure({ chartType: event.target.value as ChartType | '' })
+                  }}
+                >
+                  <option value="">跟随画布骨架</option>
+                  {NODE_STRUCTURE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="panel__field">
+                <span>子主题方向</span>
+                <div className="panel__segmented" role="group" aria-label="子主题方向">
+                  {NODE_DIRECTION_OPTIONS.map((opt) => {
+                    const active = structureDirectionDraft === opt.value
+                    return (
+                      <button
+                        key={opt.label}
+                        type="button"
+                        className={`panel__seg${active ? ' panel__seg--active' : ''}`}
+                        aria-pressed={active}
+                        onClick={() => applyTopicStructure({ direction: opt.value })}
+                      >
+                        {opt.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <p className="panel__muted">
+                方向作用在「子主题往哪边长」；左侧分支声明向右会让它们越过本主题朝中心主题方向展开。
+              </p>
+
+              {activeTopic?.structure ? (
+                <button
+                  className="panel__action panel__action--ghost"
+                  type="button"
+                  onClick={() => {
+                    setStructureChartTypeDraft('')
+                    setStructureDirectionDraft('')
+                    applyTopicStructure({ chartType: '', direction: '' })
+                  }}
+                >
+                  清除结构覆盖
+                </button>
+              ) : null}
+            </PanelSection>
 
             <PanelSection title="分支样式">
               <p className="panel__muted">

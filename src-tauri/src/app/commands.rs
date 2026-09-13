@@ -1,7 +1,7 @@
 use crate::app::assets::AssetStore;
 use crate::domain::document::{
     DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
-    SheetBranchStyle, SheetNumbering, TopicImage, TopicLink, TopicMarker, TopicStyleOverrides,
+    SheetBranchStyle, SheetNumbering, TopicImage, TopicLink, TopicMarker, TopicStructure, TopicStyleOverrides,
     TopicTask,
 };
 use crate::AppState;
@@ -907,6 +907,24 @@ pub fn set_topic_style_overrides(
         .map_err(|_| "unable to acquire document state".to_string())?;
 
     guard.set_topic_style_overrides(&topic_id, style_overrides)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 设置节点级骨架覆盖（结构 / 方向）；`None` 清除，回退到画布骨架。
+#[tauri::command]
+pub fn set_topic_structure(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    structure: Option<TopicStructure>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_structure(&topic_id, structure)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
