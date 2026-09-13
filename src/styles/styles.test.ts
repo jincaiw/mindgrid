@@ -16,6 +16,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import { COLORS } from '../features/canvas/runtime/style-constants'
+import {
+  TOPIC_IMAGE_BLOCK,
+  TOPIC_IMAGE_GAP,
+  TOPIC_IMAGE_MAX_HEIGHT,
+  TOPIC_IMAGE_MAX_WIDTH,
+  TOPIC_IMAGE_RADIUS,
+  TOPIC_IMAGE_TITLE_OFFSET,
+} from '../features/canvas/runtime/topic-image-constants'
 import globalCssSource from './global.css?raw'
 import tokensCssSource from './tokens.css?raw'
 
@@ -279,5 +287,58 @@ describe('色板浮层选中态', () => {
 
   it('色带高度与基准图的行高节奏一致（约 26px）', () => {
     expect(blockBodyOf('.swatch-picker__strip > span')).toMatch(/height:\s*26px/)
+  })
+})
+
+/**
+ * 主题图片的版面守卫（2026-09-13）。
+ *
+ * 背景：节点曾用默认的 `display: flex`（row）排图片与标题——图片与标题**并排**，
+ * 图片吃掉横向空间后标题被挤成"一列单字"。三端几何常量、单测、jsdom 全都发现不了：
+ * DOM 顺序确实是 img 在前，jsdom 又不做布局。只有在真引擎里量/看才暴露出来
+ * （见 `dev/capture-topic-image.mjs`）。
+ *
+ * 所以这里守住两件 CSS 层面的事，数值一律对着 topic-image-constants 的常量：
+ *   1. 带图节点必须**纵排**（图片在上、标题在下）
+ *   2. 图片槽位必须**固定高**，不能只给 max-height —— 只给上限时图片盒贴合自身
+ *      比例（400×100 的宽图盒高只有 29），标题会紧贴图片往上跑，而布局与导出端
+ *      恒定按 TOPIC_IMAGE_TITLE_OFFSET=96 下移标题，屏幕与导出就对不上了。
+ */
+describe('主题图片的版面与槽位几何', () => {
+  const css = stripComments(globalCssSource)
+
+  /** 取出某个选择器的声明块（含嵌套的简单情形） */
+  function ruleBody(selector: string): string {
+    const index = css.indexOf(selector)
+    expect(index, `global.css 中未找到选择器 ${selector}`).toBeGreaterThanOrEqual(0)
+    const open = css.indexOf('{', index)
+    return css.slice(open + 1, css.indexOf('}', open))
+  }
+
+  it('带图节点改为纵排：图片在上、标题在下', () => {
+    const body = ruleBody('.mindmap-node--with-image')
+    expect(body).toMatch(/flex-direction:\s*column/)
+    // 内容自顶排布，与导出端"图片落在上内边距"一致（居中会与预留的 96 错开）
+    expect(body).toMatch(/justify-content:\s*flex-start/)
+  })
+
+  it('图片槽位固定高、宽与圆角都取自常量', () => {
+    const body = ruleBody('.mindmap-node--with-image .mindmap-node__image')
+    expect(body).toMatch(new RegExp(`height:\\s*${TOPIC_IMAGE_MAX_HEIGHT}px`))
+    expect(body).toMatch(new RegExp(`max-width:\\s*${TOPIC_IMAGE_MAX_WIDTH}px`))
+    expect(body).toMatch(new RegExp(`margin:[^;]*${TOPIC_IMAGE_GAP}px`))
+  })
+
+  it('基础图片规则与常量一致（圆角 / 上限 / 间距）', () => {
+    const body = ruleBody('.mindmap-node__image')
+    expect(body).toMatch(new RegExp(`border-radius:\\s*${TOPIC_IMAGE_RADIUS}px`))
+    expect(body).toMatch(new RegExp(`max-height:\\s*${TOPIC_IMAGE_MAX_HEIGHT}px`))
+    expect(body).toMatch(`min(${TOPIC_IMAGE_MAX_WIDTH}px, 100%)`)
+    expect(body).toMatch(new RegExp(`margin:[^;]*${TOPIC_IMAGE_GAP}px`))
+  })
+
+  it('槽位高 + 间距 = 布局预留（否则不是溢出节点就是留空）', () => {
+    expect(TOPIC_IMAGE_MAX_HEIGHT + TOPIC_IMAGE_GAP).toBe(TOPIC_IMAGE_BLOCK)
+    expect(TOPIC_IMAGE_TITLE_OFFSET).toBe(TOPIC_IMAGE_BLOCK)
   })
 })

@@ -3509,6 +3509,8 @@ button {
 }
 
 /* 主题图片：渲染在标题上方，限幅居中，缺图时不渲染元素（不留空白框） */
+/* 主题图片几何：与 runtime/topic-image-constants.ts、canvas-renderer、svg-renderer 同源。
+   数值由 styles.test.ts 对着常量做静态守卫，别单独改这里。 */
 .mindmap-node__image {
   display: block;
   /* 与 runtime/topic-image-constants.ts 的 TOPIC_IMAGE_MAX_WIDTH / TOPIC_IMAGE_MAX_HEIGHT 对齐。
@@ -3524,6 +3526,33 @@ button {
   object-fit: contain;
   pointer-events: none;
   user-select: none;
+}
+
+/* 带图节点：图片在**上**、标题在**下**——与 Canvas/PNG 和 SVG/PDF 两端一致。
+   ⚠️ 少了 flex-direction: column，节点会用默认的 row 把图片和标题排成一行：
+   图片吃掉横向空间后，标题被挤成"一列单字"（"中心主题"竖排）。
+   这是**实测出来的**缺陷（dev/capture-topic-image.mjs 的截图里一眼可见），
+   而三端几何常量、单测、jsdom 全都发现不了它——只有真引擎里量/看才知道。
+   注意这里用 align-items: stretch：标题占满内容宽，节点的 textAlign 覆盖才有效；
+   图片靠自身的 margin: 0 auto 居中（等价 computeTopicImageRect 的水平居中）。 */
+.mindmap-node--with-image {
+  flex-direction: column;
+  align-items: stretch;
+  /* 内容自顶排布，与导出端「图片落在上内边距、标题下移 96」一致 */
+  justify-content: flex-start;
+}
+
+/* 图片槽位必须**固定高 88**，不能只给 max-height。
+   只给 max-height 时图片盒会贴合自身比例（400×100 的宽图盒高只有 29），
+   标题就紧贴着图片往上跑；而布局与导出端恒定按 TOPIC_IMAGE_TITLE_OFFSET=96 下移标题，
+   于是屏幕与导出的版面又对不上。固定槽位 + object-fit: contain 恰好等价于
+   computeTopicImageRect + computeTopicImageFittedRect（图在槽内等比居中）。 */
+.mindmap-node--with-image .mindmap-node__image {
+  width: 100%;
+  max-width: 200px;
+  height: 88px;
+  /* 槽位窄于节点内宽时水平居中（TOPIC_IMAGE_GAP = 8） */
+  margin: 0 auto 8px;
 }
 
 .mindmap-node__title {

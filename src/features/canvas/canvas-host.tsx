@@ -1927,13 +1927,25 @@ function MindMapNode({
         ? { left: `${left - toggleHalf}px`, top: `${top + node.height / 2 - toggleHalf}px` }
         : { left: `${left + node.width - toggleHalf}px`, top: `${top + node.height / 2 - toggleHalf}px` }
 
+  // 主题图片元素：编辑态与非编辑态共用一份，避免两条分支各写一遍（曾因此让图片
+  // 在进入编辑时凭空消失、节点高度内边距同时跳变）。
+  const topicImageElement = imageUrl ? (
+    <img
+      className="mindmap-node__image"
+      src={imageUrl}
+      alt={`${node.topic.text} 的主题图片`}
+      draggable={false}
+    />
+  ) : null
+
   if (isEditing) {
     return (
       <>
         <div
-          className={`mindmap-node mindmap-node--${node.side}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''} mindmap-node--editing`}
+          className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${imageUrl ? ' mindmap-node--with-image' : ''}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''} mindmap-node--editing`}
           style={baseStyle}
         >
+          {topicImageElement}
           <textarea
             className="mindmap-node__editor"
             aria-label="内联编辑主题"
@@ -2008,7 +2020,7 @@ function MindMapNode({
   return (
     <>
       <button
-        className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''}${isDropTarget ? ' mindmap-node--drop-target' : ''}${dragOffset ? ' mindmap-node--dragging' : ''}${isAppearing ? ' mindmap-node--appear' : ''}`}
+        className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${imageUrl ? ' mindmap-node--with-image' : ''}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''}${isDropTarget ? ' mindmap-node--drop-target' : ''}${dragOffset ? ' mindmap-node--dragging' : ''}${isAppearing ? ' mindmap-node--appear' : ''}`}
         style={baseStyle}
         type="button"
         data-topic-id={node.id}
@@ -2018,14 +2030,7 @@ function MindMapNode({
         onContextMenu={(event) => onContextMenu(event, node.id)}
         onAnimationEnd={() => onAppearEnd(node.id)}
       >
-        {imageUrl ? (
-          <img
-            className="mindmap-node__image"
-            src={imageUrl}
-            alt={`${node.topic.text} 的主题图片`}
-            draggable={false}
-          />
-        ) : null}
+        {topicImageElement}
         <span className="mindmap-node__title" style={titleStyle}>
           {numberText ? <span className="mindmap-node__number">{numberText}</span> : null}
           {node.topic.text}
