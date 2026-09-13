@@ -4051,10 +4051,12 @@ button {
 }
 
 .swatch-picker__popover {
-  /* portal 到 body 的 fixed 浮层，坐标由 usePopoverAnchor 计算 */
+  /* portal 到 body 的 fixed 浮层，坐标由 usePopoverAnchor 计算。
+     宽度 300：基准图 11 里 XMind 的配色方案浮层实测约 300–310 逻辑px
+     （文字列 x 与色带右缘两条推算互证），248 明显偏窄。 */
   position: fixed;
   z-index: 60;
-  width: 248px;
+  width: 300px;
   max-width: calc(100vw - 24px);
   padding: 10px 12px 12px;
   border: 1px solid var(--color-border-default);
@@ -4063,31 +4065,33 @@ button {
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
 }
 
+/* 两列；行距按基准图的 60 逻辑px 行高节奏（名称 15 + 间距 6 + 色带 26 + 行距 12） */
 .swatch-picker__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 12px 20px;
 }
 
+/* 单元格本身不描边：基准图里只有选中项的**色带**带强调色描边，
+   给每个格子都加边框会让整片浮层看起来全是选中态。 */
 .swatch-picker__option {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border: 1px solid var(--color-border-default);
-  border-radius: 8px;
+  gap: 6px;
+  padding: 0;
+  border: none;
   background: transparent;
   cursor: pointer;
 }
 
-.swatch-picker__option:hover {
-  border-color: var(--color-accent);
-  background: var(--color-accent-06);
+.swatch-picker__option:hover .swatch-picker__strip {
+  outline: 2px solid var(--color-border-strong);
+  outline-offset: 1px;
 }
 
-.swatch-picker__option--selected {
-  border-color: var(--color-accent);
-  background: var(--color-accent-10);
+.swatch-picker__option--selected .swatch-picker__strip {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .swatch-picker__strip {
@@ -4099,7 +4103,7 @@ button {
 
 .swatch-picker__strip > span {
   flex: 1;
-  height: 14px;
+  height: 26px;
 }
 
 .swatch-picker__option-name {

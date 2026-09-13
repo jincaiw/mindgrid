@@ -55,7 +55,6 @@ import { SwatchPicker } from './swatch-picker'
 import { PaletteEditor } from './palette-editor'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
 import {
-  BRANCH_PALETTE_PRESETS as CANVAS_BRANCH_PALETTES,
   BRANCH_THICKNESS_OPTIONS,
   CANVAS_SETTINGS_KEYS,
   CJK_FONT_OPTIONS,
@@ -2111,47 +2110,9 @@ export function Inspector({
                   onDelete={deleteCustomPalette}
                 />
               ) : null}
-              <div className="panel__field">
-                <span>调色板</span>
-                <div
-                  className="panel__palette-grid"
-                  role="radiogroup"
-                  aria-label="画布调色板预设"
-                >
-                  {CANVAS_BRANCH_PALETTES.map((preset) => {
-                    const active = canvasSettings.branchPalette === preset.id
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        className={`panel__palette-swatch${
-                          active ? ' panel__palette-swatch--active' : ''
-                        }`}
-                        title={preset.label}
-                        onClick={() =>
-                          void session.setDocumentSetting(
-                            CANVAS_SETTINGS_KEYS.branchPalette,
-                            preset.id,
-                          )
-                        }
-                      >
-                        <span className="panel__palette-strip">
-                          {preset.colors.map((color, index) => (
-                            <span
-                              key={index}
-                              className="panel__palette-dot"
-                              style={{ background: color }}
-                            />
-                          ))}
-                        </span>
-                        <span className="panel__palette-name">{preset.label}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+              {/* 这里曾有一个内联的「调色板」网格，与上方「分支色板」浮层写的是同一个设置
+                  （canvas.branchPalette），而且只能选内置预设、选不到自定义配色。
+                  XMind 的配色方案只有一个触发器（色带 + 名称 + ▾），故删除重复控件。 */}
 
             </PanelSection>
 

@@ -249,3 +249,35 @@ describe('内联编辑态文字色', () => {
     expect(placeholder).not.toMatch(/(?<![-\w])color\s*:/)
   })
 })
+
+/**
+ * 色板浮层的选中态形态守卫。
+ *
+ * 基准图 11（XMind 配色方案浮层）：**单元格本身没有边框**，
+ * 只有选中项的**色带**带一圈强调色描边。早先实现是给每个格子都描边、
+ * 选中时把格子边框染成强调色 —— 整片浮层看起来"全是选中态"。
+ */
+describe('色板浮层选中态', () => {
+  const css = stripComments(globalCssSource)
+
+  const blockBodyOf = (selector: string): string => {
+    const escaped = selector.replace(/[.*+?^$()|[\]\\]/g, '\\$&')
+    return css.match(new RegExp(escaped + '\\s*\\{([^}]*)\\}'))?.[1] ?? ''
+  }
+
+  it('单元格不描边', () => {
+    const body = blockBodyOf('.swatch-picker__option')
+    expect(body).not.toBe('')
+    expect(body).toMatch(/border:\s*none/)
+  })
+
+  it('选中态描边落在色带上', () => {
+    const body = blockBodyOf('.swatch-picker__option--selected .swatch-picker__strip')
+    expect(body).not.toBe('')
+    expect(body).toMatch(/outline:\s*2px solid var\(--color-accent\)/)
+  })
+
+  it('色带高度与基准图的行高节奏一致（约 26px）', () => {
+    expect(blockBodyOf('.swatch-picker__strip > span')).toMatch(/height:\s*26px/)
+  })
+})

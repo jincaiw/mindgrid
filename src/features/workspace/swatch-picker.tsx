@@ -134,12 +134,14 @@ export function SwatchPicker({
                         setOpen(false)
                       }}
                     >
+                      {/* 名称在上、色带在下：与 XMind 配色方案浮层一致
+                          （基准图 11 沿竖直方向的取色剖面确认了这个顺序） */}
+                      <span className="swatch-picker__option-name">{option.label}</span>
                       <span className="swatch-picker__strip">
                         {option.colors.map((color) => (
                           <span key={color} style={{ background: color }} />
                         ))}
                       </span>
-                      <span className="swatch-picker__option-name">{option.label}</span>
                     </button>
                   )
                 })}
