@@ -106,6 +106,7 @@ pub fn run() {
             app::commands::create_summary,
             app::commands::delete_summary,
             app::commands::move_topic,
+            app::commands::delete_topic_only,
             app::commands::move_topics,
             app::commands::move_topic_in_parent,
             app::commands::move_topic_to_sheet,

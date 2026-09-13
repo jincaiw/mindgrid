@@ -1832,6 +1832,65 @@ impl<'a> DocumentEditor<'a> {
         Ok(self.document.root_topic().id.clone())
     }
 
+    /// 删除主题但**保留其子主题**（子主题上提到被删主题原来的位置）。
+    ///
+    /// 对齐 XMind 编辑菜单的「删除单个主题 ⌥⌫」：与 `delete_topics`（连同子树一起删）
+    /// 的区别就在这一点。
+    ///
+    /// 不新增操作类型：用已有的 `RemoveTopic` + 逐个 `InsertTopic` 组成**同一个 ChangeSet**，
+    /// `apply_inverse` 按逆序回滚（先按序插回子主题、最后插回该主题本身）即可精确还原。
+    pub fn delete_topic_only(&mut self, topic_ids: &[String]) -> Result<String, String> {
+        if topic_ids.is_empty() {
+            return Err("没有可删除的主题".into());
+        }
+
+        let sheet_id = self.active_sheet_id();
+        let root_topic_id = self.document.root_topic().id.clone();
+        let root_topic_clone = self.document.root_topic().clone();
+
+        // 浮动主题没有父子结构，"保留子主题"对它无意义，按普通删除处理
+        let floating_ids: Vec<String> = {
+            let sheet = self
+                .document
+                .find_sheet(&sheet_id)
+                .ok_or_else(|| "找不到活动画布".to_string())?;
+            topic_ids
+                .iter()
+                .filter(|id| {
+                    id != &&root_topic_id && sheet.floating_topics.iter().any(|t| &t.id == *id)
+                })
+                .cloned()
+                .collect()
+        };
+        for fid in &floating_ids {
+            self.remove_floating_topic(&sheet_id, fid);
+        }
+
+        let normalized_topic_ids = normalize_topic_ids_for_delete(&root_topic_clone, topic_ids)?;
+        for topic_id in normalized_topic_ids {
+            if topic_id == root_topic_id {
+                return Err("根主题不能删除".into());
+            }
+
+            let Some((parent_id, index)) = find_parent_id_and_index(
+                &self.document.root_topic(),
+                &topic_id,
+            ) else {
+                continue
+            };
+            let Some(removed) = self.remove_topic_by_id(&sheet_id, &topic_id) else {
+                continue
+            };
+
+            // 子主题按原顺序上提到被删主题的位置
+            for (offset, child) in removed.children.into_iter().enumerate() {
+                self.insert_topic(&sheet_id, &parent_id, index + offset, child);
+            }
+        }
+
+        Ok(self.document.root_topic().id.clone())
+    }
+
     pub fn move_topic_to_parent(&mut self, topic_id: &str, target_parent_id: &str) -> Result<String, String> {
         self.move_topic_to_parent_at(topic_id, target_parent_id, None)
     }

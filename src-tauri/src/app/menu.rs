@@ -140,6 +140,9 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             "edit.delete-topic",
             &format!("删除主题{}", plain("Delete")),
         )?)
+        // 只摘掉该主题本身、子主题上提。XMind 绑定 ⌥⌫，我们尚未注册该组合键，
+        // 所以**不写快捷键提示**——菜单标签不能出现按了没反应的提示。
+        .item(&item(handle, "edit.delete-topic-only", "删除单个主题")?)
         .separator()
         .item(&item(handle, "edit.indent", "缩进")?)
         .item(&item(handle, "edit.outdent", "减少缩进")?)

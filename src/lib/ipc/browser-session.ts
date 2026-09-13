@@ -1393,6 +1393,30 @@ export async function invokeBrowserCommand<TResult>(
         return keepActiveTopicId(draft)
       }) as TResult
     }
+    case 'delete_topic_only': {
+      const topicIds = Array.isArray(payload.topic_ids)
+        ? payload.topic_ids.map((id) => String(id))
+        : []
+
+      return applyMutation('删除单个主题', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+
+        for (const topicId of topicIds) {
+          if (topicId === rootTopic.id) {
+            throw new Error('根主题不能删除')
+          }
+          const match = findParentTopicByChildId(rootTopic, topicId)
+          if (!match) {
+            continue
+          }
+          // 摘掉该主题，把它的子主题按原顺序上提到它原来的位置
+          const [removed] = match.parent.children.splice(match.index, 1)
+          match.parent.children.splice(match.index, 0, ...removed.children)
+        }
+
+        return rootTopic.id
+      }) as TResult
+    }
     case 'move_topic': {
       const topicId = String(payload.topic_id)
       const targetParentId = String(payload.target_parent_id)

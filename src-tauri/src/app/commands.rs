@@ -1116,6 +1116,23 @@ pub fn delete_summary(
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
 
+/// 删除主题但保留其子主题（子主题上提到原位置），对齐 XMind 的「删除单个主题」。
+#[tauri::command]
+pub fn delete_topic_only(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_ids: Vec<String>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.delete_topic_only(topic_ids)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
 #[tauri::command]
 pub fn move_topic(
     app: AppHandle,

@@ -37,6 +37,7 @@ export type MenuActionId =
   | 'edit.paste'
   | 'edit.duplicate'
   | 'edit.delete-topic'
+  | 'edit.delete-topic-only'
   | 'edit.copy-style'
   | 'edit.paste-style'
   | 'edit.reset-style'
@@ -109,6 +110,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'edit.paste',
   'edit.duplicate',
   'edit.delete-topic',
+  'edit.delete-topic-only',
   'edit.copy-style',
   'edit.paste-style',
   'edit.reset-style',

@@ -52,6 +52,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setTopicsCollapsed: asyncNoop(),
     deleteTopic: asyncNoop(),
     deleteTopics: asyncNoop(),
+    deleteTopicOnly: asyncNoop(),
     setTopicStyleRef: asyncNoop(),
     setTopicStyleOverrides: asyncNoop(),
     createChildTopic: asyncNoop(),
@@ -496,5 +497,48 @@ describe('插入 → 自由主题', () => {
     runMenuCommand('insert.free-topic', ctx)
 
     expect(session.createFloatingTopic).not.toHaveBeenCalled()
+  })
+})
+
+describe('删除单个主题', () => {
+  it('单选时删当前主题', () => {
+    const { ctx, session } = makeHarness({ activeTopicId: 'topic_a' })
+
+    runMenuCommand('edit.delete-topic-only', ctx)
+
+    expect(session.deleteTopicOnly).toHaveBeenCalledWith(['topic_a'])
+  })
+
+  it('多选时整体删（一次命令，与「删除主题」的多选行为一致）', () => {
+    const { ctx, session } = makeHarness({
+      activeTopicId: 'topic_a',
+      selectedTopicIds: ['topic_a', 'topic_b'],
+    })
+
+    runMenuCommand('edit.delete-topic-only', ctx)
+
+    expect(session.deleteTopicOnly).toHaveBeenCalledWith(['topic_a', 'topic_b'])
+  })
+
+  it('回退到中心主题时给提示且不调用（中心主题不可删）', () => {
+    // resolveTopicId 的最后一级回退是中心主题；这一层要自己挡掉，
+    // 不能把"中心主题不能删除"当错误弹出来
+    const { ctx, session, notify } = makeHarness({ activeTopicId: null })
+
+    runMenuCommand('edit.delete-topic-only', ctx)
+
+    expect(session.deleteTopicOnly).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalled()
+  })
+
+  it('多选里含中心主题时只删其余主题', () => {
+    const { ctx, session } = makeHarness({
+      activeTopicId: null,
+      selectedTopicIds: ['topic_root', 'topic_b'],
+    })
+
+    runMenuCommand('edit.delete-topic-only', ctx)
+
+    expect(session.deleteTopicOnly).toHaveBeenCalledWith(['topic_b'])
   })
 })

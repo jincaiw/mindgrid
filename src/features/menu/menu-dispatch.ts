@@ -157,6 +157,23 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       }
       return
     }
+    // 删除单个主题 = 只摘掉该主题本身，**子主题上提到它的位置**（XMind 的 ⌥⌫）。
+    // 多选时整体处理（一次命令、一条撤销记录），与「删除主题」的多选行为一致。
+    case 'edit.delete-topic-only': {
+      const fallbackId = resolveTopicId(ctx)
+      const topicIds =
+        ctx.selectedTopicIds.length > 0 ? ctx.selectedTopicIds : fallbackId ? [fallbackId] : []
+      // resolveTopicId 的最后一级回退是**中心主题**，它不可删。
+      // 这一层要自己挡掉：否则会把"中心主题不能删除"当错误弹出来，
+      // 而正确表现是给一句提示、什么都不做。
+      const deletable = topicIds.filter((id) => id !== ctx.activeSheet?.rootTopic.id)
+      if (deletable.length === 0) {
+        ctx.notify('中心主题不能删除')
+        return
+      }
+      void session.deleteTopicOnly(deletable)
+      return
+    }
     // —— 缩进 / 减少缩进（对齐 XMind 编辑菜单）——
     // 缩进 = 成为**上一个同级主题**的最后一个子主题（XMind/大纲工具的通行语义）。
     // 没有上一个同级主题（自己是第一个）时无处可缩，给一句提示而不是静默失败。

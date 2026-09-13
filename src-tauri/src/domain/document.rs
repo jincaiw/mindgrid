@@ -963,6 +963,16 @@ impl DocumentSession {
         self.apply_change_set(&label, |editor| editor.delete_topics(topic_ids))
     }
 
+    /// 删除主题但保留其子主题（子主题上提），对齐 XMind 的「删除单个主题」。
+    pub fn delete_topic_only(
+        &mut self,
+        topic_ids: Vec<String>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("删除单个主题", |editor| {
+            editor.delete_topic_only(&topic_ids)
+        })
+    }
+
     pub fn move_topic(
         &mut self,
         topic_id: &str,
@@ -1767,6 +1777,65 @@ mod tests {
         assert_eq!(undone.summary.topic_count, 4);
         assert_eq!(redone.summary.topic_count, 5);
         assert!(redone.can_undo);
+    }
+
+    /// 「删除单个主题」：只摘掉该主题本身，**子主题上提到它的位置**；撤销可精确还原。
+    ///
+    /// 实现上不新增操作类型，而是用 RemoveTopic + 逐个 InsertTopic 组成同一个 ChangeSet，
+    /// 撤销时 apply_inverse 按逆序回滚——所以这里要连"撤销后子主题回到原位"一起断言，
+    /// 否则逆序回滚写错方向也测不出来。
+    #[test]
+    fn delete_topic_only_promotes_children_and_inverts() {
+        let mut session = DocumentSession::create_default();
+        let branch_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[1]
+            .id
+            .clone();
+
+        // branch → a → b
+        let a_id = session
+            .create_child_topic(&branch_id)
+            .expect("应能建子主题")
+            .active_topic_id;
+        let b_id = session
+            .create_child_topic(&a_id)
+            .expect("应能在 a 下建子主题")
+            .active_topic_id;
+
+        let after = session
+            .delete_topic_only(vec![a_id.clone()])
+            .expect("删除单个主题应成功");
+        let branch = super::find_topic(after.document.root_topic(), &branch_id)
+            .expect("分支主题应存在");
+        assert_eq!(branch.children.len(), 1);
+        assert_eq!(branch.children[0].id, b_id, "a 的子主题 b 应上提到 a 的位置");
+
+        let undone = session.undo().expect("undo should succeed");
+        let branch = super::find_topic(undone.document.root_topic(), &branch_id)
+            .expect("分支主题应存在");
+        assert_eq!(branch.children.len(), 1);
+        assert_eq!(branch.children[0].id, a_id, "撤销后 a 应回到原位置");
+        assert_eq!(branch.children[0].children.len(), 1);
+        assert_eq!(branch.children[0].children[0].id, b_id, "b 应回到 a 下面");
+    }
+
+    /// 根主题不能被「删除单个主题」删掉。
+    #[test]
+    fn delete_topic_only_rejects_root() {
+        let mut session = DocumentSession::create_default();
+        let root_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .id
+            .clone();
+
+        assert!(session.delete_topic_only(vec![root_id]).is_err());
     }
 
     /// 「减少缩进」依赖的**带位置**移动：主题要落在目标父主题的指定下标，

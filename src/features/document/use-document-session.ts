@@ -19,6 +19,7 @@ import {
   deleteSheet,
   deleteSummary,
   deleteTopic,
+  deleteTopicOnly,
   deleteTopics,
   exportMarkdownFile,
   exportOpmlFile,
@@ -151,6 +152,8 @@ export interface DocumentSession extends DocumentSessionState {
   renameTopic: (topicId: string, text: string) => Promise<void>
   deleteTopic: (topicId: string) => Promise<void>
   deleteTopics: (topicIds: string[], actionLabel?: string) => Promise<void>
+  /** 删除主题但保留其子主题（子主题上提），对齐 XMind 的「删除单个主题」 */
+  deleteTopicOnly: (topicIds: string[]) => Promise<void>
   toggleTopicCollapsed: (topicId: string) => Promise<void>
   /** 批量展开 / 折叠：整批落在同一条历史记录里，一次撤销即可回退。 */
   setTopicsCollapsed: (topicIds: string[], collapsed: boolean) => Promise<void>
@@ -1456,6 +1459,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const deleteSelectedTopicsOnly = useCallback(
+    async (topicIds: string[]) => {
+      await runCommand('删除单个主题', () => deleteTopicOnly(topicIds))
+    },
+    [runCommand],
+  )
+
   const moveActiveTopic = useCallback(
     async (
       topicId: string,
@@ -1647,6 +1657,7 @@ export function useDocumentSession(): DocumentSession {
       renameTopic: renameActiveTopic,
       deleteTopic: deleteActiveTopic,
       deleteTopics: deleteMultipleTopics,
+      deleteTopicOnly: deleteSelectedTopicsOnly,
       toggleTopicCollapsed: toggleCollapsedTopic,
       setTopicsCollapsed: collapseTopicsBatch,
       setTopicNotes: updateTopicNotes,
