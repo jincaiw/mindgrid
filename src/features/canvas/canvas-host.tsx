@@ -159,6 +159,15 @@ interface CanvasHostProps {
 
 const HISTORY_FOCUS_HIGHLIGHT_MS = 1600
 
+/**
+ * 没有浮动主题时的稳定空数组。
+ *
+ * `activeSheet.floatingTopics ?? []` 每次都新建一个数组，于是所有以它为依赖的
+ * memo / useCallback 每渲染都失效一次（其中就有指针抬起处理器）。
+ * 与 workspace-screen 的 EMPTY_SEARCH_RESULTS 同一手法：**同一语义只用一个引用**。
+ */
+const EMPTY_FLOATING_TOPICS: TopicSnapshot[] = []
+
 const EDGE_AUTO_PAN_THRESHOLD = 72
 const EDGE_AUTO_PAN_MAX_STEP = 18
 
@@ -2218,7 +2227,7 @@ function TreeWorkspace({
   } = session
   const activeSheet = getActiveSheet(session.document!)
   const rootTopic = activeSheet.rootTopic
-  const floatingTopics = activeSheet.floatingTopics ?? []
+  const floatingTopics = activeSheet.floatingTopics ?? EMPTY_FLOATING_TOPICS
   // 文档级画布设置。必须 useMemo：进 MindMapScene 的 effect 依赖数组，
   // 每次渲染新建对象会让场景反复重建。
   const canvasSettings = useMemo(
