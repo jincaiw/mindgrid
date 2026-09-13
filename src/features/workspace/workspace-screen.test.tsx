@@ -3114,3 +3114,57 @@ it('opens the canvas search with Cmd/Ctrl + F instead of a toolbar button', () =
 
   expect(screen.getByRole('textbox', { name: '搜索主题' })).toBeInTheDocument()
 })
+
+/**
+ * 样式页首屏的两个新元素（对齐 XMind）：
+ * 1. 选中主题预览条 —— 必须与画布**同源解析**，否则是另一个"说谎的 UI"；
+ * 2. 分组标题可折叠。
+ */
+it('样式页预览条用与画布同源的解析结果（节点级填充覆盖会反映到预览上）', () => {
+  const base = sessionStub.document!
+  const root = base.sheets[0].rootTopic
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={
+        {
+          ...sessionStub,
+          activeTopicId: 'topic_root',
+          document: {
+            ...base,
+            sheets: [
+              {
+                ...base.sheets[0],
+                rootTopic: { ...root, styleOverrides: { fill: '#123456' } },
+              },
+            ],
+          },
+        } as DocumentSession
+      }
+    />,
+  )
+
+  const preview = openInspectorStyleTab().getByLabelText('选中主题预览')
+  const chip = within(preview).getByText('中心主题')
+
+  // #123456 在 DOM 里规范化为 rgb(18, 52, 86)：写死颜色的实现不会得到这个值
+  expect((chip as HTMLElement).style.backgroundColor).toBe('rgb(18, 52, 86)')
+})
+
+it('分组标题可折叠：收起后该分组内的控件消失，再展开回来', () => {
+  renderWithApp(<WorkspaceScreen session={sessionStub} />)
+  const inspector = openInspectorStyleTab()
+
+  const toggle = inspector.getByRole('button', { name: '形状' })
+  expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  expect(inspector.getByText('边框线型')).toBeTruthy()
+
+  fireEvent.click(toggle)
+
+  expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  expect(inspector.queryByText('边框线型')).toBeNull()
+
+  fireEvent.click(toggle)
+
+  expect(inspector.getByText('边框线型')).toBeTruthy()
+})

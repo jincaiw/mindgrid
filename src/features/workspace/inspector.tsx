@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
-import { findTopicById, flattenTopicTree, normalizeTopicIdsForBatch } from '../../lib/document/tree'
+import {
+  findAncestorTopicIds,
+  findTopicById,
+  flattenTopicTree,
+  normalizeTopicIdsForBatch,
+} from '../../lib/document/tree'
+import { resolveTopicStyle } from '../canvas/runtime/style-resolver'
 import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
 import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
 import {
@@ -53,7 +59,7 @@ import {
 } from './structure-directions'
 import { SwatchPicker } from './swatch-picker'
 import { PaletteEditor } from './palette-editor'
-import { GridIcon, PlayIcon, TypeIcon } from './icons'
+import { ChevronDownIcon, GridIcon, PlayIcon, TypeIcon } from './icons'
 import {
   BRANCH_THICKNESS_OPTIONS,
   CANVAS_SETTINGS_KEYS,
@@ -72,6 +78,17 @@ import {
  * 没有折叠 chevron、没有可点击的标题行。此前那套「EYEBROW + 中文标题 + 折叠箭头」
  * 是本项目自创的样式，在实机对照里一眼就能看出和 XMind 不是一家。
  */
+/**
+ * 分组小节。对齐 XMind 的两点：
+ * 标题可折叠（展开 ▾ / 收起 ▸），默认展开。
+ *
+ * 还没做 XMind 的「▾ 形状 ……[形状下拉]」那种"主控件挂在标题行右侧"——
+ * 它要求控件是**紧凑下拉**，而我们这几处目前是整行分段按钮/滑杆，塞进标题行会挤爆。
+ * 先把控件词汇换成下拉，这个位置才立得住（不留一个没人用的插槽）。
+ *
+ * 折叠状态只存在组件内、不持久化：它是临时的"看一眼别的分组"的操作，
+ * 记住它反而会让用户下次打开面板时找不到东西。
+ */
 function PanelSection({
   title,
   children,
@@ -79,10 +96,22 @@ function PanelSection({
   title: string
   children: React.ReactNode
 }) {
+  const [collapsed, setCollapsed] = useState(false)
+
   return (
-    <div className="panel__section">
-      <h3 className="panel__section-label">{title}</h3>
-      {children}
+    <div className="panel__section" data-collapsed={collapsed ? 'true' : undefined}>
+      <h3 className="panel__section-label">
+        <button
+          type="button"
+          className="panel__section-toggle"
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((value) => !value)}
+        >
+          <ChevronDownIcon size={12} />
+          <span>{title}</span>
+        </button>
+      </h3>
+      {collapsed ? null : children}
     </div>
   )
 }
@@ -389,6 +418,33 @@ export function Inspector({
     session.document && session.activeTopicId
       ? findTopicById(activeSheet?.rootTopic ?? session.document.sheets[0].rootTopic, session.activeTopicId)
       : null
+  // 「样式」子页首屏的选中主题预览卡。
+  // 刻意用与画布**同一个** resolveTopicStyle：预览若自己算一套配色，
+  // 就会变成另一个"说谎的 UI"（比没有预览更糟）。
+  const topicPreviewStyle = useMemo(() => {
+    const rootTopic = activeSheet?.rootTopic
+    if (!rootTopic || !activeTopic) {
+      return null
+    }
+    const ancestors = findAncestorTopicIds(rootTopic, activeTopic.id) ?? []
+    const level1Id = ancestors[1]
+    const branchIndex =
+      level1Id === undefined
+        ? null
+        : Math.max(
+            0,
+            rootTopic.children.findIndex((child) => child.id === level1Id),
+          )
+
+    return resolveTopicStyle(
+      session.document?.theme?.id,
+      ancestors.length,
+      ancestors.length === 0 ? 'center' : 'right',
+      activeTopic.styleOverrides,
+      branchIndex,
+    )
+  }, [activeSheet?.rootTopic, activeTopic, session.document?.theme?.id])
+
   const movableTargetSheets = useMemo(
     () =>
       session.document?.sheets.filter((sheet) => sheet.id !== activeSheet?.id) ?? [],
@@ -939,6 +995,27 @@ export function Inspector({
             aria-labelledby="inspector-tab-style"
             className="panel__tab-panel"
           >
+            {/* 首屏第一元素：选中主题预览（XMind 样式页同样是这条淡色预览条）。
+                只展示，不加下拉箭头——XMind 的 ▾ 是「切换主题」的下拉，我们没有等价功能，
+                画一个点不动的箭头就是假控件。 */}
+            <div className="panel__topic-preview" aria-label="选中主题预览">
+              <span
+                className="panel__topic-preview-chip"
+                style={
+                  topicPreviewStyle
+                    ? {
+                        background: topicPreviewStyle.fill,
+                        color: topicPreviewStyle.textColor,
+                      }
+                    : undefined
+                }
+              >
+                {hasMultipleSelectedTopics
+                  ? `已选中 ${normalizedSelectedTopicIds.length} 个主题`
+                  : (activeTopic?.text ?? '未选中主题')}
+              </span>
+            </div>
+
             {/* 小节顺序对齐 XMind 样式页：形状 → 文本 → 结构 → 分支 → 编号。
                 节点级富内容（备注/链接/标签/标记/样式引用）与主题属性是 XMind 放在画布内联
                 或别处的编辑入口，排在这些外观分组之后，不再挡在首屏。 */}

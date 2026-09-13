@@ -1401,11 +1401,66 @@ button {
   color: var(--color-text-primary);
 }
 
+/* 分组标题行：折叠箭头 + 标题 +（可选）行内主控件。
+ * XMind 的每个分组标题都是「▾ 形状 ……[形状下拉]」这种形态。 */
 .panel__section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 10px;
   font-size: 12px;
   font-weight: 500;
   color: var(--color-text-secondary);
+}
+
+.panel__section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.panel__section-toggle svg {
+  transition: transform 0.12s ease;
+}
+
+/* 折叠后箭头转向右侧（与 XMind 一致：展开 ▾ / 收起 ▸） */
+.panel__section[data-collapsed='true'] .panel__section-toggle svg {
+  transform: rotate(-90deg);
+}
+
+/* 「样式」子页首屏的选中主题预览卡（对齐 XMind 的淡色预览条）。
+ * 底色与文字色取自 resolveTopicStyle，与画布同源。 */
+.panel__topic-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  margin: 2px 0 14px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+}
+
+.panel__topic-preview-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 26px;
+  padding: 2px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel__title {
