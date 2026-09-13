@@ -1,5 +1,13 @@
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import {
+  computeTopicAlignment,
+  TOPIC_ALIGN_LABELS,
+  type TopicAlignBox,
+  type TopicAlignMode,
+} from '../../lib/document/topic-align'
+import { isFreelyPositionableTopic } from '../../lib/document/free-topics'
+import { resolveCanvasSettings } from '../../lib/document/canvas-settings'
+import {
   FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
   resolveBranchFocusTarget,
 } from '../../lib/document/focus'
@@ -10,7 +18,7 @@ import {
 } from '../../lib/document/tree'
 import type { DocumentSession } from '../document/use-document-session'
 import type { SheetSnapshot } from '../../lib/document/types'
-import { computeLayout } from '../canvas/layouts'
+import { computeLayout, resolveLayoutOptions } from '../canvas/layouts'
 import type { CanvasCommand, MenuActionId } from './menu-actions'
 
 /**
@@ -47,6 +55,16 @@ export interface MenuCommandContext {
    * 本层只负责算目标与挡掉不能聚焦的情形。
    */
   setFocusTopicId: (topicId: string | null) => void
+  /**
+   * 批量写入自由位置（编辑 → 自由主题对齐）。
+   *
+   * 走批量而不是逐个 `moveTopicFreely`：整批一条撤销记录，
+   * 否则"对齐三个主题"要按三次 ⌘Z 才回得去。
+   */
+  setTopicsPosition: (
+    positions: Array<{ topicId: string; offsetX: number; offsetY: number }>,
+    actionLabel: string,
+  ) => void
   /**
    * 当前「仅显示该分支」的可见主题集（`null` = 未聚焦）。
    *
@@ -284,6 +302,17 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       }
       return
     }
+    // —— 自由主题对齐（八个子项共用一段实现，算法在 lib/document/topic-align.ts）——
+    case 'edit.align-left':
+    case 'edit.align-center-h':
+    case 'edit.align-right':
+    case 'edit.align-top':
+    case 'edit.align-middle-v':
+    case 'edit.align-bottom':
+    case 'edit.align-distribute-h':
+    case 'edit.align-distribute-v':
+      alignSelectedTopics(id, ctx)
+      return
     case 'edit.find':
       ctx.openSearch()
       return
@@ -466,6 +495,81 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       ctx.toggleTabBar()
       return
   }
+}
+
+/** 八个对齐菜单项 id → 算法模式。 */
+const ALIGN_MODE_BY_MENU_ID: Readonly<Record<string, TopicAlignMode>> = {
+  'edit.align-left': 'left',
+  'edit.align-center-h': 'center-h',
+  'edit.align-right': 'right',
+  'edit.align-top': 'top',
+  'edit.align-middle-v': 'middle-v',
+  'edit.align-bottom': 'bottom',
+  'edit.align-distribute-h': 'distribute-h',
+  'edit.align-distribute-v': 'distribute-v',
+}
+
+/**
+ * 对齐 / 分布选中的自由主题。
+ *
+ * 框必须来自**真实布局**（而不是主题自己存的 layoutHints）：开启「分支自由布局」时，
+ * 被摆过的分支还可能因「主题层叠」被推开，存的坐标与屏幕上的位置并不总是相等。
+ * 布局选项同样走 `resolveLayoutOptions`，与画布渲染同一来源。
+ */
+function alignSelectedTopics(id: MenuActionId, ctx: MenuCommandContext): void {
+  const mode = ALIGN_MODE_BY_MENU_ID[id]
+  const sheet = ctx.activeSheet
+  if (!mode || !sheet) {
+    return
+  }
+
+  const canvasSettings = resolveCanvasSettings(ctx.session.document?.settings)
+  const floatingTopics = sheet.floatingTopics ?? []
+  const layout = computeLayout(
+    sheet.rootTopic,
+    sheet.chartType,
+    floatingTopics,
+    resolveLayoutOptions(canvasSettings, sheet.layoutConfig?.direction),
+  )
+  const nodeById = new Map(layout.nodes.map((node) => [node.id, node]))
+  const floatingIds = new Set(floatingTopics.map((topic) => topic.id))
+  const firstLevelBranchIds = new Set(sheet.rootTopic.children.map((child) => child.id))
+
+  const boxes: TopicAlignBox[] = []
+  for (const topicId of ctx.selectedTopicIds) {
+    // 只有能自由摆放的主题参与：更深层的主题写 layoutHints 也不会被布局消费，
+    // 放进去只会让"对齐了但没反应"
+    if (
+      !isFreelyPositionableTopic({
+        isFloatingTopic: floatingIds.has(topicId),
+        isFirstLevelBranch: firstLevelBranchIds.has(topicId),
+        freeBranchLayout: canvasSettings.freeBranchLayout,
+      })
+    ) {
+      continue
+    }
+    const node = nodeById.get(topicId)
+    if (!node) {
+      continue
+    }
+    boxes.push({
+      topicId,
+      centerX: node.x,
+      centerY: node.y,
+      width: node.width,
+      height: node.height,
+    })
+  }
+
+  const result = computeTopicAlignment(boxes, mode)
+  if (!result.ok) {
+    ctx.notify(
+      `请先选中至少 ${result.required} 个可自由摆放的主题（自由主题，或开启「分支自由布局」后的一级分支）`,
+    )
+    return
+  }
+
+  ctx.setTopicsPosition(result.positions, TOPIC_ALIGN_LABELS[mode])
 }
 
 /** 目标主题：本地多选优先，回退到会话 activeTopicId，最后回退到根主题。 */

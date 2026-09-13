@@ -1099,6 +1099,30 @@ impl DocumentSession {
         )
     }
 
+    /// 批量写入主题的自由位置（编辑 → 自由主题对齐）。
+    ///
+    /// 走一个 change set：整批对齐**一次撤销**即可回退，而不是逐个主题撤。
+    /// 位置语义与 `set_topic_position` 一致（节点中心，相对中心主题的世界坐标）。
+    /// 全部位置都没变化时一次操作都不记录 —— `apply_change_set` 见 ops 为空就不入历史栈，
+    /// 所以"点了对齐但本来就齐"不会留下一条空的撤销记录。
+    pub fn set_topics_position(
+        &mut self,
+        positions: &[(String, f64, f64)],
+        action_label: Option<&str>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set(action_label.unwrap_or("对齐自由主题"), |editor| {
+            if positions.is_empty() {
+                return Err("没有需要摆放的主题".into());
+            }
+
+            for (topic_id, offset_x, offset_y) in positions {
+                editor.set_topic_position(topic_id, Some(*offset_x), Some(*offset_y))?;
+            }
+
+            Ok(positions[0].0.clone())
+        })
+    }
+
     pub fn set_topic_notes(
         &mut self,
         topic_id: &str,
@@ -2382,6 +2406,80 @@ mod tests {
             super::find_topic(undone.document.root_topic(), &child_id).expect("child after undo");
         assert!(!restored_branch.collapsed);
         assert!(!restored_child.collapsed);
+    }
+
+    #[test]
+    fn set_topics_position_batch_is_a_single_undo_step() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let first = root_topic.children[0].id.clone();
+        let second = root_topic.children[1].id.clone();
+
+        let positions = vec![
+            (first.clone(), 120.0, -40.0),
+            (second.clone(), 120.0, 180.0),
+        ];
+        let aligned = session
+            .set_topics_position(&positions, Some("顶端对齐"))
+            .expect("batch align should succeed");
+
+        // 两个位置都写进去了
+        for (topic_id, x, y) in &positions {
+            let hints = super::find_topic(aligned.document.root_topic(), topic_id)
+                .expect("topic should exist")
+                .layout_hints
+                .as_ref()
+                .expect("position hints should be written");
+            assert_eq!(hints.offset_x, Some(*x));
+            assert_eq!(hints.offset_y, Some(*y));
+        }
+        // 撤销标签来自调用方（菜单用它显示"撤销 顶端对齐"）
+        assert_eq!(aligned.next_undo_action.as_deref(), Some("顶端对齐"));
+
+        // 关键：**一次撤销必须整体回退**，而不是每个主题各退一步
+        let undone = session.undo().expect("undo should succeed");
+        for (topic_id, _, _) in &positions {
+            assert!(
+                super::find_topic(undone.document.root_topic(), topic_id)
+                    .expect("topic should exist")
+                    .layout_hints
+                    .is_none(),
+                "一次撤销之后所有位置都该回到未摆放状态"
+            );
+        }
+    }
+
+    #[test]
+    fn set_topics_position_is_noop_when_nothing_changes() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let first = root_topic.children[0].id.clone();
+        let positions = vec![(first.clone(), 50.0, 60.0)];
+
+        session
+            .set_topics_position(&positions, Some("第一次"))
+            .expect("first align should succeed");
+        // 坐标完全相同：不该再产生一条历史记录
+        session
+            .set_topics_position(&positions, Some("第二次"))
+            .expect("second align should succeed");
+
+        // 只撤销一次就该回到"没摆放过"——若上面多记了一条，这里会停在 (50, 60)
+        let undone = session.undo().expect("undo should succeed");
+        assert!(super::find_topic(undone.document.root_topic(), &first)
+            .expect("topic should exist")
+            .layout_hints
+            .is_none());
     }
 
     #[test]

@@ -154,6 +154,22 @@ pub fn build_menu<R: Runtime>(
         .item(&item(handle, "file.print", &format!("打印{}", combo("P")))?)
         .build()?;
 
+    // 「自由主题对齐」子菜单。**子项名称按通行约定**（左/水平居中/右、顶/垂直居中/底，
+    // 加水平/垂直分布）——基准图里这个子菜单没有被展开拍到，无法逐项比对，
+    // 故取设计工具通用的那一套，而不是凭印象硬凑 XMind 的措辞。
+    let align = SubmenuBuilder::new(handle, "自由主题对齐")
+        .item(&item(handle, "edit.align-left", "左对齐")?)
+        .item(&item(handle, "edit.align-center-h", "水平居中")?)
+        .item(&item(handle, "edit.align-right", "右对齐")?)
+        .separator()
+        .item(&item(handle, "edit.align-top", "顶端对齐")?)
+        .item(&item(handle, "edit.align-middle-v", "垂直居中")?)
+        .item(&item(handle, "edit.align-bottom", "底端对齐")?)
+        .separator()
+        .item(&item(handle, "edit.align-distribute-h", "水平分布")?)
+        .item(&item(handle, "edit.align-distribute-v", "垂直分布")?)
+        .build()?;
+
     // —— 编辑 ——
     let edit = SubmenuBuilder::new(handle, "编辑")
         .item(&item(handle, "edit.undo", &format!("撤销{}", combo("Z")))?)
@@ -222,6 +238,9 @@ pub fn build_menu<R: Runtime>(
             "edit.collapse",
             &format!("折叠 / 展开{}", combo("/")),
         )?)
+        .separator()
+        // XMind 把「自由主题对齐」放在 展开/折叠 与 查找与替换 之间
+        .item(&align)
         .separator()
         .item(&item(
             handle,

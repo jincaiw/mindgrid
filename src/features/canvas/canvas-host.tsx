@@ -18,6 +18,7 @@ import {
   collectVisibleTopicIds,
 } from '../../lib/document/tree'
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
+import { isFreelyPositionableTopic } from '../../lib/document/free-topics'
 import {
   FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
   resolveBranchFocusTarget,
@@ -66,7 +67,7 @@ import { findNearestNodeInDirection, type NavigationDirection } from './topic-na
 import { Minimap } from './minimap'
 import type { CanvasCommand, ZoomCommand } from '../menu/menu-actions'
 import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
-import { computeLayout, restrictLayoutToTopicIds } from './layouts'
+import { computeLayout, resolveLayoutOptions, restrictLayoutToTopicIds } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveThemeBackground, resolveTopicStyle } from './runtime/style-resolver'
 import {
@@ -379,14 +380,14 @@ function MindMapScene({
   onCreateFloatingTopic?: (text: string, offsetX: number, offsetY: number) => Promise<void>
 }) {
   const layout = useMemo(() => {
-    const full = computeLayout(rootTopic, chartType, floatingTopics, {
-      balance: canvasSettings.balance,
-      compact: canvasSettings.compact,
-      alignSiblings: canvasSettings.alignSiblings,
-      direction: layoutDirection,
-      freeBranch: canvasSettings.freeBranchLayout,
-      stackTopics: canvasSettings.stackTopics,
-    })
+    // 选项一律来自 resolveLayoutOptions（唯一来源）：菜单侧的自由主题对齐
+    // 也用同一份，才能保证"它算的框"就是"屏幕上看到的框"
+    const full = computeLayout(
+      rootTopic,
+      chartType,
+      floatingTopics,
+      resolveLayoutOptions(canvasSettings, layoutDirection),
+    )
     // 「仅显示该分支」在**布局出口**裁剪一次：命中测试、视口剔除、缩略图、连线几何、
     // 拖拽落点读的都是这份 layout，因此裁剪一次即全局生效。若改在画节点时过滤，
     // 仍会点到看不见的主题、连线仍指向空白处。
@@ -395,11 +396,9 @@ function MindMapScene({
     rootTopic,
     chartType,
     floatingTopics,
-    canvasSettings.balance,
-    canvasSettings.compact,
-    canvasSettings.alignSiblings,
-    canvasSettings.freeBranchLayout,
-    canvasSettings.stackTopics,
+    // canvasSettings 本身是 TreeWorkspace 里 useMemo 出来的（只在文档设置变化时换引用），
+    // 依赖它即可——逐字段列出来反而与 resolveLayoutOptions 的实际读取范围对不上
+    canvasSettings,
     layoutDirection,
     focusVisibleTopicIds,
   ])
@@ -1139,19 +1138,16 @@ function MindMapScene({
       // 分支自由布局：拖一级分支时写"自由位置"而不是改结构。
       // 判据是「开关打开 + 被拖的是根的直接子节点」，不满足则退回结构移动/吸附。
       const draggedNode = dragPreview ? nodeMap.get(dragPreview.topicId) : null
-      const isFirstLevelBranch =
-        !!draggedNode && rootTopic.children.some((child) => child.id === draggedNode.id)
-      // 浮动主题**没有结构位置，它的拖动就是摆放**。
-      // 此前这里只认"分支自由布局 + 一级分支"，于是浮动主题被拖时走的是结构移动分支——
-      // 而它根本不在树里，只会失败。菜单里「创建后拖到想放的位置即可」这句说明因此是假的。
-      const isFloatingTopic =
-        !!draggedNode && floatingTopics.some((topic) => topic.id === draggedNode.id)
+      // 「能不能自由摆放」走共享规则（lib/document/free-topics.ts）：
+      // 菜单的「自由主题对齐」用同一条，两边各写一份必然会有一处先腐坏（踩过）
+      const canPlaceFreely = isFreelyPositionableTopic({
+        isFloatingTopic: !!draggedNode && floatingTopics.some((t) => t.id === draggedNode.id),
+        isFirstLevelBranch:
+          !!draggedNode && rootTopic.children.some((child) => child.id === draggedNode.id),
+        freeBranchLayout,
+      })
 
-      if (
-        interaction.kind === 'drag' &&
-        dragPreview &&
-        (isFloatingTopic || (freeBranchLayout && isFirstLevelBranch))
-      ) {
+      if (interaction.kind === 'drag' && dragPreview && canPlaceFreely) {
         suppressClickRef.current = true
         await onPlaceTopicFreely(
           dragPreview.topicId,

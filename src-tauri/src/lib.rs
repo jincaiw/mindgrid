@@ -106,6 +106,7 @@ pub fn run() {
             app::commands::set_sheet_branch_style,
             app::commands::set_sheet_numbering,
             app::commands::set_topic_position,
+            app::commands::set_topics_position,
             app::commands::apply_topic_style_to_siblings,
             app::commands::set_sheet_layout_direction,
             app::commands::select_topic,

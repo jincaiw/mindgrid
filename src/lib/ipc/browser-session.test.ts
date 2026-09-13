@@ -589,6 +589,39 @@ describe('invokeBrowserCommand', () => {
     ).toBeUndefined()
   })
 
+  it('writes a whole batch of free positions as a single undo step', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const children = created.document.sheets[0].rootTopic.children
+    const first = children[0].id
+    const second = children[1].id
+
+    const aligned = await invokeBrowserCommand<DocumentSessionSnapshot>('set_topics_position', {
+      positions: [
+        { topic_id: first, offset_x: 120, offset_y: -40 },
+        { topic_id: second, offset_x: 120, offset_y: 180 },
+      ],
+      action_label: '左对齐',
+    })
+    const root = aligned.document.sheets[0].rootTopic
+    expect(findTopicById(root, first)?.layoutHints).toEqual({ offsetX: 120, offsetY: -40 })
+    expect(findTopicById(root, second)?.layoutHints).toEqual({ offsetX: 120, offsetY: 180 })
+    expect(aligned.nextUndoAction).toBe('左对齐')
+
+    // 一次撤销回退整批（与 Rust 侧一个 change set 对齐）
+    const undone = await invokeBrowserCommand<DocumentSessionSnapshot>('undo_document_command')
+    const undoneRoot = undone.document.sheets[0].rootTopic
+    expect(findTopicById(undoneRoot, first)?.layoutHints).toBeUndefined()
+    expect(findTopicById(undoneRoot, second)?.layoutHints).toBeUndefined()
+  })
+
+  it('rejects an empty batch of free positions', async () => {
+    await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+
+    await expect(
+      invokeBrowserCommand<DocumentSessionSnapshot>('set_topics_position', { positions: [] }),
+    ).rejects.toThrow(/没有需要摆放的主题/)
+  })
+
   it('rejects applying style to siblings on the root topic', async () => {
     const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
     const rootId = created.document.sheets[0].rootTopic.id

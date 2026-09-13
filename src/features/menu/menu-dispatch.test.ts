@@ -104,6 +104,7 @@ function makeHarness(options: HarnessOptions = {}) {
     checkForUpdates: vi.fn(),
     cycleTheme: vi.fn(),
     printDocument: vi.fn(),
+    setTopicsPosition: vi.fn(),
     requestCanvasCommand: vi.fn(),
     focusVisibleTopicIds: options.focusVisibleTopicIds ?? null,
   }
@@ -645,5 +646,155 @@ describe('插入 → 从主题新建画布', () => {
 
     expect(session.createSheetFromTopic).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalled()
+  })
+})
+
+/**
+ * 编辑 → 自由主题对齐。
+ *
+ * 这里只钉**接线与语义**（调没调批量接口、标签对不对、无关轴有没有被误改、
+ * 数量不够时给不给提示）；八种模式的几何算法在 lib/document/topic-align.test.ts 里逐条测过。
+ */
+type AlignPosition = { topicId: string; offsetX: number; offsetY: number }
+
+/** 取出批量位置的调用参数：vi.fn() 的参数类型是 unknown，这里集中断言一次。 */
+function alignedCall(mock: { mock: { calls: unknown[][] } }): [AlignPosition[], string] {
+  const call = mock.mock.calls.at(-1)
+  expect(call).toBeDefined()
+  return call as unknown as [AlignPosition[], string]
+}
+
+describe('编辑 → 自由主题对齐', () => {
+  function makeSheetWithFloatingTopics(): SheetSnapshot {
+    return {
+      id: 'sheet_1',
+      title: '主画布',
+      rootTopic: {
+        id: 'topic_root',
+        text: '中心主题',
+        collapsed: false,
+        children: [
+          { id: 'topic_a', text: '分支一', collapsed: false, children: [] },
+          { id: 'topic_b', text: '分支二', collapsed: false, children: [] },
+        ],
+      },
+      floatingTopics: [
+        {
+          id: 'float_1',
+          text: '自由一',
+          collapsed: false,
+          children: [],
+          layoutHints: { offsetX: 0, offsetY: 300 },
+        },
+        {
+          id: 'float_2',
+          text: '自由二',
+          collapsed: false,
+          children: [],
+          layoutHints: { offsetX: 200, offsetY: 360 },
+        },
+        {
+          id: 'float_3',
+          text: '自由三',
+          collapsed: false,
+          children: [],
+          layoutHints: { offsetX: 600, offsetY: 420 },
+        },
+      ],
+    }
+  }
+
+  it('水平居中：两个自由主题的中心被摆到同一竖线上，纵向坐标不动', () => {
+    const { ctx, setTopicsPosition, notify } = makeHarness({
+      activeSheet: makeSheetWithFloatingTopics(),
+      selectedTopicIds: ['float_1', 'float_2'],
+    })
+
+    runMenuCommand('edit.align-center-h', ctx)
+
+    expect(notify).not.toHaveBeenCalled()
+    expect(setTopicsPosition).toHaveBeenCalledTimes(1)
+    const [positions, label] = alignedCall(setTopicsPosition)
+    expect(label).toBe('水平居中')
+    const byId = new Map(positions.map((p) => [p.topicId, p]))
+    expect([...byId.keys()].sort()).toEqual(['float_1', 'float_2'])
+    // 水平居中的定义就是"中心对齐到同一 X"
+    expect(byId.get('float_1')!.offsetX).toBeCloseTo(byId.get('float_2')!.offsetX)
+    // 纵向不该被顺手改掉
+    expect(byId.get('float_1')!.offsetY).toBe(300)
+    expect(byId.get('float_2')!.offsetY).toBe(360)
+  })
+
+  it('水平分布：三个自由主题的两端不动，中间那个落在两者之间', () => {
+    const { ctx, setTopicsPosition } = makeHarness({
+      activeSheet: makeSheetWithFloatingTopics(),
+      selectedTopicIds: ['float_1', 'float_2', 'float_3'],
+    })
+
+    runMenuCommand('edit.align-distribute-h', ctx)
+
+    const [positions, label] = alignedCall(setTopicsPosition)
+    expect(label).toBe('水平分布')
+    const byId = new Map(positions.map((p) => [p.topicId, p]))
+    // 两端固定：按 X 排序后首尾的 X 不变
+    expect(byId.get('float_1')!.offsetX).toBeCloseTo(0)
+    expect(byId.get('float_3')!.offsetX).toBeCloseTo(600)
+    const middle = byId.get('float_2')!.offsetX
+    expect(middle).toBeGreaterThan(0)
+    expect(middle).toBeLessThan(600)
+  })
+
+  it('只选中不可自由摆放的主题时给出提示，不写任何位置', () => {
+    // 两个一级分支都存在、也都在布局里，但「分支自由布局」没开 → 不可自由摆放。
+    // 刻意选两个**真实存在**的主题：只选一个的话，即使漏掉过滤也会因"数量不足"而通过，
+    // 那条断言就没有鉴别力了（踩过）。
+    const { ctx, setTopicsPosition, notify } = makeHarness({
+      activeSheet: makeSheetWithFloatingTopics(),
+      selectedTopicIds: ['topic_a', 'topic_b'],
+    })
+
+    runMenuCommand('edit.align-left', ctx)
+
+    expect(setTopicsPosition).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(
+      '请先选中至少 2 个可自由摆放的主题（自由主题，或开启「分支自由布局」后的一级分支）',
+    )
+  })
+
+  it('分布的门槛是三个，两个时给出对应提示', () => {
+    const { ctx, setTopicsPosition, notify } = makeHarness({
+      activeSheet: makeSheetWithFloatingTopics(),
+      selectedTopicIds: ['float_1', 'float_2'],
+    })
+
+    runMenuCommand('edit.align-distribute-v', ctx)
+
+    expect(setTopicsPosition).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(
+      '请先选中至少 3 个可自由摆放的主题（自由主题，或开启「分支自由布局」后的一级分支）',
+    )
+  })
+
+  it('八个 id 都走同一条实现（标签取自算法模块，不另写一份文案）', () => {
+    const expectations: Array<[Parameters<typeof runMenuCommand>[0], string]> = [
+      ['edit.align-left', '左对齐'],
+      ['edit.align-center-h', '水平居中'],
+      ['edit.align-right', '右对齐'],
+      ['edit.align-top', '顶端对齐'],
+      ['edit.align-middle-v', '垂直居中'],
+      ['edit.align-bottom', '底端对齐'],
+      ['edit.align-distribute-h', '水平分布'],
+      ['edit.align-distribute-v', '垂直分布'],
+    ]
+
+    for (const [id, label] of expectations) {
+      const { ctx, setTopicsPosition } = makeHarness({
+        activeSheet: makeSheetWithFloatingTopics(),
+        selectedTopicIds: ['float_1', 'float_2', 'float_3'],
+      })
+      runMenuCommand(id, ctx)
+      expect(setTopicsPosition).toHaveBeenCalledTimes(1)
+      expect(alignedCall(setTopicsPosition)[1]).toBe(label)
+    }
   })
 })

@@ -170,6 +170,25 @@ export function setTopicPosition(
   })
 }
 
+/**
+ * 批量写入自由位置（编辑 → 自由主题对齐）。
+ *
+ * 一次调用 = 服务端一个 change set = **一次撤销**回退全部，而不是每个主题各撤一步。
+ */
+export function setTopicsPosition(
+  positions: Array<{ topicId: string; offsetX: number; offsetY: number }>,
+  actionLabel?: string,
+) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topics_position', {
+    positions: positions.map((item) => ({
+      topic_id: item.topicId,
+      offset_x: item.offsetX,
+      offset_y: item.offsetY,
+    })),
+    action_label: actionLabel,
+  })
+}
+
 export function selectTopic(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('select_topic', { topic_id: topicId })
 }

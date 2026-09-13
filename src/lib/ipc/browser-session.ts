@@ -762,6 +762,43 @@ export async function invokeBrowserCommand<TResult>(
         return topicId
       }) as TResult
     }
+    case 'set_topics_position': {
+      const rawPositions = Array.isArray(payload.positions) ? payload.positions : []
+      const label =
+        typeof payload.action_label === 'string' && payload.action_label.length > 0
+          ? payload.action_label
+          : '对齐自由主题'
+      if (rawPositions.length === 0) {
+        throw new Error('没有需要摆放的主题')
+      }
+
+      // 整批在**同一个** applyMutation 里落地：与 Rust 侧一个 change set 对齐，
+      // 撤销一次回退全部
+      return applyMutation(label, (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+
+        for (const rawItem of rawPositions) {
+          const item = rawItem as { topic_id?: unknown; offset_x?: unknown; offset_y?: unknown }
+          const topicId = String(item.topic_id)
+          const topic =
+            findTopicById(rootTopic, topicId) ??
+            sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+
+          if (!topic) {
+            throw new Error('找不到需要摆放位置的主题')
+          }
+
+          topic.layoutHints = {
+            ...(topic.layoutHints ?? {}),
+            offsetX: Number(item.offset_x),
+            offsetY: Number(item.offset_y),
+          }
+        }
+
+        return String((rawPositions[0] as { topic_id?: unknown }).topic_id)
+      }) as TResult
+    }
     case 'apply_topic_style_to_siblings': {
       const topicId = String(payload.topic_id)
 

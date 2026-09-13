@@ -823,6 +823,36 @@ pub fn toggle_topic_collapsed(
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
 
+/// 一次对齐里的一个主题位置。字段名与前端 payload 一致（snake_case）。
+#[derive(serde::Deserialize)]
+pub struct TopicPositionPayload {
+    pub topic_id: String,
+    pub offset_x: f64,
+    pub offset_y: f64,
+}
+
+/// 批量写入自由位置（编辑 → 自由主题对齐）。整批落在同一个 change set 里，一次撤销回退。
+#[tauri::command]
+pub fn set_topics_position(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    positions: Vec<TopicPositionPayload>,
+    action_label: Option<String>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    let pairs: Vec<(String, f64, f64)> = positions
+        .into_iter()
+        .map(|item| (item.topic_id, item.offset_x, item.offset_y))
+        .collect();
+    guard.set_topics_position(&pairs, action_label.as_deref())?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
 #[tauri::command]
 pub fn set_topics_collapsed(
     app: AppHandle,

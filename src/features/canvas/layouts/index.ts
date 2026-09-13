@@ -10,6 +10,7 @@ import type { ChartType, TopicDirection } from '../../../lib/document/types'
 import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 import { computeMindMapLayout, estimateNodeSize, resolveRootSideMap } from '../mindmap-layout'
 import { computeLayoutBounds } from './layout-utils'
+import type { DocumentCanvasSettings } from '../../../lib/document/canvas-settings'
 import {
   applyDirectionVariant,
   footprintAroundRoot,
@@ -283,6 +284,27 @@ function mergeFloatingTopics(
     height: bounds.height,
     offsetX: bounds.offsetX,
     offsetY: bounds.offsetY,
+  }
+}
+
+/**
+ * 从画布设置派生布局选项——**唯一来源**。
+ *
+ * 画布渲染（MindMapScene）与菜单侧（自由主题对齐要算"屏幕上那个框在哪"）都必须用它。
+ * 两处各拼一份 `{ balance, compact, ... }` 时，只要有一项漏了或者默认值不同，
+ * "对齐时算出来的位置"与"屏幕上看到的位置"就会对不上——而这类偏差**不会报错**。
+ */
+export function resolveLayoutOptions(
+  canvasSettings: DocumentCanvasSettings,
+  direction: TopicDirection | undefined,
+): MindMapLayoutOptions {
+  return {
+    balance: canvasSettings.balance,
+    compact: canvasSettings.compact,
+    alignSiblings: canvasSettings.alignSiblings,
+    direction,
+    freeBranch: canvasSettings.freeBranchLayout,
+    stackTopics: canvasSettings.stackTopics,
   }
 }
 

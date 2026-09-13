@@ -50,6 +50,14 @@ export type MenuActionId =
   | 'edit.collapse'
   | 'edit.indent'
   | 'edit.outdent'
+  | 'edit.align-left'
+  | 'edit.align-center-h'
+  | 'edit.align-right'
+  | 'edit.align-top'
+  | 'edit.align-middle-v'
+  | 'edit.align-bottom'
+  | 'edit.align-distribute-h'
+  | 'edit.align-distribute-v'
   | 'edit.find'
   // 插入
   | 'insert.child'
@@ -128,6 +136,14 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'edit.collapse',
   'edit.indent',
   'edit.outdent',
+  'edit.align-left',
+  'edit.align-center-h',
+  'edit.align-right',
+  'edit.align-top',
+  'edit.align-middle-v',
+  'edit.align-bottom',
+  'edit.align-distribute-h',
+  'edit.align-distribute-v',
   'edit.find',
   // 插入
   'insert.child',

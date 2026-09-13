@@ -335,6 +335,10 @@ export function WorkspaceScreen({
         checkForUpdates: () => onCheckForUpdates?.(),
         cycleTheme: () => onCycleTheme?.(),
         printDocument: handlePrint,
+        // 对齐走批量接口：整批一条撤销记录
+        setTopicsPosition: (positions, actionLabel) => {
+          void session.setTopicsPosition(positions, actionLabel)
+        },
         requestCanvasCommand: (command) =>
           setCanvasCommand((current) => ({ command, nonce: (current?.nonce ?? 0) + 1 })),
       })

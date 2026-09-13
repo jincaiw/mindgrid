@@ -67,6 +67,7 @@ import {
   setTopicStyleOverrides,
   applyTopicStyleToSiblings,
   setTopicPosition,
+  setTopicsPosition as setTopicsPositionCommand,
   setTopicStyleRef,
   setTopicTask,
   toggleTopicCollapsed,
@@ -187,6 +188,17 @@ export interface DocumentSession extends DocumentSessionState {
   setTopicStyleRef: (topicId: string, styleRef: string | null) => Promise<void>
   applyTopicStyleToSiblings: (topicId: string) => Promise<void>
   moveTopicFreely: (topicId: string, offsetX: number, offsetY: number) => Promise<void>
+  /**
+   * 批量写入自由位置（编辑 → 自由主题对齐）。
+   *
+   * 一次调用 = 服务端一个 change set = **一次撤销**回退全部。
+   * 逐个调 moveTopicFreely 会让三个主题的对齐需要撤三次——那是"一次动作、多条记录"，
+   * 与「批量展开/折叠」已经做到的粒度不一致。
+   */
+  setTopicsPosition: (
+    positions: Array<{ topicId: string; offsetX: number; offsetY: number }>,
+    actionLabel?: string,
+  ) => Promise<void>
   setTopicStyleOverrides: (
     topicId: string,
     styleOverrides: TopicStyleOverrides | null,
@@ -1293,6 +1305,21 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const setTopicsPosition = useCallback(
+    async (
+      positions: Array<{ topicId: string; offsetX: number; offsetY: number }>,
+      actionLabel?: string,
+    ) => {
+      if (positions.length === 0) {
+        return
+      }
+      await runCommand(actionLabel ?? '对齐自由主题', () =>
+        setTopicsPositionCommand(positions, actionLabel),
+      )
+    },
+    [runCommand],
+  )
+
   const selectActiveTopic = useCallback(
     async (topicId: string) => {
       await runCommand('切换选中主题', () => selectTopic(topicId))
@@ -1734,6 +1761,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicStructure: updateTopicStructure,
       applyTopicStyleToSiblings: applyTopicStyleToSiblingsAction,
       moveTopicFreely,
+      setTopicsPosition,
       setDocumentTheme: updateDocumentTheme,
       setDocumentSetting: updateDocumentSetting,
       createRelationship: createDocumentRelationship,

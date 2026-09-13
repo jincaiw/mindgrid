@@ -97,6 +97,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setSheetNumbering: async () => {},
     applyTopicStyleToSiblings: async () => {},
     moveTopicFreely: async () => {},
+    setTopicsPosition: async () => {},
     setSheetLayoutDirection: async () => {},
     selectTopic: async () => {},
     createChildTopic: async () => {},
