@@ -37,7 +37,9 @@ import {
   moveTopicInParent,
   moveTopicToSheet,
   moveTopicsToSheet,
+  clearRecentFiles,
   openDocumentFile,
+  openRecentFile,
   pasteTopics,
   repairDocumentFile,
   readAssetDataUrl,
@@ -109,6 +111,10 @@ export interface DocumentSession extends DocumentSessionState {
   createNewDocument: () => Promise<void>
   createFromTemplate: (document: DocumentSnapshot) => Promise<void>
   openDocument: () => Promise<void>
+  /** 打开「最近打开」里的第 index 项（路径由 Rust 解析） */
+  openRecentFile: (index: number) => Promise<void>
+  /** 清空「最近打开」列表 */
+  clearRecentFiles: () => Promise<void>
   repairLastFailedOpen: () => Promise<void>
   clearRepairReport: () => Promise<void>
   saveDocument: () => Promise<void>
@@ -1466,6 +1472,17 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const openRecentDocument = useCallback(
+    async (index: number) => {
+      await runCommand('打开最近文档', () => openRecentFile(index))
+    },
+    [runCommand],
+  )
+
+  const clearRecentDocumentList = useCallback(async () => {
+    await runCommand('清除最近文档', () => clearRecentFiles())
+  }, [runCommand])
+
   const moveActiveTopic = useCallback(
     async (
       topicId: string,
@@ -1625,6 +1642,8 @@ export function useDocumentSession(): DocumentSession {
       createNewDocument,
       createFromTemplate,
       openDocument: openCurrentDocument,
+      openRecentFile: openRecentDocument,
+      clearRecentFiles: clearRecentDocumentList,
       repairLastFailedOpen,
       clearRepairReport: dismissRepairReport,
       saveDocument: saveCurrentDocument,

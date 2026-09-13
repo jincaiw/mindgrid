@@ -52,6 +52,8 @@ pub fn run() {
             app::commands::create_document_from_template,
             app::commands::get_document_state,
             app::commands::open_document_file,
+            app::commands::open_recent_file,
+            app::commands::clear_recent_files,
             app::commands::save_document_file,
             app::commands::save_document_to_current_file,
             app::commands::export_recovery_copy,
@@ -144,7 +146,7 @@ pub fn run() {
             // 与工具栏 / 快捷键走同一条命令路径。
             #[cfg(desktop)]
             {
-                let menu = crate::app::menu::build_menu(app.handle())?;
+                let menu = crate::app::menu::build_menu(app.handle(), &crate::app::recents::load(app.handle()))?;
                 app.set_menu(menu)?;
                 app.on_menu_event(|app, event| {
                     let action_id = event.id().as_ref().to_string();

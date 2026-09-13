@@ -276,7 +276,10 @@ export function WorkspaceScreen({
     ],
   )
 
-  useNativeMenuActions(handleMenuAction)
+  useNativeMenuActions(handleMenuAction, (index) => {
+    // 「最近打开」的 id 带动态下标，走单独回调；路径由 Rust 解析
+    void session.openRecentFile(index)
+  })
 
   /**
    * 把面板显隐与视图模式回写到原生菜单的勾选态。

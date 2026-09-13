@@ -17,6 +17,7 @@ export type MenuActionId =
   // 文件
   | 'file.new'
   | 'file.new-sheet'
+  | 'file.recent-clear'
   | 'file.open'
   | 'file.save'
   | 'file.save-as'
@@ -90,6 +91,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   // 文件
   'file.new',
   'file.new-sheet',
+  'file.recent-clear',
   'file.open',
   'file.save',
   'file.save-as',
@@ -180,6 +182,27 @@ export const VIEW_MODE_RADIO_IDS = {
   mindmap: 'view.mode-mindmap',
   outline: 'view.mode-outline',
 } as const satisfies Record<string, MenuActionId>
+
+/**
+ * 「最近打开」的菜单项 id 形如 `file.recent.3`——**下标是动态的**，无法静态枚举。
+ *
+ * 因此它不在 `MENU_ACTION_IDS` 里（那个集合要与 Rust 侧的字面量 id 一一对应），
+ * 由本函数单独识别；路径不经过前端——点击后只把下标交给 Rust，由 Rust 解析路径。
+ */
+const RECENT_FILE_ID_PATTERN = /^file\.recent\.(\d+)$/
+
+/** 从菜单 id 解析「最近打开」的下标；不是这一类则返回 null。 */
+export function recentFileMenuActionIndex(value: unknown): number | null {
+  if (typeof value !== 'string') {
+    return null
+  }
+  const matched = RECENT_FILE_ID_PATTERN.exec(value)
+  if (!matched) {
+    return null
+  }
+  const index = Number.parseInt(matched[1], 10)
+  return Number.isSafeInteger(index) && index >= 0 ? index : null
+}
 
 export function isMenuActionId(value: unknown): value is MenuActionId {
   return typeof value === 'string' && (MENU_ACTION_IDS as readonly string[]).includes(value)

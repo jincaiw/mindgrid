@@ -35,6 +35,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     createNewDocument: asyncNoop(),
     createSheet: asyncNoop(),
     openDocument: asyncNoop(),
+    clearRecentFiles: asyncNoop(),
     saveDocument: asyncNoop(),
     saveDocumentAs: asyncNoop(),
     importMarkdownOutline: asyncNoop(),
@@ -540,5 +541,15 @@ describe('删除单个主题', () => {
     runMenuCommand('edit.delete-topic-only', ctx)
 
     expect(session.deleteTopicOnly).toHaveBeenCalledWith(['topic_b'])
+  })
+})
+
+describe('文件 → 最近打开 → 清除菜单', () => {
+  it('清空最近列表', () => {
+    const { ctx, session } = makeHarness()
+
+    runMenuCommand('file.recent-clear', ctx)
+
+    expect(session.clearRecentFiles).toHaveBeenCalledTimes(1)
   })
 })

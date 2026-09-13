@@ -1,5 +1,6 @@
 import {
   isMenuActionId,
+  recentFileMenuActionIndex,
   MENU_ACTION_IDS,
   MENU_CHECK_ITEM_IDS,
   toCanvasCommand,
@@ -131,4 +132,33 @@ it('keeps a macOS app menu so quit / hide are reachable', () => {
   for (const call of ['.services()', '.hide()', '.hide_others()', '.show_all()', '.quit()']) {
     expect(menuRsSource, `应用菜单缺少 ${call}`).toContain(call)
   }
+})
+
+/**
+ * 「最近打开」是**动态 id 家族**（`file.recent.N`），无法进静态 id 集合
+ * （那个集合要与 Rust 侧的字面量一一对应）。这里单独钉住它的识别规则。
+ */
+describe('最近打开的菜单 id', () => {
+  it('识别动态下标', () => {
+    expect(recentFileMenuActionIndex('file.recent.0')).toBe(0)
+    expect(recentFileMenuActionIndex('file.recent.12')).toBe(12)
+  })
+
+  it('不是这一类一律返回 null', () => {
+    expect(recentFileMenuActionIndex('file.recent')).toBeNull()
+    expect(recentFileMenuActionIndex('file.recent.')).toBeNull()
+    expect(recentFileMenuActionIndex('file.recent.x')).toBeNull()
+    expect(recentFileMenuActionIndex('file.recent.-1')).toBeNull()
+    expect(recentFileMenuActionIndex('file.recent-clear')).toBeNull()
+    expect(recentFileMenuActionIndex('file.save')).toBeNull()
+    expect(recentFileMenuActionIndex('')).toBeNull()
+    expect(recentFileMenuActionIndex(null)).toBeNull()
+    expect(recentFileMenuActionIndex(3)).toBeNull()
+  })
+
+  it('静态的「清除菜单」走普通 id 通道（在两份 id 集合里）', () => {
+    expect(isMenuActionId('file.recent-clear')).toBe(true)
+    // 动态家族**不**在静态集合里，否则 id 同步契约测试会比较不过
+    expect(isMenuActionId('file.recent.0')).toBe(false)
+  })
 })

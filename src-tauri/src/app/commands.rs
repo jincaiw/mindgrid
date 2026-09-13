@@ -190,7 +190,8 @@ pub fn open_document_file(
 
     *guard = DocumentSession::from_document_with_file_path(
         document,
-        Some(path),
+        // clone：后面还要用同一个 path 记进「最近打开」
+        Some(path.clone()),
         Some(crate::app::persistence::current_timestamp_ms()),
     );
 
@@ -201,7 +202,48 @@ pub fn open_document_file(
     *store = assets;
     drop(store);
 
-    persist_recovery_and_snapshot(&app, &state, &mut guard)
+    let snapshot = persist_recovery_and_snapshot(&app, &state, &mut guard)?;
+    drop(guard);
+
+    // 记住这次打开的路径并重建「最近打开」子菜单。
+    // 放在锁释放之后：refresh_menu 会读配置目录并换菜单，不该在持锁期间做。
+    crate::app::recents::remember(&app, &path);
+    crate::app::menu::refresh_menu(&app);
+
+    Ok(snapshot)
+}
+
+/// 打开「最近打开」里的第 index 项。
+///
+/// 菜单项只带下标，**路径由 Rust 自己解析**（`recents::resolve`）：
+/// 前端不必维护第二份列表，也不会有"列表过期后点到了别的文件"的问题。
+#[tauri::command]
+pub fn open_recent_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    index: usize,
+) -> Result<DocumentSessionSnapshot, String> {
+    let path = crate::app::recents::resolve(&app, index)
+        .ok_or_else(|| "该最近文档已不存在".to_string())?;
+
+    open_document_file(app, state, path)
+}
+
+/// 清空「最近打开」列表并重建菜单。
+#[tauri::command]
+pub fn clear_recent_files(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<DocumentSessionSnapshot, String> {
+    crate::app::recents::clear(&app);
+    crate::app::menu::refresh_menu(&app);
+
+    let guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    snapshot_document_session(&guard)
 }
 
 #[tauri::command]
@@ -223,7 +265,13 @@ pub fn save_document_file(
         crate::app::persistence::save_document_file(&mut guard, &assets, std::path::Path::new(&path))?;
     }
 
-    persist_recovery_and_snapshot(&app, &state, &mut guard)
+    let snapshot = persist_recovery_and_snapshot(&app, &state, &mut guard)?;
+    drop(guard);
+
+    crate::app::recents::remember(&app, &path);
+    crate::app::menu::refresh_menu(&app);
+
+    Ok(snapshot)
 }
 
 #[tauri::command]

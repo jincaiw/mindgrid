@@ -24,6 +24,14 @@ export function getDocumentState() {
   return invokeCommand<DocumentSessionSnapshot | null>('get_document_state')
 }
 
+export function openRecentFile(index: number) {
+  return invokeCommand<DocumentSessionSnapshot>('open_recent_file', { index })
+}
+
+export function clearRecentFiles() {
+  return invokeCommand<DocumentSessionSnapshot>('clear_recent_files')
+}
+
 export function openDocumentFile(path: string) {
   return invokeCommand<DocumentSessionSnapshot>('open_document_file', { path })
 }

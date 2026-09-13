@@ -83,7 +83,10 @@ fn check_item<R: Runtime, M: tauri::Manager<R>>(
     CheckMenuItem::with_id(manager, id, text, true, checked, None::<&str>)
 }
 
-pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+pub fn build_menu<R: Runtime>(
+    handle: &AppHandle<R>,
+    recent_files: &[String],
+) -> tauri::Result<Menu<R>> {
     // —— 文件 ——
     // 导入/导出收成二级子菜单（XMind 同样如此），避免一级菜单过长。
     let import = SubmenuBuilder::new(handle, "导入")
@@ -100,14 +103,39 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&item(handle, "file.export-pdf", "PDF 文档…")?)
         .build()?;
 
-    let file = SubmenuBuilder::new(handle, "文件")
+    // 「最近打开」：列表为空时**整个子菜单不出现**（不留一个空壳菜单项）。
+    // 下标进 id、路径由 Rust 自己解析（见 recents::resolve）——前端不需要维护第二份列表。
+    // 注意这些 id 是**变量拼接**出来的，不是字面量：前端菜单 id 同步契约测试只比对静态字面量，
+    // 动态家族由 `recentFileMenuActionIndex` 单独识别。
+    let recent = {
+        let mut builder = SubmenuBuilder::new(handle, "最近打开");
+        for (index, file_path) in recent_files.iter().enumerate() {
+            let label = std::path::Path::new(file_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().to_string())
+                .unwrap_or_else(|| file_path.clone());
+            builder = builder.text(format!("file.recent.{index}"), label);
+        }
+        // 用 item() 而不是 text()：静态 id 要经过辅助函数，前端「id 同步契约」才比对得到
+        builder
+            .separator()
+            .item(&item(handle, "file.recent-clear", "清除菜单")?)
+            .build()?
+    };
+
+    // 「最近打开」为空时整个子菜单不出现——不留空壳，也不放长期置灰的占位项
+    let mut file_builder = SubmenuBuilder::new(handle, "文件")
         .item(&item(handle, "file.new", &format!("新建文档{}", combo("N")))?)
         .item(&item(
             handle,
             "file.new-sheet",
             &format!("新建标签页{}", combo("T")),
         )?)
-        .item(&item(handle, "file.open", &format!("打开文档…{}", combo("O")))?)
+        .item(&item(handle, "file.open", &format!("打开文档…{}", combo("O")))?);
+    if !recent_files.is_empty() {
+        file_builder = file_builder.item(&recent);
+    }
+    let file = file_builder
         .separator()
         .item(&item(handle, "file.save", &format!("保存{}", combo("S")))?)
         .item(&item(
@@ -356,6 +384,36 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .item(&window)
         .item(&help)
         .build()
+}
+
+/// 按当前最近文件列表重建菜单。
+///
+/// **必须重新应用 macOS 的窗口/帮助菜单角色**：`AppHandle::set_menu` 只替换菜单，
+/// 不会像启动路径那样调用 `init_app_menu`（见 tauri `app.rs`）。少了这一步，
+/// 重建一次就会**悄悄丢掉窗口列表与帮助搜索**——正是本项目刚修好的东西。
+pub fn refresh_menu<R: Runtime>(app: &AppHandle<R>) {
+    let recents = crate::app::recents::load(app);
+    let Ok(menu) = build_menu(app, &recents) else {
+        return
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(submenu) = menu
+            .get(WINDOW_SUBMENU_ID)
+            .and_then(|entry| entry.as_submenu().cloned())
+        {
+            let _ = submenu.set_as_windows_menu_for_nsapp();
+        }
+        if let Some(submenu) = menu
+            .get(HELP_SUBMENU_ID)
+            .and_then(|entry| entry.as_submenu().cloned())
+        {
+            let _ = submenu.set_as_help_menu_for_nsapp();
+        }
+    }
+
+    let _ = app.set_menu(menu);
 }
 
 /// 回写菜单项的勾选态（供前端在状态变化时调用）。

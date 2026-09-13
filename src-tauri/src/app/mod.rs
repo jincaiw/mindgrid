@@ -6,3 +6,4 @@ pub mod import_export;
 #[cfg(desktop)]
 pub mod menu;
 pub mod persistence;
+pub mod recents;

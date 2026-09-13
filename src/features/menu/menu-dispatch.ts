@@ -90,6 +90,10 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     case 'file.open':
       void session.openDocument()
       return
+    // 「最近打开」的具体项是动态 id（file.recent.N），不在这里——见 useNativeMenuActions。
+    case 'file.recent-clear':
+      void session.clearRecentFiles()
+      return
     case 'file.save':
       void session.saveDocument()
       return
