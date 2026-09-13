@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 import type { DocumentSession } from '../document/use-document-session'
 import type { SheetSnapshot } from '../../lib/document/types'
+import { computeLayout } from '../canvas/layouts'
 import { runMenuCommand, type MenuCommandContext } from './menu-dispatch'
 
 function makeSheet(): SheetSnapshot {
@@ -54,6 +55,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setTopicStyleRef: asyncNoop(),
     setTopicStyleOverrides: asyncNoop(),
     createChildTopic: asyncNoop(),
+    createFloatingTopic: asyncNoop(),
     // 缩进 / 减少缩进走的就是这两个（本轮给 moveTopic 加了插入位置参数）
     moveTopic: asyncNoop(),
     moveTopics: asyncNoop(),
@@ -456,5 +458,43 @@ describe('缩进 / 减少缩进', () => {
 
     // 原父 topic_a 在 root 里排第 0 → 插到 1，即缩进前它所在的位置
     expect(session.moveTopic).toHaveBeenCalledWith('topic_b', 'topic_root', '减少缩进', 1)
+  })
+})
+
+describe('插入 → 自由主题', () => {
+  it('创建在整幅图下方的空白处（用真实布局算，不猜）', () => {
+    const sheet = makeSheet()
+    const { ctx, session } = makeHarness({ activeTopicId: 'topic_a', activeSheet: sheet })
+
+    runMenuCommand('insert.free-topic', ctx)
+
+    const layout = computeLayout(sheet.rootTopic, sheet.chartType)
+    const bottom = layout.nodes.reduce(
+      (max, node) => Math.max(max, node.y + node.height / 2),
+      0,
+    )
+    expect(session.createFloatingTopic).toHaveBeenCalledWith(
+      '新建浮动主题',
+      0,
+      bottom + 80,
+    )
+  })
+
+  it('默认文案与画布双击创建一致', () => {
+    const { ctx, session } = makeHarness({ activeTopicId: 'topic_a' })
+    runMenuCommand('insert.free-topic', ctx)
+
+    expect(session.createFloatingTopic).toHaveBeenCalledWith(
+      '新建浮动主题',
+      expect.any(Number),
+      expect.any(Number),
+    )
+  })
+
+  it('没有活动画布时不创建', () => {
+    const { ctx, session } = makeHarness({ activeSheet: null })
+    runMenuCommand('insert.free-topic', ctx)
+
+    expect(session.createFloatingTopic).not.toHaveBeenCalled()
   })
 })

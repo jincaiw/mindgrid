@@ -127,7 +127,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
   {
     id: 'view-tab-bar',
     combo: { key: 't', mod: true, shift: true },
-    label: '显示标签页栏',
+    label: '显示画布栏',
     description: '显示或隐藏底部画布标签页栏',
     category: '视图',
     scope: 'global',

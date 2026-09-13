@@ -53,6 +53,7 @@ export type MenuActionId =
   | 'insert.sibling-after'
   | 'insert.sibling-before'
   | 'insert.parent'
+  | 'insert.free-topic'
   | 'insert.relationship'
   | 'insert.summary'
   | 'insert.boundary'
@@ -124,6 +125,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'insert.sibling-after',
   'insert.sibling-before',
   'insert.parent',
+  'insert.free-topic',
   'insert.relationship',
   'insert.summary',
   'insert.boundary',

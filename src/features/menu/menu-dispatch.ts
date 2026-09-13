@@ -6,6 +6,7 @@ import {
 } from '../../lib/document/tree'
 import type { DocumentSession } from '../document/use-document-session'
 import type { SheetSnapshot } from '../../lib/document/types'
+import { computeLayout } from '../canvas/layouts'
 import type { CanvasCommand, MenuActionId } from './menu-actions'
 
 /**
@@ -286,6 +287,22 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
         ctx.notify('请先选中一个主题')
       }
       return
+    // 自由主题：XMind 放在视口中心，但菜单项拿不到视口/相机。
+    // 改为放在**整幅图下方**的空白处——用真实布局的包围盒算，不猜，
+    // 保证一定可见（创建后拖到想放的位置即可）。
+    case 'insert.free-topic': {
+      if (!activeSheet) {
+        return
+      }
+      const layout = computeLayout(activeSheet.rootTopic, activeSheet.chartType)
+      const bottom = layout.nodes.reduce(
+        (max, node) => Math.max(max, node.y + node.height / 2),
+        0,
+      )
+      // 文案与画布双击创建保持一致，避免两处默认名不同
+      void session.createFloatingTopic('新建浮动主题', 0, bottom + 80)
+      return
+    }
     case 'insert.relationship':
       if (ctx.selectedTopicIds.length === 2) {
         void session.createRelationship(ctx.selectedTopicIds[0], ctx.selectedTopicIds[1], null)

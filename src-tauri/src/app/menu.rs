@@ -212,6 +212,7 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             "insert.parent",
             &format!("父主题{}", combo("Enter")),
         )?)
+        .item(&item(handle, "insert.free-topic", "自由主题")?)
         .separator()
         .item(&item(handle, "insert.relationship", "联系")?)
         .item(&item(handle, "insert.summary", "概要")?)
@@ -276,10 +277,13 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             true,
         )?)
         .item(&check_item(handle, "view.toolbar", "工具栏", true)?)
+        // 名称用 XMind 的「画布栏」：这一项控制的是底部的**画布（工作表）栏**。
+        // XMind 的「标签页栏」指多文档标签（⌥⌘T），是另一个东西——
+        // 本项目单文档、没有多文档标签，故不设那一项，也不能借用它的名字。
         .item(&check_item(
             handle,
             "view.tab-bar",
-            &format!("显示标签页栏{}", combo_shift("T")),
+            &format!("显示画布栏{}", combo_shift("T")),
             true,
         )?)
         .build()?;
