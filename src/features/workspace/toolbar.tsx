@@ -81,8 +81,13 @@ const BOUNDARY_LABEL = '分组'
 const SUMMARY_LABEL = '概要'
 
 /** 分组分隔符：1px 竖线。 */
-function ToolbarDivider() {
-  return <span className="toolbar__divider" aria-hidden="true" />
+/**
+ * 工具栏的**组间距**。XMind 的工具栏没有竖分隔线，组与组之间靠更大的空白分开，
+ * 所以这里渲染的是纯占位（不是一条线）。原来叫 ToolbarDivider 并画一条竖线，
+ * 与基准不符，且删掉样式后会变成无样式的残留元素。
+ */
+function ToolbarGroupGap() {
+  return <span className="toolbar__group-gap" aria-hidden="true" />
 }
 
 /**
@@ -378,7 +383,7 @@ export function Toolbar({
           <MarkerIcon />
         </ToolbarAction>
 
-        <ToolbarDivider />
+        <ToolbarGroupGap />
 
         <ToolbarMenu label="插入" disabled={!session.document} items={insertMenuItems}>
           <InsertIcon />
@@ -418,7 +423,7 @@ export function Toolbar({
           </ToolbarAction>
         ) : null}
 
-        <ToolbarDivider />
+        <ToolbarGroupGap />
 
         {onOpenShortcutsHelp ? (
           <button

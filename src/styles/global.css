@@ -1030,7 +1030,10 @@ button {
   padding: 0 12px;
   border-radius: 0;
   border-bottom: 1px solid var(--color-border-default);
-  background: var(--color-surface-glass-strong);
+  /* 工具栏底色对齐 XMind：基准图实测工具栏 245、画布 255 —— **工具栏比画布深**。
+     我们原来是 `--color-surface-glass-strong`（纯白 255）压在 247 的画布上，关系正好反了。
+     改用 background-app（浅色 247 / 深色 #1a1b1e），既贴基准、又在两套主题下都是"外壳色"。 */
+  background: var(--color-background-app);
   color: var(--color-text-primary);
   min-height: 52px;
 }
@@ -1060,7 +1063,8 @@ button {
 
 .toolbar__filename {
   margin: 0;
-  font-size: 13px;
+  /* 15px：按基准图量得「思维导图」4 字约占 60 逻辑px ⇒ 字宽≈15px */
+  font-size: 15px;
   font-weight: 600;
   color: var(--color-text-primary);
   white-space: nowrap;
@@ -1074,6 +1078,9 @@ button {
   color: var(--color-text-secondary);
   white-space: nowrap;
 }
+/* 曾有 `@media (max-width: 1440px) { .toolbar__save-hint { display: none } }`：
+ * 1440 以下就藏起来。但基准图里 XMind 在 960 逻辑px 下**仍然显示**「已编辑」状态，
+ * 而且这行是"工作有没有保存"的唯一提示，不该在小窗口消失。故删除该规则。 */
 
 .toolbar__selection {
   display: inline-flex;
@@ -1201,15 +1208,6 @@ button {
   background: #1f6ceb;
 }
 
-.toolbar__divider {
-  width: 1px;
-  height: 20px;
-  /* 原为 rgba(0, 0, 0, 0.1)：硬编码的黑色在暗色主题下等于隐形，分隔线会消失 */
-  background: var(--color-border-strong);
-  margin: 0 4px;
-  flex-shrink: 0;
-}
-
 .toolbar__btn-label {
   font-size: 12px;
   font-weight: 600;
@@ -1260,6 +1258,12 @@ button {
 /* 下拉菜单 */
 .toolbar__menu {
   position: relative;
+}
+
+/* 工具栏的组间距（不是分隔线）：XMind 用空白分组，不用竖线 */
+.toolbar__group-gap {
+  width: 12px;
+  flex-shrink: 0;
 }
 
 .toolbar__menu-list {
@@ -3704,12 +3708,6 @@ button {
 
 
 /* 工具栏三区内容较多：窄屏时先隐藏保存提示，再压缩文件名宽度 */
-@media (max-width: 1440px) {
-  .toolbar__save-hint {
-    display: none;
-  }
-}
-
 @media (max-width: 1280px) {
   .toolbar__filename {
     max-width: 120px;

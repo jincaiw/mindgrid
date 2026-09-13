@@ -245,10 +245,10 @@ export function SummaryIcon(props: IconProps) {
 
 /** 标记（旗帜） */
 export function MarkerIcon(props: IconProps) {
+  // 空心五角星：XMind 工具栏的「标记」用的就是星形（原来是旗子，形不一样）
   return (
     <Svg {...props}>
-      <path d="M5 21V4" />
-      <path d="M5 5h11l-2 3.5L16 12H5z" />
+      <path d="M12 3.6l2.62 5.31 5.86.85-4.24 4.13 1 5.84L12 16.98l-5.24 2.75 1-5.84L3.52 9.76l5.86-.85z" />
     </Svg>
   )
 }
