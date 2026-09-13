@@ -22,16 +22,9 @@ export type TopicAlignMode =
   | 'distribute-h'
   | 'distribute-v'
 
-export const TOPIC_ALIGN_MODES: readonly TopicAlignMode[] = [
-  'left',
-  'center-h',
-  'right',
-  'top',
-  'middle-v',
-  'bottom',
-  'distribute-h',
-  'distribute-v',
-]
+// 刻意**不**提供「所有模式的数组」：模式的唯一权威清单是菜单侧的
+// ALIGN_MODE_BY_MENU_ID（它同时决定每个菜单项用哪种模式），再导出一份没人读的清单
+// 只会成为第二处需要同步的地方。类型本身已经约束了取值范围。
 
 /** 菜单文字与算法同源：标签写在这里，菜单与提示都从这里取。 */
 export const TOPIC_ALIGN_LABELS: Readonly<Record<TopicAlignMode, string>> = {
