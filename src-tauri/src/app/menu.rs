@@ -21,7 +21,10 @@
 //! 4. macOS 自动成为系统菜单栏，Windows / Linux 显示在窗口内（Tauri 默认行为）。
 
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder},
+    menu::{
+        CheckMenuItem, Menu, MenuBuilder, MenuItem, PredefinedMenuItem, SubmenuBuilder,
+        HELP_SUBMENU_ID, WINDOW_SUBMENU_ID,
+    },
     AppHandle, Runtime,
 };
 
@@ -279,16 +282,25 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .build()?;
 
     // —— 窗口：系统预置项，无自定义 id ——
-    let window = SubmenuBuilder::new(handle, "窗口")
+    //
+    // **必须带 `WINDOW_SUBMENU_ID`**：Tauri 启动时只对带这个 id 的子菜单调用
+    // `set_as_windows_menu_for_nsapp()`（见 tauri/src/app.rs 的 `init_app_menu`）。
+    // 不带就没有 macOS「窗口菜单」角色——**打开的窗口列表不会自动列在这里**
+    // （XMind 的窗口菜单末尾就有「✓ 思维导图」这一项，正是该角色的产物）。
+    //
+    // 顺序对齐 XMind：最小化 / 缩放 → 关闭窗口 → 全屏切换，随后由系统追加窗口列表。
+    let window = SubmenuBuilder::with_id(handle, WINDOW_SUBMENU_ID, "窗口")
         .item(&PredefinedMenuItem::minimize(handle, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(handle, Some("缩放"))?)
-        .item(&PredefinedMenuItem::close_window(handle, Some("关闭"))?)
+        .separator()
+        .item(&PredefinedMenuItem::close_window(handle, Some("关闭窗口"))?)
         .separator()
         .item(&PredefinedMenuItem::fullscreen(handle, Some("全屏切换"))?)
         .build()?;
 
     // —— 帮助 ——
-    let help = SubmenuBuilder::new(handle, "帮助")
+    // 同理必须带 `HELP_SUBMENU_ID`，macOS 才会挂上系统「帮助」菜单的搜索框角色。
+    let help = SubmenuBuilder::with_id(handle, HELP_SUBMENU_ID, "帮助")
         .item(&PredefinedMenuItem::about(
             handle,
             Some("关于 MindGrid"),
@@ -296,7 +308,36 @@ pub fn build_menu<R: Runtime>(handle: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         )?)
         .build()?;
 
-    MenuBuilder::new(handle)
+    // —— 应用菜单（仅 macOS）——
+    //
+    // 这一段**不能省**：`init_for_nsapp()` 只是把我们的菜单整体设为 NSApp 的 main menu
+    // （见 muda 的 platform_impl/macos），**不会自动补一个应用菜单**。
+    // 缺了它，用户就没有 ⌘Q 退出、没有隐藏 / 隐藏其他 / 显示全部、也没有「服务」——
+    // XMind 的应用菜单（基准图 19）里这些全都有。
+    //
+    // 「关于」留在「帮助」里（那里已有），应用菜单不重复放一份，避免同一项出现两次。
+    #[cfg(target_os = "macos")]
+    let app_menu = {
+        let pkg = handle.package_info();
+        SubmenuBuilder::new(handle, &pkg.name)
+            .separator()
+            .services()
+            .separator()
+            .hide()
+            .hide_others()
+            .show_all()
+            .separator()
+            .quit()
+            .build()?
+    };
+
+    let mut builder = MenuBuilder::new(handle);
+    // macOS 的第一项必须是应用菜单（进程名 + 服务/隐藏/退出）
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.item(&app_menu);
+    }
+    builder
         .item(&file)
         .item(&edit)
         .item(&insert)

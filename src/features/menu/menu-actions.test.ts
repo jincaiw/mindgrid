@@ -84,7 +84,11 @@ it('routes only canvas-internal commands to the canvas host', () => {
 it('keeps the XMind top-level menu order in menu.rs', () => {
   const titles = ['文件', '编辑', '插入', '工具', '查看', '窗口', '帮助']
   const positions = titles.map((title) => {
-    const index = menuRsSource.indexOf(`SubmenuBuilder::new(handle, "${title}")`)
+    // 窗口 / 帮助 用 with_id(handle, <特殊 id>, "标题") 建（要拿 macOS 的菜单角色），
+    // 其余用 new(handle, "标题")，两种写法都要认。
+    const index = menuRsSource.search(
+      new RegExp(`SubmenuBuilder::(?:new\\(handle,\\s*|with_id\\(handle,\\s*[A-Z_]+,\\s*)"${title}"`),
+    )
     expect(index, `未找到顶层菜单「${title}」`).toBeGreaterThan(-1)
     return index
   })
@@ -94,5 +98,37 @@ it('keeps the XMind top-level menu order in menu.rs', () => {
       positions[i],
       `顶层菜单「${titles[i]}」应排在「${titles[i - 1]}」之后`,
     ).toBeGreaterThan(positions[i - 1])
+  }
+})
+
+/**
+ * macOS 菜单角色守卫。
+ *
+ * Tauri 启动时只对带 `WINDOW_SUBMENU_ID` / `HELP_SUBMENU_ID` 的子菜单调用
+ * `set_as_windows_menu_for_nsapp()` / `set_as_help_menu_for_nsapp()`
+ * （见 tauri 的 `app.rs::init_app_menu`）。少了这两个 id：
+ *   - 窗口菜单不会自动列出打开的窗口（XMind 的窗口菜单末尾就有这一项）
+ *   - 帮助菜单不会挂上系统帮助搜索角色
+ * 两者都是**静默失效**——菜单看着仍然正常，只有逐项对照才发现少东西。
+ */
+it('uses the macOS window / help submenu roles', () => {
+  expect(menuRsSource).toContain('WINDOW_SUBMENU_ID')
+  expect(menuRsSource).toContain('HELP_SUBMENU_ID')
+  expect(menuRsSource).toMatch(/SubmenuBuilder::with_id\(handle,\s*WINDOW_SUBMENU_ID,\s*"窗口"\)/)
+  expect(menuRsSource).toMatch(/SubmenuBuilder::with_id\(handle,\s*HELP_SUBMENU_ID,\s*"帮助"\)/)
+})
+
+/**
+ * 应用菜单守卫。
+ *
+ * `Menu::default()` 里那段 macOS 应用菜单（服务 / 隐藏 / 隐藏其他 / 显示全部 / 退出）
+ * 是我们的自定义 MenuBuilder **不会自动获得**的：`init_for_nsapp()` 只做
+ * `NSApplication.setMainMenu(我们的菜单)`（见 muda 的 platform_impl/macos）。
+ * 少了它用户就没有 ⌘Q 退出、不能隐藏应用。
+ */
+it('keeps a macOS app menu so quit / hide are reachable', () => {
+  expect(menuRsSource).toContain('#[cfg(target_os = "macos")]')
+  for (const call of ['.services()', '.hide()', '.hide_others()', '.show_all()', '.quit()']) {
+    expect(menuRsSource, `应用菜单缺少 ${call}`).toContain(call)
   }
 })
