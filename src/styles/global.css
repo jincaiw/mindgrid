@@ -2323,9 +2323,9 @@ button {
 
 .panel__tabs {
   display: flex;
-  align-items: stretch;
-  gap: 0;
-  padding: 0 8px;
+  align-items: center;
+  gap: 2px;
+  padding: 8px;
   border-bottom: 1px solid var(--color-border-default);
   flex-shrink: 0;
   background: var(--color-surface);
@@ -2337,8 +2337,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 10px 12px;
-  margin-top: 4px;
+  padding: 6px 16px;
   border: none;
   background: transparent;
   color: var(--color-text-secondary);
@@ -2347,7 +2346,7 @@ button {
   cursor: pointer;
   position: relative;
   transition: color 120ms ease, background 120ms ease;
-  border-radius: 6px 6px 0 0;
+  border-radius: 6px;
   white-space: nowrap;
 }
 
@@ -2356,20 +2355,61 @@ button {
   background: var(--color-surface-subtle);
 }
 
-.panel__tab--active {
-  color: var(--color-accent);
+/* 选中项 = 实心强调色胶囊 + 白字（XMind 的页签形态），不再用下划线。
+ *
+ * 必须连 `:hover` 一起写：`.panel__tab:hover`（类 + 伪类）的优先级**高于**
+ * 单个 `.panel__tab--active`，只写后者的话鼠标停在页签上时会掉回 hover 的浅灰底
+ * ——单击后指针正好停在那里，截图里就一直是灰的。 */
+.panel__tab--active,
+.panel__tab--active:hover {
+  background: var(--color-accent);
+  color: #fff;
   font-weight: 600;
 }
 
-.panel__tab--active::after {
+/* 未选中项之间用细竖线分隔；紧邻选中胶囊的那条不画（否则像多了个框） */
+.panel__tab + .panel__tab::before {
   content: '';
   position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 2px;
-  background: var(--color-accent);
-  border-radius: 2px 2px 0 0;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1px;
+  height: 14px;
+  background: var(--color-border-default);
+}
+
+.panel__tab--active + .panel__tab::before {
+  display: none;
+}
+
+/* 分组标题行右侧的主控件（XMind：「⌄ 形状 ……[形状下拉]」） */
+.panel__section-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+
+.panel__section-control {
+  width: 108px;
+}
+
+/* 数值 + 单位（XMind 的「66 PX」） */
+.panel__unit {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* 宽度行：数值与单位同格（inputs 之间只有 4px），右侧留给「适合」 */
+.panel__width-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.panel__field-row--width {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .panel__tab-body {

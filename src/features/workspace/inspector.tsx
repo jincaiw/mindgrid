@@ -59,7 +59,7 @@ import {
 } from './structure-directions'
 import { SwatchPicker } from './swatch-picker'
 import { PaletteEditor } from './palette-editor'
-import { ChevronDownIcon, GridIcon, PlayIcon, TypeIcon } from './icons'
+import { ChevronDownIcon } from './icons'
 import { createPortal } from 'react-dom'
 import { usePopoverAnchor } from './use-popover-anchor'
 import {
@@ -188,11 +188,8 @@ function ColorSwatchField({
 
 /**
  * 分组小节。对齐 XMind 的两点：
- * 标题可折叠（展开 ▾ / 收起 ▸），默认展开。
- *
- * 还没做 XMind 的「▾ 形状 ……[形状下拉]」那种"主控件挂在标题行右侧"——
- * 它要求控件是**紧凑下拉**，而我们这几处目前是整行分段按钮/滑杆，塞进标题行会挤爆。
- * 先把控件词汇换成下拉，这个位置才立得住（不留一个没人用的插槽）。
+ * 1. 标题可折叠（展开 ▾ / 收起 ▸），默认展开；
+ * 2. `action` 把该分组的**主控件**挂到标题行右侧（XMind 的「⌄ 形状 ……[形状下拉]」）。
  *
  * 折叠状态只存在组件内、不持久化：它是临时的"看一眼别的分组"的操作，
  * 记住它反而会让用户下次打开面板时找不到东西。
@@ -200,9 +197,12 @@ function ColorSwatchField({
 function PanelSection({
   title,
   children,
+  action,
 }: {
   title: string
   children: React.ReactNode
+  /** 该分组的**主控件**，挂在标题行右侧（XMind 的「⌄ 形状 ……[形状下拉]」）。 */
+  action?: React.ReactNode
 }) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -218,6 +218,7 @@ function PanelSection({
           <ChevronDownIcon size={12} />
           <span>{title}</span>
         </button>
+        {action ? <span className="panel__section-action">{action}</span> : null}
       </h3>
       {collapsed ? null : children}
     </div>
@@ -485,13 +486,13 @@ export type InspectorTab = 'style' | 'pitch' | 'canvas'
 interface TabConfig {
   id: InspectorTab
   label: string
-  icon: typeof TypeIcon
 }
 
+// 页签不带图标：XMind 的选中项是实心蓝胶囊 + 白字，未选中项之间用细竖线分隔
 const TABS: TabConfig[] = [
-  { id: 'style', label: '样式', icon: TypeIcon },
-  { id: 'pitch', label: '演说', icon: PlayIcon },
-  { id: 'canvas', label: '画布', icon: GridIcon },
+  { id: 'style', label: '样式' },
+  { id: 'pitch', label: '演说' },
+  { id: 'canvas', label: '画布' },
 ]
 
 interface InspectorProps {
@@ -1079,7 +1080,6 @@ export function Inspector({
     <aside className="panel panel--inspector" aria-label="右侧检查器">
       <div className="panel__tabs" role="tablist" aria-label="属性面板分类">
         {TABS.map((tab) => {
-          const Icon = tab.icon
           const selected = tab.id === activeTab
           return (
             <button
@@ -1092,7 +1092,7 @@ export function Inspector({
               className={`panel__tab${selected ? ' panel__tab--active' : ''}`}
               onClick={() => setActiveTab(tab.id)}
             >
-              <Icon size={14} />
+              {/* XMind 的页签没有图标：选中项是实心蓝胶囊，未选中项之间用细竖线分隔 */}
               <span>{tab.label}</span>
             </button>
           )
@@ -1133,7 +1133,25 @@ export function Inspector({
                 或别处的编辑入口，排在这些外观分组之后，不再挡在首屏。 */}
             {activeTopic && !hasMultipleSelectedTopics ? (
               <>
-            <PanelSection title="形状">
+            <PanelSection
+              title="形状"
+              action={
+                <select
+                  className="panel__section-control"
+                  aria-label="节点形状"
+                  value={shapeDraft || 'rounded'}
+                  onChange={(event) =>
+                    applyStyleOverride({ shape: event.target.value as TopicShape })
+                  }
+                >
+                  {SHAPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              }
+            >
                 {/* XMind 的形状分组是「填充 [■▾][色块]」「边框 [▭▾][色块]」两行，
                     预设收进浮层。原来把预设色点平铺在面板里，白占一整行高度。 */}
                 <div className="panel__field">
@@ -1158,22 +1176,6 @@ export function Inspector({
                   />
                 </div>
 
-                <div className="panel__field">
-                  <span>形状</span>
-                  <select
-                    aria-label="节点形状"
-                    value={shapeDraft || 'rounded'}
-                    onChange={(event) =>
-                      applyStyleOverride({ shape: event.target.value as TopicShape })
-                    }
-                  >
-                    {SHAPE_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
                 <div className="panel__field">
                   <span>
                     边框粗细
@@ -1220,24 +1222,29 @@ export function Inspector({
 
                 <div className="panel__field">
                   <span>宽度</span>
-                  <div className="panel__field-row">
-                    <input
-                      type="number"
-                      aria-label="节点宽度"
-                      min={MIN_FIXED_WIDTH}
-                      max={MAX_FIXED_WIDTH}
-                      step={2}
-                      value={widthDraft === '' ? '' : widthDraft}
-                      placeholder="自动"
-                      onChange={(e) => {
-                        const raw = e.target.value
-                        setWidthDraft(raw === '' ? '' : Number(raw))
-                      }}
-                      onBlur={() => applyStyleOverride({})}
-                      onKeyUp={(e) => {
-                        if (e.key === 'Enter') applyStyleOverride({})
-                      }}
-                    />
+                  <div className="panel__field-row panel__field-row--width">
+                    {/* 「数值 + PX」包成一组：否则 PX 会作为第三个孩子被挤到下一行 */}
+                    <span className="panel__width-input">
+                      <input
+                        type="number"
+                        aria-label="节点宽度"
+                        min={MIN_FIXED_WIDTH}
+                        max={MAX_FIXED_WIDTH}
+                        step={2}
+                        value={widthDraft === '' ? '' : widthDraft}
+                        placeholder="自动"
+                        onChange={(e) => {
+                          const raw = e.target.value
+                          setWidthDraft(raw === '' ? '' : Number(raw))
+                        }}
+                        onBlur={() => applyStyleOverride({})}
+                        onKeyUp={(e) => {
+                          if (e.key === 'Enter') applyStyleOverride({})
+                        }}
+                      />
+                      {/* XMind 的宽度行是「66 PX 适合」：数值 + 单位 + 适合 */}
+                      <span className="panel__unit">PX</span>
+                    </span>
                     <button
                       type="button"
                       className="panel__action panel__action--ghost"
