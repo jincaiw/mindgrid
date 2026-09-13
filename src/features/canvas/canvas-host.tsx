@@ -1097,6 +1097,15 @@ function MindMapScene({
         return
       }
 
+      // ⚠️ React 只在**派发期间**填 `event.currentTarget`，派发一结束就置空。
+      // 本函数下面有 `await`（摆放/移动都要落库），等到清理那一行时
+      // `event.currentTarget` 已经是 null —— 读它就是一个
+      // 「Cannot read properties of null (reading 'hasPointerCapture')」的未捕获异常，
+      // 而且它发生在 `await` 之后，**只在真的拖动成功时**才出现（静默、难复现）。
+      // 所以在任何 await 之前先把元素与 pointerId 取出来。
+      const captureTarget = event.currentTarget
+      const pointerId = event.pointerId
+
       if (interaction.kind === 'box' && selectionBox) {
         const selectionRect = createViewportRectFromPoints(
           { x: selectionBox.startX, y: selectionBox.startY },
@@ -1123,8 +1132,17 @@ function MindMapScene({
       const draggedNode = dragPreview ? nodeMap.get(dragPreview.topicId) : null
       const isFirstLevelBranch =
         !!draggedNode && rootTopic.children.some((child) => child.id === draggedNode.id)
+      // 浮动主题**没有结构位置，它的拖动就是摆放**。
+      // 此前这里只认"分支自由布局 + 一级分支"，于是浮动主题被拖时走的是结构移动分支——
+      // 而它根本不在树里，只会失败。菜单里「创建后拖到想放的位置即可」这句说明因此是假的。
+      const isFloatingTopic =
+        !!draggedNode && floatingTopics.some((topic) => topic.id === draggedNode.id)
 
-      if (interaction.kind === 'drag' && dragPreview && freeBranchLayout && isFirstLevelBranch) {
+      if (
+        interaction.kind === 'drag' &&
+        dragPreview &&
+        (isFloatingTopic || (freeBranchLayout && isFirstLevelBranch))
+      ) {
         suppressClickRef.current = true
         await onPlaceTopicFreely(
           dragPreview.topicId,
@@ -1140,8 +1158,8 @@ function MindMapScene({
       setSelectionBox(null)
       setDragPreview(null)
 
-      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-        event.currentTarget.releasePointerCapture(event.pointerId)
+      if (captureTarget.hasPointerCapture(pointerId)) {
+        captureTarget.releasePointerCapture(pointerId)
       }
     },
     [
@@ -1153,6 +1171,7 @@ function MindMapScene({
       onMoveTopic,
       onPlaceTopicFreely,
       freeBranchLayout,
+      floatingTopics,
       nodeMap,
       rootTopic,
       onSelect,

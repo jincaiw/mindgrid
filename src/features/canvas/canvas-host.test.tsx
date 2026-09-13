@@ -1137,3 +1137,91 @@ it('requests branch focus for the selected topic with Cmd/Ctrl + ;', () => {
 
   expect(onFocusTopicIdChange).toHaveBeenCalledWith('topic_insight')
 })
+
+/**
+ * 浮动主题的拖动 = 摆放位置。
+ *
+ * 回归点：拖拽落点判定此前只认「分支自由布局 + 一级分支」，
+ * 而浮动主题**不在树里**，于是它被拖时要么静默无事发生、要么走结构移动失败。
+ * 结果就是菜单里「创建后拖到想放的位置即可」这句话是假的——自由主题创建出来就再也挪不动。
+ */
+describe('浮动主题拖动即摆放', () => {
+  function makeSessionWithFloatingTopic() {
+    const moveTopic = vi.fn(async () => {})
+    const moveTopicFreely = vi.fn(async () => {})
+    const session = createSessionStub({
+      moveTopic,
+      moveTopicFreely,
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic: {
+              id: 'topic_root',
+              text: '中心主题',
+              collapsed: false,
+              children: [
+                {
+                  id: 'topic_child',
+                  text: '普通分支',
+                  collapsed: false,
+                  children: [{ id: 'topic_grand', text: '更深一层', collapsed: false, children: [] }],
+                },
+              ],
+            },
+            floatingTopics: [
+              {
+                id: 'float_1',
+                text: '自由主题',
+                collapsed: false,
+                children: [],
+                layoutHints: { offsetX: 0, offsetY: 300 },
+              },
+            ],
+          },
+        ],
+      },
+    })
+    return { session, moveTopic, moveTopicFreely }
+  }
+
+  it('拖动浮动主题写入自由位置（且与分支自由布局开关无关）', () => {
+    const { session, moveTopic, moveTopicFreely } = makeSessionWithFloatingTopic()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const stage = screen.getByLabelText('思维导图舞台')
+    const viewport = stage.querySelector('.mindmap-scene') as HTMLElement
+    const floatingNode = document.querySelector('[data-topic-id="float_1"]') as HTMLElement
+    expect(floatingNode).not.toBeNull()
+
+    fireEvent.pointerDown(floatingNode, { button: 0, clientX: 100, clientY: 100, pointerId: 1 })
+    fireEvent.pointerMove(viewport, { button: 0, clientX: 180, clientY: 140, pointerId: 1 })
+    fireEvent.pointerUp(viewport, { button: 0, clientX: 180, clientY: 140, pointerId: 1 })
+
+    // 位移 80/40 世界单位（默认缩放 1），叠加原位置 (0, 300)
+    expect(moveTopicFreely).toHaveBeenCalledWith('float_1', 80, 340)
+    // 浮动主题不该被当成结构移动
+    expect(moveTopic).not.toHaveBeenCalled()
+  })
+
+  it('树内普通主题仍然走结构移动，不会被误判成自由摆放', () => {
+    const { session, moveTopicFreely } = makeSessionWithFloatingTopic()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const stage = screen.getByLabelText('思维导图舞台')
+    const viewport = stage.querySelector('.mindmap-scene') as HTMLElement
+    const branchNode = document.querySelector('[data-topic-id="topic_child"]') as HTMLElement
+
+    fireEvent.pointerDown(branchNode, { button: 0, clientX: 100, clientY: 100, pointerId: 2 })
+    fireEvent.pointerMove(viewport, { button: 0, clientX: 180, clientY: 140, pointerId: 2 })
+    fireEvent.pointerUp(viewport, { button: 0, clientX: 180, clientY: 140, pointerId: 2 })
+
+    // 没开分支自由布局、也不是浮动主题 → 不该写自由位置
+    expect(moveTopicFreely).not.toHaveBeenCalled()
+  })
+})
