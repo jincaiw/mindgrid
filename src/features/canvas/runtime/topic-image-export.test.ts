@@ -6,7 +6,12 @@ import { buildScene, type InteractionOverlays, type TopicVisualStates } from './
 import { renderSceneToSvg } from './svg-renderer'
 import { decodeImage, preloadTopicImages } from './png-exporter'
 import { getNodePadding } from './style-constants'
-import { TOPIC_IMAGE_TITLE_OFFSET, computeTopicImageRect } from './topic-image-constants'
+import {
+  TOPIC_IMAGE_RADIUS,
+  TOPIC_IMAGE_TITLE_OFFSET,
+  computeTopicImageFittedRect,
+  computeTopicImageRect,
+} from './topic-image-constants'
 
 const DATA_URL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=='
 
@@ -139,5 +144,66 @@ describe('PNG 导出的图片预加载容错', () => {
     // 必须靠超时兜底返回，否则整次导出会永久挂起。
     const result = await preloadTopicImages(buildTestScene({ a: DATA_URL }), 0)
     expect(result.size).toBe(0)
+  })
+})
+
+/**
+ * 主题图片的圆角裁剪：PNG 与 SVG 必须落在**同一个矩形**上。
+ *
+ * 历史缺陷：Canvas/PNG 裁了图片的实际绘制区域，SVG/PDF 完全没裁——
+ * 同一张图在 PNG 里是圆角、在 SVG 里是直角。修法是两端共用
+ * `computeTopicImageFittedRect`，并把固有尺寸一路传到 SVG 渲染器。
+ */
+describe('主题图片的圆角裁剪', () => {
+  const SIZE = { width: 400, height: 100 }
+
+  it('提供固有尺寸时生成圆角 clipPath 并挂到 <image> 上', () => {
+    const svg = renderSceneToSvg(buildTestScene({ a: DATA_URL }), {
+      topicImageSizes: new Map([['a', SIZE]]),
+    })
+
+    expect(svg).toContain('<clipPath id="topicImageClip-a">')
+    expect(svg).toContain(`rx="${TOPIC_IMAGE_RADIUS}"`)
+    expect(svg).toMatch(/<image [^>]*clip-path="url\(#topicImageClip-a\)"\/>/)
+  })
+
+  it('clipPath 的矩形就是 Canvas/PNG 用的实际绘制区域（同源函数）', () => {
+    const scene = buildTestScene({ a: DATA_URL })
+    const node = topicNode(scene, 'a')
+    const expected = computeTopicImageFittedRect(
+      node.bounds,
+      getNodePadding(node.depth),
+      SIZE,
+    )!
+
+    const svg = renderSceneToSvg(scene, { topicImageSizes: new Map([['a', SIZE]]) })
+    const match = svg.match(
+      /<clipPath id="topicImageClip-a"><rect x="([-\d.]+)" y="([-\d.]+)" width="([-\d.]+)" height="([-\d.]+)"/,
+    )
+    expect(match).not.toBeNull()
+
+    expect(Number(match![1])).toBeCloseTo(expected.x, 5)
+    expect(Number(match![2])).toBeCloseTo(expected.y, 5)
+    expect(Number(match![3])).toBeCloseTo(expected.width, 5)
+    expect(Number(match![4])).toBeCloseTo(expected.height, 5)
+  })
+
+  it('取不到固有尺寸时不裁剪（宁可直角，也不拿错尺寸裁坏图片）', () => {
+    const svg = renderSceneToSvg(buildTestScene({ a: DATA_URL }))
+
+    expect(svg).not.toContain('clipPath')
+    expect(svg).not.toContain('clip-path')
+  })
+
+  it('尺寸表里没有该主题 / 尺寸非法时同样不裁剪', () => {
+    const otherTopic = renderSceneToSvg(buildTestScene({ a: DATA_URL }), {
+      topicImageSizes: new Map([['b', SIZE]]),
+    })
+    expect(otherTopic).not.toContain('clipPath')
+
+    const zeroSize = renderSceneToSvg(buildTestScene({ a: DATA_URL }), {
+      topicImageSizes: new Map([['a', { width: 0, height: 100 }]]),
+    })
+    expect(zeroSize).not.toContain('clipPath')
   })
 })

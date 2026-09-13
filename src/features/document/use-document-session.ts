@@ -92,7 +92,7 @@ import {
 } from '../canvas/runtime/topic-image-store'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from '../canvas/runtime/scene-builder'
 import { renderSceneToSvg } from '../canvas/runtime/svg-renderer'
-import { renderSceneToPngBytes } from '../canvas/runtime/png-exporter'
+import { preloadTopicImageSizes, renderSceneToPngBytes } from '../canvas/runtime/png-exporter'
 import { renderSceneToPdfBytes } from '../canvas/runtime/pdf-exporter'
 import { buildGanttSvg, renderGanttSvgToPngBytes } from '../gantt/export-gantt-svg'
 import type { GanttZoom } from '../gantt/collect-gantt-tasks'
@@ -1012,10 +1012,11 @@ export function useDocumentSession(): DocumentSession {
 
     try {
       const scene = await buildExportScene(state.document)
-      const svgContent = renderSceneToSvg(
-        scene,
-        exportRenderOptions(state.document),
-      )
+      // 主题图片要先解码才能算出实际绘制区域，给 SVG 套上圆角裁剪（与 PNG 一致）
+      const svgContent = renderSceneToSvg(scene, {
+        ...exportRenderOptions(state.document),
+        topicImageSizes: await preloadTopicImageSizes(scene),
+      })
       await exportSvgFile(selectedPath, svgContent)
 
       setState((current) => ({
@@ -1148,7 +1149,11 @@ export function useDocumentSession(): DocumentSession {
 
     try {
       const scene = await buildExportScene(state.document)
-      const bytes = await renderSceneToPdfBytes(scene, exportRenderOptions(state.document))
+      // PDF 复用 SVG 渲染器，圆角裁剪同样需要图片固有尺寸
+      const bytes = await renderSceneToPdfBytes(scene, {
+        ...exportRenderOptions(state.document),
+        topicImageSizes: await preloadTopicImageSizes(scene),
+      })
       await exportPdfFile(selectedPath, bytes)
 
       setState((current) => ({

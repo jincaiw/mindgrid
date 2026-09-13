@@ -213,3 +213,39 @@ describe('外壳无毛玻璃（批次 B3）', () => {
     }
   })
 })
+
+/**
+ * 内联编辑态的文字颜色守卫。
+ *
+ * 背景：`global.css` 曾写死 `.mindmap-node--center .mindmap-node__editor { color: 白 }`，
+ * 前提是"内置主题的 root 填充都是深色"。用户把中心主题改成浅色填充后就是白字白底。
+ * 节点本身就带着解析好的 `color: resolvedStyle.textColor`（内联在 `.mindmap-node` 上），
+ * 所以编辑态**不应该再覆盖颜色**，占位符与编辑提示改用 opacity 跟随 currentColor。
+ */
+describe('内联编辑态文字色', () => {
+  const css = stripComments(globalCssSource)
+  const EDITING_SELECTORS =
+    /\.mindmap-node__(?:editor|edit-hint)(?:[^{]*)\{[^}]*\}/g
+
+  it('编辑态不再按"中心主题"写死颜色', () => {
+    expect(css).not.toMatch(/\.mindmap-node--center[^{]*\.mindmap-node__editor/)
+  })
+
+  it('编辑器与编辑提示的 color 只能是 inherit', () => {
+    const blocks = css.match(EDITING_SELECTORS) ?? []
+    // 至少要能匹配到编辑器与编辑提示两条
+    expect(blocks.length).toBeGreaterThanOrEqual(2)
+
+    for (const block of blocks) {
+      for (const decl of block.match(/(?<![-\w])color\s*:\s*[^;}]+/g) ?? []) {
+        expect(decl.replace(/\s+/g, ' ').trim(), block).toBe('color: inherit')
+      }
+    }
+  })
+
+  it('占位符不写死颜色（否则深色填充上不可见）', () => {
+    const placeholder = css.match(/\.mindmap-node__editor::placeholder[^{]*\{[^}]*\}/)?.[0] ?? ''
+    expect(placeholder).toContain('opacity')
+    expect(placeholder).not.toMatch(/(?<![-\w])color\s*:/)
+  })
+})

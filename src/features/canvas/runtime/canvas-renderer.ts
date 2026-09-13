@@ -39,7 +39,7 @@ import {
 import {
   TOPIC_IMAGE_RADIUS,
   TOPIC_IMAGE_TITLE_OFFSET,
-  computeTopicImageRect,
+  computeTopicImageFittedRect,
 } from './topic-image-constants'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
@@ -517,7 +517,7 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, font
 /**
  * 绘制主题图片（位于标题上方）。
  *
- * 几何与 SVG 端共用 computeTopicImageRect，缩放语义等价于 `object-fit: contain`
+ * 几何与 SVG 端共用 computeTopicImageFittedRect，缩放语义等价于 `object-fit: contain`
  * （对应 SVG 的 `preserveAspectRatio="xMidYMid meet"`）：等比缩放至完全放入图片区并居中。
  *
  * 图片未预解码、解码失败或尚未完成解码时**静默跳过**：导出的首要目标是拿到图纸，
@@ -539,20 +539,22 @@ function drawNodeImage(
   // 解码未完成（宽高为 0）时跳过，否则 drawImage 会抛 InvalidStateError
   if (!naturalWidth || !naturalHeight) return
 
-  const rect = computeTopicImageRect(node.bounds, getNodePadding(node.depth))
-  const scale = Math.min(rect.width / naturalWidth, rect.height / naturalHeight)
-  const drawWidth = naturalWidth * scale
-  const drawHeight = naturalHeight * scale
-  const drawX = rect.x + (rect.width - drawWidth) / 2
-  const drawY = rect.y + (rect.height - drawHeight) / 2
+  // 实际绘制区域与 SVG 端的 <clipPath> 同源（见 computeTopicImageFittedRect）：
+  // 圆角要落在图片本体上，裁固定槽位的话图片被内缩、圆角碰不到边缘，看起来像没裁。
+  const rect = computeTopicImageFittedRect(
+    node.bounds,
+    getNodePadding(node.depth),
+    { width: naturalWidth, height: naturalHeight },
+  )
+  if (!rect) return
 
   // 圆角裁剪：DOM 的 .mindmap-node__image 只设 max-width/max-height（未固定宽高），
   // 元素盒会贴合图片自身比例，因此 border-radius 实际圆化的是可见图像本身。
-  // 这里裁剪**实际绘制区域**而非整个图片区，才能与 DOM 视觉一致。
+  // 这里裁剪**实际绘制区域**而非整个图片槽位，才能与 DOM 视觉一致。
   ctx.save()
-  roundRect(ctx, drawX, drawY, drawWidth, drawHeight, TOPIC_IMAGE_RADIUS)
+  roundRect(ctx, rect.x, rect.y, rect.width, rect.height, TOPIC_IMAGE_RADIUS)
   ctx.clip()
-  ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+  ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height)
   ctx.restore()
 }
 

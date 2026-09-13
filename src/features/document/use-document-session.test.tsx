@@ -80,6 +80,8 @@ vi.mock('@tauri-apps/plugin-dialog', () => dialogMocks)
 vi.mock('../../lib/ipc/transport', () => transportMocks)
 vi.mock('../canvas/runtime/png-exporter', () => ({
   renderSceneToPngBytes: renderMocks.renderSceneToPngBytes,
+  // SVG/PDF 导出会先取图片固有尺寸来生成圆角裁剪，替身必须提供同名导出
+  preloadTopicImageSizes: async () => new Map(),
 }))
 vi.mock('../canvas/runtime/svg-renderer', () => ({
   renderSceneToSvg: renderMocks.renderSceneToSvg,
@@ -661,6 +663,8 @@ it('exports the current document as an svg image in desktop runtime', async () =
       themeId: expect.any(String),
       background: null,
       fontFamily: expect.any(String),
+      // 主题图片的固有尺寸表：SVG 靠它给图片套圆角裁剪（与 PNG 一致）
+      topicImageSizes: expect.any(Map),
     },
   )
   expect(commandMocks.exportSvgFile).toHaveBeenCalledWith('/tmp/mindgrid-vector.svg', svgContent)

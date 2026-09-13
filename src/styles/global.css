@@ -3324,30 +3324,28 @@ button {
   line-height: 1.35;
 }
 
-.mindmap-node__editor::placeholder {
-  color: rgba(15, 23, 42, 0.34);
-}
+
 
 .mindmap-node__edit-hint {
   font-size: 11px;
-  color: rgba(15, 23, 42, 0.52);
+  /* 同上：跟随节点文字色，避免浅色填充节点上深灰提示看不清 */
+  color: inherit;
+  opacity: 0.6;
 }
 
-/**
- * 根节点内联编辑时的浅色文字。
+/*
+ * 内联编辑态的文字颜色**不单独指定**，交给 `.mindmap-node` 上的
+ * `color: resolvedStyle.textColor` 继承下来。
  *
- * 依赖前提：内置主题的 root.fill 均为深色（经典蓝 #5b8cff / 暗夜 #2d3748 /
- * 暖橙 #ea580c / 青绿 #0d9488 / 石墨 #111827），故白字可读。
- * 注意其上方曾存在的 .mindmap-node--center 蓝色渐变是死代码（见 B2 注释），
- * 本规则并非建立在渐变之上，而是建立在"root 填充为深色"这一主题约定上。
- *
- * 已知边界：若用户把根节点自定义为浅色填充，此处白字会不可读。
- * 修法应改为按填充亮度取对比色，属独立议题，不在批次 B 内。
+ * 历史：这里曾写死 `.mindmap-node--center … { color: rgba(255,255,255,.92) }`，
+ * 前提是"内置主题的 root 填充都是深色"。用户把中心主题改成浅色填充后，
+ * 白字白底就不可读了。正确修法不是按填充亮度算对比色（那要在 CSS 里复刻一套
+ * 颜色解析），而是**别再覆盖**：节点本来就已经带着解析好的文字色。
  */
-.mindmap-node--center .mindmap-node__editor,
-.mindmap-node--center .mindmap-node__editor::placeholder,
-.mindmap-node--center .mindmap-node__edit-hint {
-  color: rgba(255, 255, 255, 0.92);
+
+.mindmap-node__editor::placeholder {
+  /* 占位符与编辑提示都用 opacity 跟随 currentColor：深底白字与浅底深字都自动可读 */
+  opacity: 0.45;
 }
 
 .canvas-skeleton {

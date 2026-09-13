@@ -60,3 +60,38 @@ export function computeTopicImageRect(bounds: WorldRect, padding: number): Topic
     height,
   }
 }
+
+/**
+ * 主题图片的**实际绘制区域**：把图片按 `object-fit: contain`
+ * （等价 SVG 的 `preserveAspectRatio="xMidYMid meet"`）等比缩放到
+ * `computeTopicImageRect` 的矩形内并居中后的那个矩形。
+ *
+ * 为什么必须单独算：绘制矩形是**固定尺寸**的槽位，而图片按自身比例要么顶满宽、
+ * 要么顶满高，另一轴留黑边。圆角应该落在图片本体上，而不是槽位上——
+ * 裁槽位时图片被内缩，圆角根本碰不到图片边缘，看起来就像没裁剪。
+ *
+ * Canvas/PNG 用它裁剪圆角，SVG/PDF 用它生成 `<clipPath>`；两处必须共用同一个函数，
+ * 否则同一张图在 PNG 里是圆角、在 SVG 里是直角（历史缺陷）。
+ * 需要图片固有尺寸，因此 SVG 端必须先解码，取不到就返回 null（不裁剪）。
+ */
+export function computeTopicImageFittedRect(
+  bounds: WorldRect,
+  padding: number,
+  intrinsic: { width: number; height: number },
+): TopicImageRect | null {
+  if (intrinsic.width <= 0 || intrinsic.height <= 0) {
+    return null
+  }
+
+  const rect = computeTopicImageRect(bounds, padding)
+  const scale = Math.min(rect.width / intrinsic.width, rect.height / intrinsic.height)
+  const width = intrinsic.width * scale
+  const height = intrinsic.height * scale
+
+  return {
+    x: rect.x + (rect.width - width) / 2,
+    y: rect.y + (rect.height - height) / 2,
+    width,
+    height,
+  }
+}

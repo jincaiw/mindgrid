@@ -23,7 +23,12 @@ import {
   measureTextWidth,
   wrapText,
 } from './style-constants'
-import { TOPIC_IMAGE_TITLE_OFFSET, computeTopicImageRect } from './topic-image-constants'
+import {
+  TOPIC_IMAGE_RADIUS,
+  TOPIC_IMAGE_TITLE_OFFSET,
+  computeTopicImageFittedRect,
+  computeTopicImageRect,
+} from './topic-image-constants'
 import { resolveThemeBackground } from './style-resolver'
 import { applyTextTransform } from './text-transform'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
@@ -65,6 +70,13 @@ export interface SvgRenderOptions {
   background?: string | null
   /** 画布级字体栈；未提供时使用默认字体栈。 */
   fontFamily?: string
+  /**
+   * 主题图片的**固有尺寸**（topicId → 像素宽高），由导出前预解码得到。
+   *
+   * 有它才能算出图片的实际绘制区域并套圆角 `clipPath`，与 Canvas/PNG 对齐；
+   * 取不到（未解码 / 解码失败）就不裁剪——宁可直角，也不要拿错的尺寸裁坏图片。
+   */
+  topicImageSizes?: ReadonlyMap<string, { width: number; height: number }>
 }
 
 const DEFAULT_PADDING = 32
@@ -100,7 +112,17 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     )
   }
 
-  layers.push(buildDefs())
+  // 主题列表要提前拿：主题图片的圆角 clipPath 必须在 <defs> 里先生成出来
+  const topics = exportableNodes.filter((n): n is TopicRenderNode => n.type === 'topic')
+  const imageSizes = options.topicImageSizes
+  const imageClips = new Map<string, string>()
+  for (const node of topics) {
+    if (!node.rich?.image) continue
+    const clip = buildTopicImageClip(node, imageSizes?.get(node.id))
+    if (clip) imageClips.set(node.id, clip)
+  }
+
+  layers.push(buildDefs([...imageClips.values()]))
 
   // 按 z-order 输出各层
   const boundaries = exportableNodes.filter(
@@ -122,9 +144,8 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     layers.push(summaryToSvg(node, fontFamily))
   }
 
-  const topics = exportableNodes.filter((n): n is TopicRenderNode => n.type === 'topic')
   for (const node of topics) {
-    layers.push(topicToSvg(node, fontFamily))
+    layers.push(topicToSvg(node, fontFamily, imageClips.has(node.id)))
   }
 
   const relationships = exportableNodes.filter(
@@ -150,7 +171,7 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
 
 // ---- defs：滤镜定义（节点阴影 / 切换按钮阴影） ----
 
-function buildDefs(): string {
+function buildDefs(extra: readonly string[] = []): string {
   return [
     '  <defs>',
     '    <filter id="nodeShadow" x="-20%" y="-20%" width="140%" height="140%">',
@@ -159,8 +180,25 @@ function buildDefs(): string {
     '    <filter id="toggleShadow" x="-50%" y="-50%" width="200%" height="200%">',
     '      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f172a" flood-opacity="0.12"/>',
     '    </filter>',
+    ...extra,
     '  </defs>',
   ].join('\n')
+}
+
+/** 主题图片圆角裁剪的 clipPath id；一个节点一个，避免不同节点的矩形互相覆盖。 */
+export function topicImageClipId(topicId: string): string {
+  return `topicImageClip-${topicId}`
+}
+
+/** 为主题图片生成圆角 clipPath；尺寸未知时返回 null（不裁剪）。 */
+function buildTopicImageClip(
+  node: TopicRenderNode,
+  size: { width: number; height: number } | undefined,
+): string | null {
+  if (!size) return null
+  const rect = computeTopicImageFittedRect(node.bounds, getNodePadding(node.depth), size)
+  if (!rect) return null
+  return `    <clipPath id="${topicImageClipId(node.id)}"><rect x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" rx="${TOPIC_IMAGE_RADIUS}" ry="${TOPIC_IMAGE_RADIUS}"/></clipPath>`
 }
 
 // ---- 各节点序列化 ----
@@ -173,7 +211,11 @@ function borderDashArray(style: 'solid' | 'dashed' | 'dotted', width: number): s
   return ''
 }
 
-function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
+function topicToSvg(
+  node: TopicRenderNode,
+  fontFamily: string,
+  hasImageClip = false,
+): string {
   const { bounds, text, number, depth, collapsed, childCount, style, side } = node
   const isRoot = depth === 0
   const isUnderline = style.shape === 'underline'
@@ -251,8 +293,11 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
   // 主题图片：位于标题上方，几何与 DOM 的 .mindmap-node__image 完全对齐
   if (rich?.image) {
     const rect = computeTopicImageRect(bounds, padding)
+    // 圆角裁剪与 Canvas/PNG 同源：clipPath 的矩形由 computeTopicImageFittedRect 算出，
+    // 尺寸未知时不加 clip-path（宁可直角，也不拿错尺寸裁坏图片）
+    const clip = hasImageClip ? ` clip-path="url(#${topicImageClipId(node.id)})"` : ''
     elements.push(
-      `  <image x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" preserveAspectRatio="xMidYMid meet" href="${escapeXml(rich.image)}" xlink:href="${escapeXml(rich.image)}"/>`,
+      `  <image x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" preserveAspectRatio="xMidYMid meet" href="${escapeXml(rich.image)}" xlink:href="${escapeXml(rich.image)}"${clip}/>`,
     )
   }
 

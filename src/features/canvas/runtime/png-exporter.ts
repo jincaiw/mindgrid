@@ -157,6 +157,28 @@ export async function preloadTopicImages(
   return decoded
 }
 
+/**
+ * 预解码主题图片并只返回**固有尺寸表**。
+ *
+ * SVG/PDF 导出需要图片固有尺寸才能算出实际绘制区域、给图片套圆角 `clipPath`
+ * （与 Canvas/PNG 对齐）。解码失败/超时的项不会出现在表里，SVG 端据此跳过裁剪。
+ */
+export async function preloadTopicImageSizes(
+  scene: Scene,
+  timeoutMs: number = IMAGE_DECODE_TIMEOUT_MS,
+): Promise<Map<string, { width: number; height: number }>> {
+  const decoded = await preloadTopicImages(scene, timeoutMs)
+  const sizes = new Map<string, { width: number; height: number }>()
+
+  for (const [topicId, image] of decoded) {
+    if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+      sizes.set(topicId, { width: image.naturalWidth, height: image.naturalHeight })
+    }
+  }
+
+  return sizes
+}
+
 /** 解码单个 data URL。环境不支持 / 解码失败 / 超时均返回 null，绝不抛错。 */
 export function decodeImage(
   dataUrl: string,

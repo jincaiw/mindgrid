@@ -6,6 +6,7 @@ import {
   TOPIC_IMAGE_MAX_WIDTH,
   TOPIC_IMAGE_MIN_WIDTH,
   TOPIC_IMAGE_TITLE_OFFSET,
+  computeTopicImageFittedRect,
   computeTopicImageRect,
 } from './topic-image-constants'
 
@@ -71,5 +72,47 @@ describe('computeTopicImageRect', () => {
     const titleYWithImage = result.y + result.height + TOPIC_IMAGE_GAP
 
     expect(titleYWithImage - titleYWithoutImage).toBe(TOPIC_IMAGE_TITLE_OFFSET)
+  })
+})
+
+/**
+ * 图片实际绘制区域（contain 适配 + 居中）。
+ *
+ * 这是 PNG 的圆角裁剪与 SVG 的 `<clipPath>` 共用的唯一几何来源；
+ * 算错会让两端裁到不同的位置，所以数学要逐项钉住。
+ */
+describe('computeTopicImageFittedRect', () => {
+  // bounds 200×200、padding 12 → 槽位：176 宽 × 88 高，顶边 y=12，水平居中 x=12
+  const bounds = { x: 0, y: 0, width: 200, height: 200 }
+  const padding = 12
+
+  it('宽图按宽度铺满，纵向居中留边', () => {
+    const rect = computeTopicImageFittedRect(bounds, padding, { width: 400, height: 100 })!
+    expect(rect.width).toBeCloseTo(176, 6)
+    expect(rect.height).toBeCloseTo(44, 6)
+    expect(rect.x).toBeCloseTo(12, 6)
+    expect(rect.y).toBeCloseTo(12 + (88 - 44) / 2, 6)
+  })
+
+  it('高图按高度铺满，横向居中留边', () => {
+    const rect = computeTopicImageFittedRect(bounds, padding, { width: 100, height: 400 })!
+    expect(rect.width).toBeCloseTo(22, 6)
+    expect(rect.height).toBeCloseTo(88, 6)
+    expect(rect.x).toBeCloseTo(12 + (176 - 22) / 2, 6)
+    expect(rect.y).toBeCloseTo(12, 6)
+  })
+
+  it('比例正好匹配时等于槽位本身（不留边）', () => {
+    const rect = computeTopicImageFittedRect(bounds, padding, { width: 176 * 3, height: 88 * 3 })!
+    expect(rect.width).toBeCloseTo(176, 6)
+    expect(rect.height).toBeCloseTo(88, 6)
+    expect(rect.x).toBeCloseTo(12, 6)
+    expect(rect.y).toBeCloseTo(12, 6)
+  })
+
+  it('尺寸非法时返回 null（调用方据此跳过裁剪，而不是裁错）', () => {
+    expect(computeTopicImageFittedRect(bounds, padding, { width: 0, height: 100 })).toBeNull()
+    expect(computeTopicImageFittedRect(bounds, padding, { width: 100, height: 0 })).toBeNull()
+    expect(computeTopicImageFittedRect(bounds, padding, { width: -5, height: 100 })).toBeNull()
   })
 })
