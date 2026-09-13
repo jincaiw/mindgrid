@@ -11,9 +11,9 @@ import type { MindMapLayoutOptions, MindMapLayoutResult, MindMapNodeLayout } fro
 import { computeMindMapLayout, estimateNodeSize, resolveRootSideMap } from '../mindmap-layout'
 import { computeLayoutBounds } from './layout-utils'
 import {
+  applyDirectionVariant,
   footprintAroundRoot,
   graftSubtreeLayout,
-  mirrorLayoutHorizontally,
   type SubtreeFootprint,
 } from './mixed-structure'
 import { computeBraceLayout } from './brace-layout'
@@ -139,7 +139,7 @@ function resolveSubLayoutDirection(
 
   for (let i = chain.length - 1; i >= 0; i -= 1) {
     const declared = chain[i].structure?.direction
-    if (declared === 'left' || declared === 'right') return declared
+    if (declared && declared !== 'balanced') return declared
   }
   const branch = chain.find((topic) => rootSideMap.has(topic.id))
   return branch ? (rootSideMap.get(branch.id) as 'left' | 'right') : 'right'
@@ -171,7 +171,9 @@ export function computeLayout(
 
   if (sites.length === 0) {
     // 无覆盖：与原行为逐像素一致（不注入足迹查询，减少无谓分支）
-    return mergeFloatingTopics(runEngine(rootTopic, chartType, options), floatingTopics)
+    const plain = runEngine(rootTopic, chartType, options)
+    applyDirectionVariant(plain, effectiveType, options.direction)
+    return mergeFloatingTopics(plain, floatingTopics)
   }
 
   // 子布局的脑图方向要按「该分支在父布局里朝哪边」定；画布不是脑图时无此概念。
@@ -194,11 +196,10 @@ export function computeLayout(
       subtreeFootprint: resolveFootprint,
     })
 
-    // 挂在左侧分支上的「向右/向下流动」骨架要镜像，否则子主题会朝中心主题生长。
-    // 脑图骨架不需要：它的朝向已经由显式 direction 钉住了。
-    if (direction === 'left' && site.chartType !== 'mindmap') {
-      mirrorLayoutHorizontally(base)
-    }
+    // 挂到分支上时要按「朝外」的方向修正骨架变体：
+    // 朝右流动的骨架挂在左侧分支上会朝中心主题生长，镜像后才朝外；
+    // 组织结构图/树形图的「向上」走垂直镜像，时间轴的「垂直」走转置。
+    applyDirectionVariant(base, site.chartType, direction)
 
     // 嫁接本站点直接包住的那些子站点
     for (const child of sites) {
@@ -217,6 +218,10 @@ export function computeLayout(
     depthBase: 0,
     subtreeFootprint: resolveFootprint,
   })
+
+  // 画布级结构方向（layoutConfig.direction）：脑图的左右在引擎里处理，
+  // 其余骨架在这里统一套变体变换（逻辑图向左 / 组织结构图向上 / 时间轴垂直……）。
+  applyDirectionVariant(base, effectiveType, options.direction)
 
   // 顶层只嫁接「没有被别的站点包住」的那些
   for (const site of sites) {

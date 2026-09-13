@@ -46,6 +46,11 @@ import {
 } from '../canvas/numbering'
 import { StructurePicker } from './structure-picker'
 import { CHART_TYPE_LABELS } from './chart-type-labels'
+import {
+  canvasDirectionOptions,
+  nodeDirectionOptions,
+  supportsDirection,
+} from './structure-directions'
 import { SwatchPicker } from './swatch-picker'
 import { PaletteEditor } from './palette-editor'
 import { GridIcon, PlayIcon, TypeIcon } from './icons'
@@ -253,31 +258,15 @@ const EDGE_TYPE_OPTIONS: { value: EdgeType; label: string }[] = [
   { value: 'elbow', label: '折线' },
 ]
 
-const LAYOUT_DIRECTION_OPTIONS: {
-  value: 'auto' | 'left' | 'right' | 'balanced'
-  label: string
-}[] = [
-  { value: 'auto', label: '自动' },
-  { value: 'left', label: '左侧' },
-  { value: 'right', label: '右侧' },
-  { value: 'balanced', label: '平衡' },
-]
-
 /**
  * 节点级「结构」下拉的选项：空串 = 跟随画布骨架。
  *
  * 只列 `BRANCH_CHART_TYPES`（气泡图与鱼骨图是整体版式，不做单分支骨架），
- * 与布局层对外承诺的能力保持一致。
+ * 与布局层对外承诺的能力保持一致。带方向的变体（逻辑图（向左）等）由紧邻的
+ * 「子主题方向」控件表达，不拆成十几个下拉项。
  */
 const NODE_STRUCTURE_OPTIONS: readonly { value: ChartType; label: string }[] =
   BRANCH_CHART_TYPES.map((value) => ({ value, label: CHART_TYPE_LABELS[value] }))
-
-/** 节点级「方向」：空串 = 跟随所在分支。 */
-const NODE_DIRECTION_OPTIONS: readonly { value: TopicDirection | ''; label: string }[] = [
-  { value: '', label: '跟随分支' },
-  { value: 'left', label: '向左' },
-  { value: 'right', label: '向右' },
-]
 
 /** 画布背景预设：浅色为主（XMind 背景色板同样以浅色打底），末两项是深色。 */
 const BACKGROUND_SWATCHES = [
@@ -636,6 +625,17 @@ export function Inspector({
   const layoutOptionHint = layoutOptionsApply
     ? undefined
     : '仅对「思维导图」骨架生效，当前骨架不使用这些布局选项'
+
+  /** 画布骨架是否支持结构方向（气泡图/鱼骨图不支持，控件应置灰）。 */
+  const canvasSupportsDirection = supportsDirection(activeSheet?.chartType)
+
+  /**
+   * 节点级「结构」实际生效的骨架：节点覆盖优先于画布骨架。
+   * 「子主题方向」的选项按它来给——否则在脑图画布上选了组织结构图结构，
+   * 方向控件却还只给左右两个选项。
+   */
+  const effectiveStructureType = structureChartTypeDraft || activeSheet?.chartType
+  const nodeSupportsDirection = supportsDirection(effectiveStructureType)
 
   const activeBranchStyle = activeSheet?.branchStyle
   const [branchThicknessDraft, setBranchThicknessDraft] = useState<number | ''>(
@@ -1622,8 +1622,13 @@ export function Inspector({
 
               <div className="panel__field">
                 <span>子主题方向</span>
-                <div className="panel__segmented" role="group" aria-label="子主题方向">
-                  {NODE_DIRECTION_OPTIONS.map((opt) => {
+                <div
+                  className="panel__segmented"
+                  role="group"
+                  aria-label="子主题方向"
+                  aria-disabled={!nodeSupportsDirection}
+                >
+                  {nodeDirectionOptions(effectiveStructureType).map((opt) => {
                     const active = structureDirectionDraft === opt.value
                     return (
                       <button
@@ -1631,6 +1636,12 @@ export function Inspector({
                         type="button"
                         className={`panel__seg${active ? ' panel__seg--active' : ''}`}
                         aria-pressed={active}
+                        disabled={!nodeSupportsDirection}
+                        title={
+                          nodeSupportsDirection
+                            ? undefined
+                            : `${CHART_TYPE_LABELS[effectiveStructureType ?? 'mindmap']}没有可调的方向参数`
+                        }
                         onClick={() => applyTopicStructure({ direction: opt.value })}
                       >
                         {opt.label}
@@ -1641,7 +1652,10 @@ export function Inspector({
               </div>
 
               <p className="panel__muted">
-                方向作用在「子主题往哪边长」；左侧分支声明向右会让它们越过本主题朝中心主题方向展开。
+                {nodeSupportsDirection
+                  ? '方向作用在「子主题往哪边长」：左分支声明向右会让它们越过本主题朝中心主题展开；' +
+                    '这也正是「逻辑图（向左）」「组织结构图（向上）」「时间轴（垂直）」这些变体的来源。'
+                  : `${CHART_TYPE_LABELS[effectiveStructureType ?? 'mindmap']}是整体版式，没有方向参数。`}
               </p>
 
               {activeTopic?.structure ? (
@@ -1821,20 +1835,35 @@ export function Inspector({
 
             <PanelSection title="分支方向">
               <div className="panel__field">
-                <span>一级分支布局</span>
-                <div className="panel__segmented" role="group" aria-label="分支方向">
-                  {LAYOUT_DIRECTION_OPTIONS.map((opt) => {
-                    const active =
-                      (activeSheet?.layoutConfig?.direction ?? 'auto') === opt.value
+                <span>结构方向</span>
+                <div
+                  className="panel__segmented"
+                  role="group"
+                  aria-label="分支方向"
+                  aria-disabled={!canvasSupportsDirection}
+                >
+                  {canvasDirectionOptions(activeSheet?.chartType).map((opt) => {
+                    // 存的是空串 = 自动；撤销/清除走同一个入口
+                    const stored = activeSheet?.layoutConfig?.direction ?? ''
+                    const active = stored === opt.value
                     return (
                       <button
-                        key={opt.value}
+                        key={opt.label}
                         type="button"
                         className={`panel__seg${active ? ' panel__seg--active' : ''}`}
                         aria-pressed={active}
+                        disabled={!canvasSupportsDirection}
+                        title={
+                          canvasSupportsDirection
+                            ? undefined
+                            : `${CHART_TYPE_LABELS[activeSheet?.chartType ?? 'mindmap']}没有可调的方向参数`
+                        }
                         onClick={() => {
                           if (!activeSheet) return
-                          void session.setSheetLayoutDirection(activeSheet.id, opt.value)
+                          void session.setSheetLayoutDirection(
+                            activeSheet.id,
+                            opt.value === '' ? 'auto' : opt.value,
+                          )
                         }}
                       >
                         {opt.label}
@@ -1844,7 +1873,9 @@ export function Inspector({
                 </div>
               </div>
               <p className="panel__muted">
-                「自动」按平衡开关与默认交替分配左右分支；指定左/右后全部一级分支固定在该侧。
+                {canvasSupportsDirection
+                  ? '不同骨架的轴不同：脑图/逻辑图/括号图/矩阵图看左右，组织结构图/树形图看上下，时间轴是水平或垂直。'
+                  : `${CHART_TYPE_LABELS[activeSheet?.chartType ?? 'mindmap']}是整体版式，没有方向参数。`}
               </p>
             </PanelSection>
 

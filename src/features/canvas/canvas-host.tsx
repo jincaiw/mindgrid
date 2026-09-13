@@ -25,6 +25,7 @@ import type {
   SheetBranchStyle,
   SheetNumbering,
   SummaryNode,
+  TopicDirection,
   TopicSnapshot,
   TopicStyleOverrides,
 } from '../../lib/document/types'
@@ -282,7 +283,7 @@ function MindMapScene({
   /** 画布级主题编号配置，缺省不显示编号。 */
   numbering: SheetNumbering | undefined
   /** 画布级分支方向（来自 layoutConfig.direction），缺省自动。 */
-  layoutDirection: 'left' | 'right' | 'balanced' | undefined
+  layoutDirection: TopicDirection | undefined
   /** 文档级画布设置（彩虹分支 / 色板 / 粗细 / 布局开关）。 */
   canvasSettings: DocumentCanvasSettings
   activeTopicId: string | null

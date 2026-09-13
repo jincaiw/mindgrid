@@ -10,7 +10,7 @@
 use crate::domain::document::{
     clone_topic_branch, contains_topic, create_id, find_parent_id_and_index, find_topic,
     find_topic_mut, normalize_topic_ids_for_batch, normalize_topic_ids_for_delete, Boundary,
-    ChartType, DocumentSnapshot, LayoutBalance, LayoutConfig, Relationship, SheetBranchStyle,
+    ChartType, DocumentSnapshot, LayoutDirection, LayoutConfig, Relationship, SheetBranchStyle,
     SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
     TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask,
@@ -134,8 +134,8 @@ pub enum Operation {
     /// 画布级布局方向（分支方向）变更。逆操作交换 old/new。
     SetSheetLayoutDirection {
         sheet_id: String,
-        old_direction: Option<LayoutBalance>,
-        new_direction: Option<LayoutBalance>,
+        old_direction: Option<LayoutDirection>,
+        new_direction: Option<LayoutDirection>,
     },
     /// 在画布的 floating_topics 列表末尾插入浮动主题。逆操作为 RemoveFloatingTopic。
     InsertFloatingTopic { sheet_id: String, topic: TopicSnapshot },
@@ -543,7 +543,7 @@ fn do_set_sheet_numbering(
 fn do_set_sheet_layout_direction(
     document: &mut DocumentSnapshot,
     sheet_id: &str,
-    direction: Option<LayoutBalance>,
+    direction: Option<LayoutDirection>,
 ) {
     if let Some(sheet) = document.find_sheet_mut(sheet_id) {
         let mut config = sheet.layout_config.clone().unwrap_or(LayoutConfig {
@@ -1243,9 +1243,11 @@ impl<'a> DocumentEditor<'a> {
     ) -> Result<String, String> {
         let parsed = match direction.trim().to_lowercase().as_str() {
             "" | "auto" => None,
-            "left" => Some(LayoutBalance::Left),
-            "right" => Some(LayoutBalance::Right),
-            "balanced" => Some(LayoutBalance::Balanced),
+            "left" => Some(LayoutDirection::Left),
+            "right" => Some(LayoutDirection::Right),
+            "up" => Some(LayoutDirection::Up),
+            "down" => Some(LayoutDirection::Down),
+            "balanced" => Some(LayoutDirection::Balanced),
             other => return Err(format!("不支持的分支方向“{other}”")),
         };
 
@@ -1262,7 +1264,7 @@ impl<'a> DocumentEditor<'a> {
     fn set_sheet_layout_direction_raw(
         &mut self,
         sheet_id: &str,
-        new_direction: Option<LayoutBalance>,
+        new_direction: Option<LayoutDirection>,
     ) {
         let old_direction = self
             .document
@@ -2637,7 +2639,7 @@ mod tests {
 
     #[test]
     fn set_sheet_layout_direction_round_trips_and_inverts() {
-        use crate::domain::document::LayoutBalance;
+        use crate::domain::document::LayoutDirection;
 
         let mut document = DocumentSnapshot::new_default();
         let sheet_id = document.active_sheet_id.clone();
@@ -2655,7 +2657,7 @@ mod tests {
                 .as_ref()
                 .unwrap()
                 .direction,
-            Some(LayoutBalance::Left)
+            Some(LayoutDirection::Left)
         );
 
         apply_inverse(&mut document, &ops);
@@ -2672,6 +2674,38 @@ mod tests {
         assert!(editor
             .set_sheet_layout_direction(&sheet_id, "sideways")
             .is_err());
+    }
+
+    /// 画布级结构方向必须接受上下两档：组织结构图/树形图的「向上」变体靠它存。
+    #[test]
+    fn set_sheet_layout_direction_accepts_vertical_variants() {
+        use crate::domain::document::LayoutDirection;
+
+        for (raw, expected) in [
+            ("up", LayoutDirection::Up),
+            ("down", LayoutDirection::Down),
+            ("balanced", LayoutDirection::Balanced),
+        ] {
+            let mut document = DocumentSnapshot::new_default();
+            let sheet_id = document.active_sheet_id.clone();
+            let mut editor = DocumentEditor::new(&mut document);
+
+            editor.set_sheet_layout_direction(&sheet_id, raw).unwrap();
+            // 先交出编辑器（释放可变借用）再读文档
+            let _ops = editor.into_ops();
+
+            assert_eq!(
+                document
+                    .find_sheet(&sheet_id)
+                    .unwrap()
+                    .layout_config
+                    .as_ref()
+                    .unwrap()
+                    .direction,
+                Some(expected),
+                "{raw} 未写成期望值"
+            );
+        }
     }
 
     #[test]

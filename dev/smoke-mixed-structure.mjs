@@ -135,8 +135,62 @@ async function main() {
 
   await page.screenshot({ path: path.join(outDir, '03-after-reload.png') })
 
+  // —— 画布级骨架变体：整幅图换成组织结构图，再切「向上」 ——
+  await page.getByRole('tab', { name: '画布' }).click()
+  await page.waitForTimeout(400)
+  await page.locator('.structure-picker__trigger').first().click()
+  await page.waitForTimeout(400)
+  await page.getByRole('button', { name: '组织结构图' }).click()
+  await page.waitForTimeout(700)
+
+  await page.getByRole('tab', { name: '样式' }).click()
+  await page.waitForTimeout(400)
+  await page.evaluate(() => {
+    const body = document.querySelector('.panel--inspector .panel__tab-body')
+    if (body) body.scrollTop = 1700
+  })
+  await page.waitForTimeout(250)
+
+  const rootId = (await readRootTopic(page)).id
+  const beforeUp = { root: await nodeBox(page, rootId), branch: await nodeBox(page, branchId) }
+  await page
+    .locator('[role="group"][aria-label="分支方向"]')
+    .getByRole('button', { name: '向上' })
+    .click()
+  await page.waitForTimeout(800)
+  const afterUp = { root: await nodeBox(page, rootId), branch: await nodeBox(page, branchId) }
+  await page.screenshot({ path: path.join(outDir, '04-org-up.png') })
+
+  const sheetDirection = await page.evaluate(() => {
+    const doc = JSON.parse(window.localStorage.getItem('mindgrid:recovery:v1') ?? '{}').document
+    const sheet = doc?.sheets?.find((s) => s.id === doc.activeSheetId) ?? doc?.sheets?.[0]
+    return { chartType: sheet?.chartType, direction: sheet?.layoutConfig?.direction }
+  })
+  console.log('画布骨架与方向:', sheetDirection)
+
+  const variantWired = sheetDirection.direction === 'up'
+  console.log(variantWired ? 'PASS 画布方向「向上」已写入文档' : 'FAIL 画布方向未写入文档')
+
+  // 组织结构图向上：分支应跑到根主题**上方**（y 更小）
+  const flipped = afterUp.branch.y < afterUp.root.y
+  const moved2 = Math.abs(afterUp.branch.y - beforeUp.branch.y) > 1
+  console.log('根/分支位置（切向上前后）:', beforeUp, afterUp)
+  console.log(flipped ? 'PASS 整幅图已垂直镜像（分支在根上方）' : 'FAIL 未垂直镜像')
+  console.log(moved2 ? 'PASS 画布真的重排了' : 'FAIL 画布未变化')
+
   await browser.close()
-  if (!wired || !below || !spread || !moved || persisted !== 'org') process.exitCode = 1
+  if (
+    !wired ||
+    !below ||
+    !spread ||
+    !moved ||
+    persisted !== 'org' ||
+    !variantWired ||
+    !flipped ||
+    !moved2
+  ) {
+    process.exitCode = 1
+  }
 }
 
 main().catch((error) => {

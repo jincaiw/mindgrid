@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest'
 
 import { BRANCH_CHART_TYPES, type TopicSnapshot } from '../../../lib/document/types'
 import { computeLayout } from './index'
+import { resolveVariantTransform } from './mixed-structure'
 
 /** 可作为分支骨架的类型（不含脑图本身；脑图那档由"方向"覆盖即可）。 */
 const COMBOS = BRANCH_CHART_TYPES.filter((type) => type !== 'mindmap')
@@ -275,5 +276,101 @@ describe('混合骨架 · 跨骨架组合', () => {
     expect(byId.get('a1x')?.depth).toBe(3)
     // 逻辑图向右：孙节点在子节点右侧
     expect(byId.get('a1x')!.x).toBeGreaterThan(byId.get('a1')!.x)
+  })
+})
+
+describe('骨架变体（方向）', () => {
+  /** 两层小树：根 → 甲 → 甲一；根 → 乙。 */
+  function makeChain() {
+    return topic('root', '中心主题', [topic('a', '甲', [topic('a1', '甲一')]), topic('b', '乙')])
+  }
+
+  const geometry = (layout: { nodes: { id: string; x: number; y: number }[] }) =>
+    layout.nodes.map((n) => [n.id, n.x, n.y])
+
+  it('逻辑图向左 = 整幅图水平镜像', () => {
+    const right = computeLayout(makeChain(), 'logic')
+    const left = computeLayout(makeChain(), 'logic', undefined, { direction: 'left' })
+
+    for (const id of ['a', 'a1', 'b']) {
+      const r = right.nodes.find((n) => n.id === id)!
+      const l = left.nodes.find((n) => n.id === id)!
+      expect(l.x).toBeCloseTo(-r.x, 6)
+      expect(l.y).toBeCloseTo(r.y, 6)
+    }
+  })
+
+  it('组织结构图向上 = 整幅图垂直镜像', () => {
+    const down = computeLayout(makeChain(), 'org')
+    const up = computeLayout(makeChain(), 'org', undefined, { direction: 'up' })
+
+    for (const id of ['a', 'a1', 'b']) {
+      const d = down.nodes.find((n) => n.id === id)!
+      const u = up.nodes.find((n) => n.id === id)!
+      expect(u.y).toBeCloseTo(-d.y, 6)
+      expect(u.x).toBeCloseTo(d.x, 6)
+    }
+  })
+
+  it('时间轴垂直 = 转置（事件竖直向下、子事件挂右侧）', () => {
+    const layout = computeLayout(makeChain(), 'timeline', undefined, { direction: 'down' })
+    const a = layout.nodes.find((n) => n.id === 'a')!
+    const a1 = layout.nodes.find((n) => n.id === 'a1')!
+
+    expect(a.y).toBeGreaterThan(0)
+    expect(a1.x).toBeGreaterThan(a.x)
+    // 转置后不再有左右分支概念，方向统一落到 center（折叠按钮贴下缘）
+    expect(a.side).toBe('center')
+  })
+
+  it('转置会把节点宽高一起换掉（否则方块变竖条）', () => {
+    const flat = computeLayout(makeChain(), 'timeline')
+    const vertical = computeLayout(makeChain(), 'timeline', undefined, { direction: 'down' })
+    const flatA = flat.nodes.find((n) => n.id === 'a')!
+    const verticalA = vertical.nodes.find((n) => n.id === 'a')!
+
+    expect(verticalA.width).toBe(flatA.height)
+    expect(verticalA.height).toBe(flatA.width)
+  })
+
+  it('无关方向被安静忽略（不是报错，也不是乱动）', () => {
+    const plain = computeLayout(makeChain(), 'logic')
+    const ignored = computeLayout(makeChain(), 'logic', undefined, { direction: 'up' })
+    expect(geometry(ignored)).toEqual(geometry(plain))
+
+    const orgPlain = computeLayout(makeChain(), 'org')
+    const orgIgnored = computeLayout(makeChain(), 'org', undefined, { direction: 'left' })
+    expect(geometry(orgIgnored)).toEqual(geometry(orgPlain))
+  })
+
+  it('脑图的左右由引擎自己处理，不走变体变换', () => {
+    const right = computeLayout(makeChain(), 'mindmap', undefined, { direction: 'right' })
+    const left = computeLayout(makeChain(), 'mindmap', undefined, { direction: 'left' })
+
+    // 若被当成"整幅镜像"，左侧那批会跑到右边去；这里两侧分支应各自留在原侧
+    expect(right.nodes.find((n) => n.id === 'a')!.x).toBeGreaterThan(0)
+    expect(left.nodes.find((n) => n.id === 'a')!.x).toBeLessThan(0)
+  })
+
+  it('resolveVariantTransform 只对有意义的方向给出变换', () => {
+    expect(resolveVariantTransform('logic', 'left')).toBe('mirror-x')
+    expect(resolveVariantTransform('brace', 'left')).toBe('mirror-x')
+    expect(resolveVariantTransform('matrix', 'left')).toBe('mirror-x')
+    expect(resolveVariantTransform('treetable', 'left')).toBe('mirror-x')
+    expect(resolveVariantTransform('timeline', 'left')).toBe('mirror-x')
+    expect(resolveVariantTransform('timeline', 'down')).toBe('transpose')
+    expect(resolveVariantTransform('org', 'up')).toBe('mirror-y')
+    expect(resolveVariantTransform('tree', 'up')).toBe('mirror-y')
+
+    // 无意义的方向一律 null
+    expect(resolveVariantTransform('logic', 'up')).toBeNull()
+    expect(resolveVariantTransform('org', 'left')).toBeNull()
+    expect(resolveVariantTransform('timeline', 'up')).toBeNull()
+    expect(resolveVariantTransform('mindmap', 'left')).toBeNull()
+    expect(resolveVariantTransform('bubble', 'left')).toBeNull()
+    expect(resolveVariantTransform('fishbone', 'left')).toBeNull()
+    // 不指定 / 平衡
+    expect(resolveVariantTransform('logic', undefined)).toBeNull()
+    expect(resolveVariantTransform('logic', 'balanced')).toBeNull()
   })
 })

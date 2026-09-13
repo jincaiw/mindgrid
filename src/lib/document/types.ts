@@ -134,7 +134,22 @@ export type TopicTextAlign = 'left' | 'center' | 'right'
 export type TopicTextTransform = 'none' | 'uppercase' | 'lowercase' | 'capitalize'
 
 /** 节点级分支方向（对齐 XMind 样式页「结构 → 方向」）。 */
-export type TopicDirection = 'left' | 'right' | 'balanced'
+export type TopicDirection = 'left' | 'right' | 'up' | 'down' | 'balanced'
+
+/**
+ * 合法的结构方向取值（单一来源）。
+ *
+ * 浏览器后备会话与 Rust 会话各有一条校验分支；两边的白名单必须同源，
+ * 否则 Web 端（开发/预览）会拒掉 Rust 端已经接受的取值——
+ * 这正是一次端到端冒烟抓出来的真实不一致（`up` 只在 Rust 侧可用）。
+ */
+export const TOPIC_DIRECTIONS: readonly TopicDirection[] = [
+  'left',
+  'right',
+  'up',
+  'down',
+  'balanced',
+]
 
 /**
  * 可以作为**单个分支**骨架的图表类型。
@@ -252,7 +267,13 @@ export interface SheetNumbering {
 
 /** 布局参数，随图表类型解释。 */
 export interface LayoutConfig {
-  direction?: 'left' | 'right' | 'balanced'
+  /**
+   * 画布级结构方向。
+   *
+   * 不同骨架解释不同：脑图/逻辑图看左右，组织结构图/树形图看上下，
+   * 时间轴用 `right`（水平）/ `down`（垂直）。无关的方向被忽略。
+   */
+  direction?: TopicDirection
   horizontalSpacing?: number
   verticalSpacing?: number
 }

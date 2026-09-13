@@ -1,4 +1,4 @@
-import type { TopicSnapshot } from '../../lib/document/types'
+import type { TopicDirection, TopicSnapshot } from '../../lib/document/types'
 import {
   footprintBlocks,
   footprintHalfHeight,
@@ -71,7 +71,11 @@ export interface MindMapLayoutOptions {
    * - right：根的所有直接子分支放右侧
    * - balanced/undefined：按 balance 选项或默认交替分配
    */
-  direction?: 'left' | 'right' | 'balanced'
+  /**
+   * 结构方向。脑图只解释左右（`left` / `right`；`balanced`/`up`/`down` 视为不指定），
+   * 其它骨架的上下/垂直变体由 `layouts/mixed-structure.applyDirectionVariant` 统一处理。
+   */
+  direction?: TopicDirection
   /**
    * 深度基准：本次布局的根主题在**整幅图**里的真实层级。
    *

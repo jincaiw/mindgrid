@@ -78,6 +78,7 @@ import type {
   TopicLink,
   TopicMarker,
   TopicSnapshot,
+  TopicDirection,
   TopicStructure,
   TopicStyleOverrides,
   TopicTask,
@@ -140,7 +141,7 @@ export interface DocumentSession extends DocumentSessionState {
   ) => Promise<void>
   setSheetLayoutDirection: (
     sheetId: string,
-    direction: 'left' | 'right' | 'balanced' | 'auto',
+    direction: TopicDirection | 'auto',
   ) => Promise<void>
   selectTopic: (topicId: string) => Promise<void>
   createChildTopic: (parentId: string) => Promise<void>
@@ -1222,7 +1223,7 @@ export function useDocumentSession(): DocumentSession {
   )
 
   const setDocumentSheetLayoutDirection = useCallback(
-    async (sheetId: string, direction: 'left' | 'right' | 'balanced' | 'auto') => {
+    async (sheetId: string, direction: TopicDirection | 'auto') => {
       await runCommand('设置分支方向', () =>
         setSheetLayoutDirection(sheetId, direction),
       )

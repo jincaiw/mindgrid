@@ -2254,6 +2254,73 @@ it('applies a node-level branch line color from the inspector branch section', (
   }
 })
 
+it('adapts the structure direction control to the active skeleton', () => {
+  const setSheetLayoutDirection = vi.fn(async (_sheetId: string, _direction: unknown) => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              chartType: 'org',
+              rootTopic: { id: 'topic_root', text: '中心主题', collapsed: false, children: [] },
+            },
+          ],
+        },
+        activeTopicId: 'topic_root',
+        setSheetLayoutDirection,
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  // 组织结构图走上下轴：应给出「向下」「向上」而不是左右。
+  // 必须按分组限定：节点级「子主题方向」在同一骨架下也会给出「向上」。
+  const canvasGroup = within(inspector.getByRole('group', { name: '分支方向' }))
+  expect(canvasGroup.getByRole('button', { name: '向上' })).toBeTruthy()
+  expect(canvasGroup.queryByRole('button', { name: '向右' })).toBeNull()
+
+  fireEvent.click(canvasGroup.getByRole('button', { name: '向上' }))
+  expect(setSheetLayoutDirection).toHaveBeenLastCalledWith('sheet_1', 'up')
+})
+
+it('disables the structure direction control for whole-canvas-only skeletons', () => {
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              chartType: 'bubble',
+              rootTopic: { id: 'topic_root', text: '中心主题', collapsed: false, children: [] },
+            },
+          ],
+        },
+        activeTopicId: 'topic_root',
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  // 气泡图没有方向参数：只留「自动」且置灰，并给出原因（不造假开关）
+  const canvasGroup = within(inspector.getByRole('group', { name: '分支方向' }))
+  const autoButton = canvasGroup.getByRole('button', { name: '自动' })
+  expect((autoButton as HTMLButtonElement).disabled).toBe(true)
+  expect(autoButton.getAttribute('title')).toContain('没有可调的方向参数')
+  expect(canvasGroup.queryByRole('button', { name: '向上' })).toBeNull()
+})
+
 it('applies a node-level structure override from the inspector structure section', () => {
   const setTopicStructure = vi.fn(async (_topicId: string, _structure: unknown) => {})
 
@@ -2291,14 +2358,18 @@ it('applies a node-level structure override from the inspector structure section
   fireEvent.change(inspector.getByLabelText('子主题结构'), { target: { value: 'org' } })
   expect(setTopicStructure).toHaveBeenLastCalledWith('topic_branch', { chartType: 'org' })
 
-  // 方向：与结构合并写入，且不写出空的 chartType
+  // 方向：选项跟随刚选的结构（组织结构图 → 上下），并与结构合并写入
+  const nodeGroup = within(inspector.getByRole('group', { name: '子主题方向' }))
+  expect(nodeGroup.queryByRole('button', { name: '向左' })).toBeNull()
+  expect(nodeGroup.getByRole('button', { name: '向上' })).toBeTruthy()
+
   const callsBeforeDirection = setTopicStructure.mock.calls.length
-  fireEvent.click(inspector.getByRole('button', { name: '向左' }))
+  fireEvent.click(nodeGroup.getByRole('button', { name: '向上' }))
   const callsAfterDirection = setTopicStructure.mock.calls.length
   if (callsAfterDirection > callsBeforeDirection) {
     expect(setTopicStructure).toHaveBeenLastCalledWith('topic_branch', {
       chartType: 'org',
-      direction: 'left',
+      direction: 'up',
     })
   }
 })

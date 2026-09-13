@@ -13,7 +13,7 @@
  * 这样 `layout-utils` 与各引擎可以自由引用本模块，不会和调度器形成循环依赖。
  */
 
-import type { TopicSnapshot } from '../../../lib/document/types'
+import type { ChartType, TopicDirection, TopicSnapshot } from '../../../lib/document/types'
 import type { MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
 
 /**
@@ -117,6 +117,103 @@ export function mirrorLayoutHorizontally(layout: MindMapLayoutResult): void {
     edge.control2 = { x: -edge.control2.x, y: edge.control2.y }
     edge.side = edge.side === 'left' ? 'right' : 'left'
   }
+}
+
+/**
+ * 垂直镜像一份布局（原地修改）：组织结构图/树形图的「向上」变体。
+ *
+ * `side` 不动——上下方向不改变节点在左右意义上的归属，
+ * 改了反而会让折叠按钮跳到错误的一边。
+ */
+export function mirrorLayoutVertically(layout: MindMapLayoutResult): void {
+  for (const node of layout.nodes) {
+    node.y = -node.y
+  }
+
+  for (const edge of layout.edges) {
+    edge.start = { x: edge.start.x, y: -edge.start.y }
+    edge.end = { x: edge.end.x, y: -edge.end.y }
+    edge.control1 = { x: edge.control1.x, y: -edge.control1.y }
+    edge.control2 = { x: edge.control2.x, y: -edge.control2.y }
+  }
+}
+
+/**
+ * 转置一份布局（原地修改）：时间线的「垂直」变体。
+ *
+ * 时间线本来是「根在左、事件沿水平轴向右排、子事件挂在下边」，
+ * 交换 X/Y 之后就变成「根在上、事件沿垂直轴向下排、子事件挂在右边」，
+ * 正是竖直时间轴。节点宽高要一起换，否则方块会变成竖条。
+ *
+ * `side` 统一落到 `center`：转置后"左/右分支"不再有左右含义，
+ * 保留原值会让折叠按钮贴在错误的边（`center` 是贴下缘，符合上下流动）。
+ */
+export function transposeLayout(layout: MindMapLayoutResult): void {
+  for (const node of layout.nodes) {
+    const x = node.x
+    node.x = node.y
+    node.y = x
+    const width = node.width
+    node.width = node.height
+    node.height = width
+    node.side = 'center'
+  }
+
+  const swap = (point: { x: number; y: number }) => ({ x: point.y, y: point.x })
+  for (const edge of layout.edges) {
+    edge.start = swap(edge.start)
+    edge.end = swap(edge.end)
+    edge.control1 = swap(edge.control1)
+    edge.control2 = swap(edge.control2)
+  }
+}
+
+/** 方向 → 几何变换。 */
+export type LayoutVariantTransform = 'mirror-x' | 'mirror-y' | 'transpose'
+
+/**
+ * 某种骨架对某个方向该做哪种变换（不该做就返回 null）。
+ *
+ * 各骨架只认自己轴上的方向，别的方向**安静忽略**而不是报错——
+ * 用户在一张脑图上把某个组织结构图分支的方向设成"向左"时，
+ * 合理的表现是"这个参数对它没意义"，不是弹错。
+ *
+ * 脑图不在表内：它的左右由布局引擎自己处理（要按行分配左右两侧），
+ * 事后镜像会把两侧一起翻过去，反而错。
+ */
+export function resolveVariantTransform(
+  chartType: ChartType,
+  direction: TopicDirection | undefined,
+): LayoutVariantTransform | null {
+  if (!direction || direction === 'balanced') return null
+
+  switch (chartType) {
+    case 'logic':
+    case 'brace':
+    case 'matrix':
+    case 'treetable':
+      return direction === 'left' ? 'mirror-x' : null
+    case 'timeline':
+      if (direction === 'left') return 'mirror-x'
+      return direction === 'down' ? 'transpose' : null
+    case 'org':
+    case 'tree':
+      return direction === 'up' ? 'mirror-y' : null
+    default:
+      return null
+  }
+}
+
+/** 按方向应用骨架变体变换（无对应变换时原样返回）。 */
+export function applyDirectionVariant(
+  layout: MindMapLayoutResult,
+  chartType: ChartType,
+  direction: TopicDirection | undefined,
+): void {
+  const transform = resolveVariantTransform(chartType, direction)
+  if (transform === 'mirror-x') mirrorLayoutHorizontally(layout)
+  else if (transform === 'mirror-y') mirrorLayoutVertically(layout)
+  else if (transform === 'transpose') transposeLayout(layout)
 }
 
 function translateEdge(

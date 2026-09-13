@@ -69,6 +69,8 @@ pub enum LayoutDirection {
     Right,
     Up,
     Down,
+    /// 画布级专用：按平衡开关/默认交替分配，不做变体变换。
+    Balanced,
 }
 
 /// 主题节点形状。对齐 XMind 节点形状选项（rounded/rect/pill/underline）。
@@ -257,14 +259,6 @@ impl Default for ChartType {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum LayoutBalance {
-    Left,
-    Right,
-    Balanced,
-}
-
 /// 编号序号格式，与 TS 侧 `NumberingFormat` 一致。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -293,7 +287,7 @@ pub struct SheetNumbering {
 #[serde(rename_all = "camelCase")]
 pub struct LayoutConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub direction: Option<LayoutBalance>,
+    pub direction: Option<LayoutDirection>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub horizontal_spacing: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

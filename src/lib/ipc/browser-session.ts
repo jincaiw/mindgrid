@@ -11,10 +11,12 @@ import type {
   TopicLink,
   TopicMarker,
   TopicSnapshot,
+  TopicDirection,
   TopicStructure,
   TopicStyleOverrides,
   TopicTask,
 } from '../document/types'
+import { TOPIC_DIRECTIONS } from '../document/types'
 
 const RECOVERY_STORAGE_KEY = 'mindgrid:recovery:v1'
 
@@ -841,15 +843,14 @@ export async function invokeBrowserCommand<TResult>(
         }
 
         const candidate = String(payload.direction ?? '').trim().toLowerCase()
-        const allowed = ['', 'auto', 'left', 'right', 'balanced']
-        if (!allowed.includes(candidate)) {
+        // 空串与 'auto' 都表示"回到自动"；其余取值以 TOPIC_DIRECTIONS 为唯一判据
+        const isAuto = candidate === '' || candidate === 'auto'
+        const matched = TOPIC_DIRECTIONS.find((item) => item === candidate)
+        if (!isAuto && !matched) {
           throw new Error(`不支持的分支方向“${candidate}”`)
         }
 
-        const direction =
-          candidate === 'left' || candidate === 'right' || candidate === 'balanced'
-            ? (candidate as 'left' | 'right' | 'balanced')
-            : undefined
+        const direction: TopicDirection | undefined = matched
 
         const nextConfig = { ...(sheet.layoutConfig ?? {}) }
         if (direction) {
