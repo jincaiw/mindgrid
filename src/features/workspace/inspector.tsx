@@ -60,6 +60,8 @@ import {
 import { SwatchPicker } from './swatch-picker'
 import { PaletteEditor } from './palette-editor'
 import { ChevronDownIcon, GridIcon, PlayIcon, TypeIcon } from './icons'
+import { createPortal } from 'react-dom'
+import { usePopoverAnchor } from './use-popover-anchor'
 import {
   BRANCH_THICKNESS_OPTIONS,
   CANVAS_SETTINGS_KEYS,
@@ -78,6 +80,112 @@ import {
  * 没有折叠 chevron、没有可点击的标题行。此前那套「EYEBROW + 中文标题 + 折叠箭头」
  * 是本项目自创的样式，在实机对照里一眼就能看出和 XMind 不是一家。
  */
+/**
+ * 颜色字段：色块触发按钮 + ▾，点开后是 **portal 到 body** 的浮层，内含预设色板与自定义取色。
+ *
+ * 为什么做成浮层：XMind 的形状分组是「填充 [■▾] [色块]」，预设收在浮层里。
+ * 我们原来把预设色点**平铺在面板里**，白白多占一整行高度——而侧边栏密度正是这次对标的主线。
+ *
+ * 必须 portal + fixed：右栏是滚动容器，挂在触发器内部的浮层会被面板裁切
+ * （骨架浮层、色板浮层都踩过这个坑）。定位统一走 usePopoverAnchor。
+ */
+function ColorSwatchField({
+  label,
+  value,
+  fallback,
+  presets,
+  onChange,
+}: {
+  label: string
+  value: string
+  fallback: string
+  presets: string[]
+  onChange: (color: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLSpanElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
+  const popoverRef = useRef<HTMLDivElement | null>(null)
+  const anchor = usePopoverAnchor(open, triggerRef)
+
+  useEffect(() => {
+    if (!open) return
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node
+      if (popoverRef.current?.contains(target)) return
+      if (!rootRef.current?.contains(target)) setOpen(false)
+    }
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [open])
+
+  return (
+    <span className="panel__color-field" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="panel__color-trigger"
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span
+          className="panel__color-trigger-swatch"
+          style={{ background: toHexColor(value, fallback) }}
+        />
+        <ChevronDownIcon size={12} />
+      </button>
+
+      {open && anchor
+        ? createPortal(
+            <div
+              ref={popoverRef}
+              className="panel__color-popover"
+              role="dialog"
+              aria-label={`${label}色板`}
+              style={{ top: anchor.top, right: anchor.right }}
+            >
+              <div className="panel__chips" role="group" aria-label={`${label}快速预设`}>
+                {presets.map((color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    className="panel__chip panel__chip--color"
+                    style={{ background: color }}
+                    aria-label={`应用${label} ${color}`}
+                    onClick={() => {
+                      onChange(color)
+                      setOpen(false)
+                    }}
+                  />
+                ))}
+              </div>
+              <label className="panel__color-custom">
+                <input
+                  type="color"
+                  aria-label={`自定义${label}`}
+                  value={toHexColor(value, fallback)}
+                  onChange={(event) => onChange(event.target.value)}
+                />
+                <span>自定义…</span>
+              </label>
+            </div>,
+            document.body,
+          )
+        : null}
+    </span>
+  )
+}
+
 /**
  * 分组小节。对齐 XMind 的两点：
  * 标题可折叠（展开 ▾ / 收起 ▸），默认展开。
@@ -1026,42 +1134,28 @@ export function Inspector({
             {activeTopic && !hasMultipleSelectedTopics ? (
               <>
             <PanelSection title="形状">
+                {/* XMind 的形状分组是「填充 [■▾][色块]」「边框 [▭▾][色块]」两行，
+                    预设收进浮层。原来把预设色点平铺在面板里，白占一整行高度。 */}
                 <div className="panel__field">
-                  <span>节点颜色覆盖</span>
-                  <div className="panel__field-row">
-                    <label className="panel__color-input">
-                      <span>填充</span>
-                      <input
-                        type="color"
-                        aria-label="节点填充色"
-                        value={toHexColor(fillDraft, '#ffffff')}
-                        onChange={(e) => setFillDraft(e.target.value)}
-                        onBlur={() => applyStyleOverride({})}
-                      />
-                    </label>
-                    <label className="panel__color-input">
-                      <span>边框</span>
-                      <input
-                        type="color"
-                        aria-label="节点边框色"
-                        value={toHexColor(borderColorDraft, '#94a3b8')}
-                        onChange={(e) => setBorderColorDraft(e.target.value)}
-                        onBlur={() => applyStyleOverride({})}
-                      />
-                    </label>
-                  </div>
-                  <div className="panel__chips" role="group" aria-label="填充色快速预设">
-                    {FILL_PRESETS.map((color) => (
-                      <button
-                        key={color}
-                        type="button"
-                        className="panel__chip panel__chip--color"
-                        style={{ background: color }}
-                        aria-label={`应用填充色 ${color}`}
-                        onClick={() => applyStyleOverride({ fill: color })}
-                      />
-                    ))}
-                  </div>
+                  <span>填充</span>
+                  <ColorSwatchField
+                    label="填充色"
+                    value={fillDraft}
+                    fallback="#ffffff"
+                    presets={FILL_PRESETS}
+                    onChange={(color) => applyStyleOverride({ fill: color })}
+                  />
+                </div>
+
+                <div className="panel__field">
+                  <span>边框</span>
+                  <ColorSwatchField
+                    label="边框色"
+                    value={borderColorDraft}
+                    fallback="#94a3b8"
+                    presets={FILL_PRESETS}
+                    onChange={(color) => applyStyleOverride({ borderColor: color })}
+                  />
                 </div>
 
                 <div className="panel__field">

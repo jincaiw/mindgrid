@@ -2001,8 +2001,9 @@ it('applies node color overrides from the inspector color editor', () => {
 
   const inspector = openInspectorStyleTab()
 
-  // 快速预设色板：点击应用 fill 覆盖
-  const preset = inspector.getByRole('button', { name: '应用填充色 #ea580c' })
+  // 预设色板收在「填充」色块浮层里（对齐 XMind 的「填充 [■▾]」），先点开触发器
+  fireEvent.click(inspector.getByRole('button', { name: '填充色' }))
+  const preset = screen.getByRole('button', { name: '应用填充色 #ea580c' })
   fireEvent.click(preset)
   expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', {
     fill: '#ea580c',

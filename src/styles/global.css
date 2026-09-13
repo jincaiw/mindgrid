@@ -1401,6 +1401,53 @@ button {
   color: var(--color-text-primary);
 }
 
+/* 颜色字段：色块 + ▾ 的触发按钮；预设与自定义收在 portal 浮层里 */
+.panel__color-field {
+  display: inline-flex;
+  align-items: center;
+}
+
+.panel__color-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.panel__color-trigger-swatch {
+  width: 28px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+}
+
+/* portal 到 body 的 fixed 浮层，坐标由 usePopoverAnchor 计算 */
+.panel__color-popover {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.panel__color-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
 /* 分组标题行：折叠箭头 + 标题 +（可选）行内主控件。
  * XMind 的每个分组标题都是「▾ 形状 ……[形状下拉]」这种形态。 */
 .panel__section-label {

@@ -37,14 +37,16 @@ async function main() {
   await page.goto(baseUrl, { waitUntil: 'load' })
   await page.waitForTimeout(1800)
 
-  for (const [tab, file] of [
-    ['画布', 'canvas'],
-    ['样式', 'style'],
-    ['演说', 'present'],
+  // 用**页签 id** 定位，不能用文字匹配：工具栏里也有一个「演说」按钮
+  // （点了会直接进入放映），按名字取会点到它，并且随后的模态会挡住一切点击。
+  for (const [tabId, file] of [
+    ['#inspector-tab-canvas', 'canvas'],
+    ['#inspector-tab-style', 'style'],
+    ['#inspector-tab-pitch', 'present'],
   ]) {
-    const button = page.getByRole('tab', { name: tab }).or(page.getByRole('button', { name: tab }))
+    const button = page.locator(tabId)
     if ((await button.count()) === 0) {
-      console.log('skip (tab missing):', tab)
+      console.log('skip (tab missing):', tabId)
       continue
     }
     await button.first().click()
@@ -52,6 +54,30 @@ async function main() {
     const out = path.join(outDir, `shell-${file}.png`)
     await page.screenshot({ path: out })
     console.log(`saved ${out} (${WIDTH}×${HEIGHT} 逻辑, 2×)`)
+  }
+
+  // 回到样式页：浮层取景需要样式页挂载（循环最后一页是「演说」）
+
+  // 颜色浮层展开态：验证 portal 到 body 的浮层没被右栏裁切
+  // （右栏是滚动容器，挂在触发器内部的浮层会被裁到 280px 以内——踩过）
+  // 保险：万一前面留下了模态（如放映），先退出再取景
+  await page.keyboard.press('Escape')
+  const styleTab = page.locator('#inspector-tab-style')
+  if ((await styleTab.count()) > 0) {
+    await styleTab.first().click()
+    await page.waitForTimeout(400)
+  }
+
+  const fillTrigger = page.getByRole('button', { name: '填充色' })
+  if ((await fillTrigger.count()) > 0) {
+    await fillTrigger.first().click()
+    await page.waitForTimeout(400)
+    const out = path.join(outDir, 'shell-style-fill-popover.png')
+    await page.screenshot({ path: out })
+    console.log(`saved ${out}`)
+    await page.keyboard.press('Escape')
+  } else {
+    console.log('skip: 填充色触发器未找到（样式页可能未挂载）')
   }
 
   await browser.close()
