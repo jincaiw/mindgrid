@@ -654,6 +654,7 @@ export function WorkspaceScreen({
                 onPitchAspectRatioChange={setPitchAspectRatio}
                 pitchThemeStyle={pitchThemeStyle}
                 onPitchThemeStyleChange={setPitchThemeStyle}
+                onNotify={onNotify}
               />
             ) : null}
           </>

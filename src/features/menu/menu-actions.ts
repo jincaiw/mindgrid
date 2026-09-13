@@ -72,6 +72,7 @@ export type MenuActionId =
   | 'insert.labels'
   | 'insert.task'
   | 'insert.link'
+  | 'insert.attachment'
   | 'insert.marker'
   | 'insert.image'
   | 'insert.new-sheet'
@@ -158,6 +159,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'insert.labels',
   'insert.task',
   'insert.link',
+  'insert.attachment',
   'insert.marker',
   'insert.image',
   'insert.new-sheet',

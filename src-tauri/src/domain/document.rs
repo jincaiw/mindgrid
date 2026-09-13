@@ -41,6 +41,23 @@ pub struct TopicImage {
     pub height: Option<u32>,
 }
 
+/// 主题附件：文件本身随 .mgd 存进 `assets/attachments/`，这里只放引用与展示元数据。
+///
+/// 与 `TopicImage` 的关键差别：附件**不参与节点尺寸**——节点上只有一个回形针图标，
+/// 布局、导出都不需要为它预留空间。`name` 是原始文件名，用于列表显示与
+/// "导出到临时文件后用系统默认应用打开"。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicAttachment {
+    pub asset_id: String,
+    /// 原始文件名（含扩展名）。缺失时按 asset_id 兜底显示。
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_size: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TopicTaskStatus {
@@ -198,6 +215,8 @@ pub struct TopicSnapshot {
     pub link: Option<TopicLink>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image: Option<TopicImage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attachment: Option<TopicAttachment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<TopicTask>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1123,6 +1142,21 @@ impl DocumentSession {
         })
     }
 
+    /// 设置/移除主题附件。`attachment` 为 None 时移除。
+    ///
+    /// 文件本体由命令层负责先登记进资源表（`assets/attachments/`），
+    /// 这里只写引用——与主题图片同一分工。
+    pub fn set_topic_attachment(
+        &mut self,
+        topic_id: &str,
+        attachment: Option<TopicAttachment>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("编辑附件", |editor| {
+            editor.set_topic_attachment(topic_id, attachment)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     pub fn set_topic_notes(
         &mut self,
         topic_id: &str,
@@ -1475,6 +1509,7 @@ impl TopicSnapshot {
             notes: None,
             link: None,
             image: None,
+            attachment: None,
             task: None,
             layout_hints: None,
             structure: None,
@@ -1505,6 +1540,7 @@ impl SheetSnapshot {
                 notes: None,
                 link: None,
                 image: None,
+                attachment: None,
                 task: None,
                 layout_hints: None,
                 structure: None,
@@ -1673,6 +1709,7 @@ pub(crate) fn clone_topic_branch(topic: &TopicSnapshot) -> TopicSnapshot {
         notes: topic.notes.clone(),
         link: topic.link.clone(),
         image: topic.image.clone(),
+        attachment: topic.attachment.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
         structure: topic.structure.clone(),
@@ -1705,6 +1742,7 @@ fn clone_topic_branch_with_map(
         notes: topic.notes.clone(),
         link: topic.link.clone(),
         image: topic.image.clone(),
+        attachment: topic.attachment.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
         structure: topic.structure.clone(),
@@ -1727,7 +1765,7 @@ pub fn create_id(prefix: &str) -> String {
 mod tests {
     use super::{
         Boundary, DocumentRepairReport, DocumentSession, DocumentSnapshot, Relationship,
-        SummaryNode, TopicSnapshot,
+        SummaryNode, TopicAttachment, TopicSnapshot,
     };
 
     #[test]
@@ -2357,6 +2395,69 @@ mod tests {
     }
 
     #[test]
+    fn set_topic_attachment_round_trips_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[0]
+            .id
+            .clone();
+        let attachment = TopicAttachment {
+            asset_id: "sha256-abc.bin".to_string(),
+            name: "方案.pdf".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            byte_size: Some(1234),
+        };
+
+        let attached = session
+            .set_topic_attachment(&topic_id, Some(attachment.clone()))
+            .expect("attach should succeed");
+        assert_eq!(
+            super::find_topic(attached.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .attachment,
+            Some(attachment.clone())
+        );
+        assert_eq!(attached.next_undo_action.as_deref(), Some("编辑附件"));
+
+        // 一次撤销即移除附件（与图片同一套富字段通道）
+        let undone = session.undo().expect("undo should succeed");
+        assert!(super::find_topic(undone.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .attachment
+            .is_none());
+
+        // 重做再回到"已附加"
+        let redone = session.redo().expect("redo should succeed");
+        assert_eq!(
+            super::find_topic(redone.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .attachment,
+            Some(attachment)
+        );
+    }
+
+    #[test]
+    fn clone_topic_branch_keeps_attachment() {
+        // 复制/粘贴走的是 clone_topic_branch：漏掉新字段的话，
+        // 粘贴出来的主题会**静默丢掉附件**——文件还在资源区，只是没人引用它。
+        let mut source = TopicSnapshot::new("带附件的主题");
+        source.attachment = Some(TopicAttachment {
+            asset_id: "sha256-clone.bin".to_string(),
+            name: "规格.docx".to_string(),
+            mime_type: None,
+            byte_size: Some(42),
+        });
+
+        let cloned = super::clone_topic_branch(&source);
+
+        assert_eq!(cloned.attachment, source.attachment);
+    }
+
+    #[test]
     fn set_topics_collapsed_batch_is_a_single_undo_step() {
         let mut session = DocumentSession::create_default();
         let root_topic = session
@@ -2672,6 +2773,7 @@ mod tests {
             link: None,
             image: None,
             task: None,
+            attachment: None,
             layout_hints: None,
             structure: None,
             extensions: None,
@@ -2690,6 +2792,7 @@ mod tests {
             link: None,
             image: None,
             task: None,
+            attachment: None,
             layout_hints: None,
             structure: None,
             extensions: None,

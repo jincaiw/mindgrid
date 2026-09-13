@@ -90,6 +90,7 @@ example.mgd
 - notes
 - link
 - image
+- attachment
 - task
 - layoutHints
 - extensions
@@ -97,6 +98,8 @@ example.mgd
 ## 7. Assets
 
 - 图片和附件不使用 Base64 放入 document.json
+- 附件走 `assets/attachments/`（`AssetKind::Attachment`），主题侧只存引用与展示元数据
+  （`assetId` / `name` / `mimeType` / `byteSize`）；GC 必须把附件计入"被引用"集合
 - 使用 Asset ID 引用
 - 使用 SHA-256 去重和校验
 - 推荐文件名：`sha256-<digest>.<ext>`

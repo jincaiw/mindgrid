@@ -109,6 +109,9 @@ importDocxOutline: async () => {},
     applyTopicStyleToSiblings: async () => {},
     moveTopicFreely: async () => {},
     setTopicsPosition: async () => {},
+    setTopicAttachment: async () => {},
+    removeTopicAttachment: async () => {},
+    openTopicAttachment: async () => '',
     setSheetLayoutDirection: async () => {},
     selectTopic: async () => {},
     createChildTopic: async () => {},
@@ -1224,5 +1227,63 @@ describe('浮动主题拖动即摆放', () => {
 
     // 没开分支自由布局、也不是浮动主题 → 不该写自由位置
     expect(moveTopicFreely).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * 附件指示器（回形针）。
+ *
+ * 关键在"**只有**附件的主题"：节点那一行富内容图标由一个布尔量决定是否渲染，
+ * 新字段忘了并进那个布尔量时，图标会整个消失——而且只在"该主题没有别的富内容"
+ * 时才暴露，很容易漏。
+ */
+describe('主题附件指示器', () => {
+  function makeSessionWithAttachment() {
+    return createSessionStub({
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic: {
+              id: 'topic_root',
+              text: '中心主题',
+              collapsed: false,
+              children: [
+                {
+                  id: 'topic_with_attachment',
+                  text: '带附件',
+                  collapsed: false,
+                  children: [],
+                  // 刻意**只**给附件：没有标记/备注/链接
+                  attachment: { assetId: 'asset_pdf', name: '方案草案.pdf', byteSize: 2048 },
+                },
+                { id: 'topic_plain', text: '没有附件', collapsed: false, children: [] },
+              ],
+            },
+          },
+        ],
+      },
+    })
+  }
+
+  it('只带附件的主题也渲染回形针；没有附件的不渲染', () => {
+    renderWithApp(<CanvasHost session={makeSessionWithAttachment()} />)
+
+    const withAttachment = document.querySelector('[data-topic-id="topic_with_attachment"]')
+    const plain = document.querySelector('[data-topic-id="topic_plain"]')
+
+    expect(withAttachment?.querySelector('.mindmap-node__attachment-indicator')).not.toBeNull()
+    // 提示里要能看出是哪份文件（附件名可能带路径，这里只取末段）
+    expect(
+      withAttachment?.querySelector('.mindmap-node__attachment-indicator')?.getAttribute('title'),
+    ).toBe('附件：方案草案.pdf')
+
+    // 负向对照：没有附件的主题不该出现回形针
+    expect(plain?.querySelector('.mindmap-node__attachment-indicator')).toBeNull()
   })
 })

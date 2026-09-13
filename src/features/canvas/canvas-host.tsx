@@ -19,6 +19,7 @@ import {
 } from '../../lib/document/tree'
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import { isFreelyPositionableTopic } from '../../lib/document/free-topics'
+import { displayAttachmentName } from '../../lib/document/attachment'
 import {
   FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
   resolveBranchFocusTarget,
@@ -1793,6 +1794,22 @@ function NoteGlyph() {
 }
 
 /** 链接指示图标。 */
+function AttachmentGlyph() {
+  // 回形针：XMind 用同一个隐喻表示"这个主题带了附件"
+  return (
+    <svg className="attachment-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path
+        d="M9.5 4.5l-4 4a2 2 0 002.8 2.8l4.2-4.2a3.5 3.5 0 00-5-5L3.2 6.4a5 5 0 007 7l1.6-1.6"
+        fill="none"
+        stroke="#f6be00"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function LinkGlyph() {
   return (
     <svg className="link-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -2039,7 +2056,10 @@ function MindMapNode({
   const notesText = topicData.notes && topicData.notes.length > 0 ? topicData.notes : null
   const linkInfo = topicData.link ?? null
   const labelList = topicData.labels && topicData.labels.length > 0 ? topicData.labels : null
-  const hasMeta = !!(markers || notesText || linkInfo)
+  const attachmentInfo = topicData.attachment ?? null
+  // ⚠️ 附件必须算进 hasMeta：这个布尔值决定整行 meta 是否渲染，
+  // 漏掉它会让"只带附件的主题"完全看不到回形针（接了一半的线）
+  const hasMeta = !!(markers || notesText || linkInfo || attachmentInfo)
 
   return (
     <>
@@ -2091,6 +2111,15 @@ function MindMapNode({
                 aria-label={`备注：${notesText.slice(0, 50)}${notesText.length > 50 ? '…' : ''}`}
               >
                 <NoteGlyph />
+              </span>
+            ) : null}
+            {attachmentInfo ? (
+              <span
+                className="mindmap-node__attachment-indicator"
+                title={`附件：${displayAttachmentName(attachmentInfo.name)}`}
+                aria-label={`附件：${displayAttachmentName(attachmentInfo.name)}`}
+              >
+                <AttachmentGlyph />
               </span>
             ) : null}
             {linkInfo ? (

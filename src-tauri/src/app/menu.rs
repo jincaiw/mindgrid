@@ -281,6 +281,8 @@ pub fn build_menu<R: Runtime>(
         .item(&item(handle, "insert.labels", "标签")?)
         .item(&item(handle, "insert.task", "任务")?)
         .item(&item(handle, "insert.link", "链接")?)
+        // XMind 把「附件」放在 链接 与 标记 之间
+        .item(&item(handle, "insert.attachment", "附件…")?)
         .item(&item(handle, "insert.marker", "标记")?)
         .item(&item(handle, "insert.image", "本地图片…")?)
         .separator()

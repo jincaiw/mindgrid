@@ -42,6 +42,19 @@ export interface TopicImage {
   height?: number
 }
 
+/**
+ * 主题附件：文件本身随 .mgd 存进 `assets/attachments/`，这里只放引用与展示元数据。
+ *
+ * 与 `TopicImage` 的关键差别：附件**不参与节点尺寸**——节点上只有一个回形针图标。
+ * `name` 是原始文件名，用于列表显示与"导出到临时目录后交给系统默认应用打开"。
+ */
+export interface TopicAttachment {
+  assetId: string
+  name: string
+  mimeType?: string
+  byteSize?: number
+}
+
 export type TopicTaskStatus = 'none' | 'started' | 'completed' | 'pending'
 
 /** 轻量任务属性，用于在思维导图中跟踪行动项。 */
@@ -201,6 +214,7 @@ export interface TopicSnapshot {
   notes?: string
   link?: TopicLink
   image?: TopicImage
+  attachment?: TopicAttachment
   task?: TopicTask
   layoutHints?: TopicLayoutHints
   /** 节点级骨架覆盖（结构 / 方向），优先于画布级 `chartType` 与 `layoutConfig.direction`。 */

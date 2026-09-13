@@ -273,6 +273,31 @@ export function removeTopicImage(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('remove_topic_image', { topic_id: topicId })
 }
 
+/**
+ * 为主题附加一个文件：桌面端传本地绝对路径（Rust 读盘并登记进 `assets/attachments/`），
+ * 浏览器开发态传 `data:` URL。同一内容会被资源表按 SHA-256 去重。
+ */
+export function setTopicAttachment(topicId: string, sourcePath: string, name?: string) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_attachment', {
+    topic_id: topicId,
+    source_path: sourcePath,
+    // 只有浏览器开发态需要（那里没有真实路径，显示名只能由调用方带过来）
+    name,
+  })
+}
+
+/** 移除主题附件（资源本体留给保存时的 GC 回收，撤销后仍可恢复）。 */
+export function removeTopicAttachment(topicId: string) {
+  return invokeCommand<DocumentSessionSnapshot>('remove_topic_attachment', {
+    topic_id: topicId,
+  })
+}
+
+/** 用系统默认应用打开附件；返回已打开的文件名（供提示用）。 */
+export function openTopicAttachment(topicId: string) {
+  return invokeCommand<string>('open_topic_attachment', { topic_id: topicId })
+}
+
 /** 读取资源内容为 data URL（形如 data:image/png;base64,...），供画布渲染使用。 */
 export function readAssetDataUrl(assetId: string) {
   return invokeCommand<string>('read_asset_data_url', { asset_id: assetId })

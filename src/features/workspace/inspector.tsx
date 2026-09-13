@@ -45,6 +45,11 @@ import {
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
+import {
+  ATTACHMENT_DIALOG_OPTIONS,
+  displayAttachmentName,
+  formatAttachmentSize,
+} from '../../lib/document/attachment'
 import { nextTextTransform } from '../canvas/runtime/text-transform'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../canvas/mindmap-layout'
 import {
@@ -648,6 +653,13 @@ interface InspectorProps {
   onPitchAspectRatioChange?: (value: PitchAspectRatio) => void
   pitchThemeStyle?: PitchThemeStyle
   onPitchThemeStyleChange?: (value: PitchThemeStyle) => void
+  /**
+   * 瞬态提示（如"已用默认应用打开附件"、或打开失败的原始原因）。
+   *
+   * 与画布同一条 Toast 通道：附件那类动作的失败原来没有出口，
+   * 只能变成一条无人处理的 reject——用户看到的是"点了没反应"。
+   */
+  onNotify?: (message: string) => void
 }
 
 export function Inspector({
@@ -660,6 +672,7 @@ export function Inspector({
   onPitchAspectRatioChange,
   pitchThemeStyle: controlledPitchThemeStyle,
   onPitchThemeStyleChange,
+  onNotify,
 }: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const canvasSettings = resolveCanvasSettings(session.document?.settings)
@@ -1031,6 +1044,39 @@ export function Inspector({
 
     // 非 Tauri 环境（pnpm dev / 测试）：点击隐藏 input，由 onChange 读成 data URL 再提交
     imageFileInputRef.current?.click()
+  }
+
+  // —— 主题附件：与图片同一套双通道（桌面原生对话框 / 浏览器隐藏 file input）——
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
+
+  const handlePickAttachment = async () => {
+    if (!activeTopic) {
+      return
+    }
+
+    if (hasTauriRuntime()) {
+      const selected = await openFileDialog({ ...ATTACHMENT_DIALOG_OPTIONS })
+      const selectedPath = toSelectedImagePath(selected)
+      if (selectedPath) {
+        await session.setTopicAttachment(activeTopic.id, selectedPath)
+      }
+      return
+    }
+
+    attachmentInputRef.current?.click()
+  }
+
+  const handleOpenAttachment = async () => {
+    if (!activeTopic?.attachment) {
+      return
+    }
+    try {
+      const name = await session.openTopicAttachment(activeTopic.id)
+      onNotify?.(`已用默认应用打开「${name}」`)
+    } catch (error) {
+      // Rust 侧把原因写在 Err(String) 里（找不到资源、无法打开…），别吞掉
+      onNotify?.(typeof error === 'string' && error.trim() ? error : '无法打开附件')
+    }
   }
 
   // 活动主题切换时，若起点未设置或失效则回填为活动主题
@@ -2122,6 +2168,88 @@ export function Inspector({
                       >
                         移除图片
                       </button>
+                    ) : null}
+                  </div>
+                </div>
+              </PanelSection>
+            ) : null}
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <PanelSection title="附件">
+                <p className="panel__muted">
+                  文件随文档一起保存（不写进 JSON，走资源区按内容去重），
+                  「打开」会交给系统默认应用。任意类型的文件都可以附加。
+                </p>
+
+                <div className="panel__field">
+                  <span>文件</span>
+                  {activeTopic.attachment ? (
+                    <div className="panel__attachment">
+                      <span
+                        className="panel__attachment-name"
+                        title={displayAttachmentName(activeTopic.attachment.name)}
+                      >
+                        {displayAttachmentName(activeTopic.attachment.name)}
+                      </span>
+                      {formatAttachmentSize(activeTopic.attachment.byteSize) ? (
+                        <span className="panel__muted">
+                          {formatAttachmentSize(activeTopic.attachment.byteSize)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="panel__muted">当前主题没有附件。</p>
+                  )}
+                  <input
+                    ref={attachmentInputRef}
+                    type="file"
+                    className="panel__hidden-file-input"
+                    aria-label="选择附件文件"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null
+                      // 清空 value，保证连续选择同一文件也能触发 change
+                      event.target.value = ''
+
+                      if (!file) {
+                        return
+                      }
+
+                      const reader = new FileReader()
+                      reader.onload = () => {
+                        const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+                        if (dataUrl && activeTopic) {
+                          // 浏览器开发态没有真实路径：把文件名一起带上当作显示名
+                          void session.setTopicAttachment(activeTopic.id, dataUrl, file.name)
+                        }
+                      }
+                      reader.readAsDataURL(file)
+                    }}
+                  />
+                  <div className="panel__field-row">
+                    <button
+                      className="panel__action"
+                      type="button"
+                      onClick={() => void handlePickAttachment()}
+                    >
+                      {activeTopic.attachment ? '更换附件' : '附加文件'}
+                    </button>
+                    {activeTopic.attachment ? (
+                      <>
+                        <button
+                          className="panel__action"
+                          type="button"
+                          onClick={() => void handleOpenAttachment()}
+                        >
+                          打开
+                        </button>
+                        <button
+                          className="panel__action panel__action--ghost"
+                          type="button"
+                          onClick={() => void session.removeTopicAttachment(activeTopic.id)}
+                        >
+                          移除
+                        </button>
+                      </>
                     ) : null}
                   </div>
                 </div>

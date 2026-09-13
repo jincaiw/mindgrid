@@ -799,6 +799,62 @@ export async function invokeBrowserCommand<TResult>(
         return String((rawPositions[0] as { topic_id?: unknown }).topic_id)
       }) as TResult
     }
+    case 'set_topic_attachment': {
+      const topicId = String(payload.topic_id)
+      const sourcePath = String(payload.source_path ?? '')
+      const providedName =
+        typeof payload.name === 'string' && payload.name.trim().length > 0
+          ? payload.name.trim()
+          : ''
+      // 复用图片那条"读入并登记"的通道：它接受 data: / http(s)，
+      // 对附件同样适用（浏览器里没有本地绝对路径可读）
+      const dataUrl = await resolveBrowserImageDataUrl(sourcePath)
+      const mimeMatch = /^data:([^;,]+)[;,]/.exec(dataUrl)
+      const base64Start = dataUrl.indexOf(';base64,')
+      const byteSize =
+        base64Start >= 0
+          ? Math.floor((dataUrl.length - base64Start - 8) * 0.75)
+          : dataUrl.length
+      const assetId = registerBrowserAssetDataUrl(dataUrl)
+
+      return applyMutation('编辑附件', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+        if (!topic) {
+          throw new Error('找不到目标主题')
+        }
+        topic.attachment = {
+          assetId,
+          name: providedName || '附件',
+          mimeType: mimeMatch ? mimeMatch[1] : 'application/octet-stream',
+          byteSize,
+        }
+        return topicId
+      }) as TResult
+    }
+    case 'remove_topic_attachment': {
+      const topicId = String(payload.topic_id)
+
+      return applyMutation('编辑附件', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+        if (!topic) {
+          throw new Error('找不到目标主题')
+        }
+        topic.attachment = undefined
+        return topicId
+      }) as TResult
+    }
+    // 浏览器里没有"系统默认应用"这回事（也不该用 window.open 打开本地字节），
+    // 明确拒绝并说明，比静默什么都不做诚实
+    case 'open_topic_attachment':
+      throw new Error('浏览器开发态无法用系统默认应用打开附件，请使用桌面版')
     case 'apply_topic_style_to_siblings': {
       const topicId = String(payload.topic_id)
 

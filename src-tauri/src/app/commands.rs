@@ -1,7 +1,8 @@
 use crate::app::assets::AssetStore;
+use crate::domain::document::find_topic;
 use crate::domain::document::{
     DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
-    SheetBranchStyle, SheetNumbering, TopicImage, TopicLink, TopicMarker, TopicStructure, TopicStyleOverrides,
+    SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker, TopicStructure, TopicStyleOverrides,
     TopicTask,
 };
 use crate::AppState;
@@ -1058,6 +1059,189 @@ pub fn remove_topic_image(
     guard.set_topic_image(&topic_id, None)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 取原始文件名并**净化**。
+///
+/// 净化不是多余的：`name` 来自 .mgd 文件内容，而它随后会被用来拼接
+/// "导出到临时目录"的落地路径。不净化的话，一个精心构造的
+/// `name: "../../../../Library/LaunchAgents/x.plist"` 就能让"打开附件"
+/// 写到任意位置（路径逃逸）。这里只取最后一段，并拒绝空名 / `.` / `..`。
+fn sanitized_attachment_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("附件名为空".to_string());
+    }
+
+    let last = trimmed
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(trimmed)
+        .trim();
+
+    if last.is_empty() || last == "." || last == ".." {
+        return Err("附件名不合法".to_string());
+    }
+
+    Ok(last.to_string())
+}
+
+/// 读取文件并登记为**附件**资源，返回 (asset_id, mime_type, byte_size)。
+/// 与图片不同，附件不做 MIME 白名单：任何文件都能附上（这正是附件与图片的分工）。
+fn register_attachment_asset(
+    assets: &mut AssetStore,
+    source_path: &Path,
+) -> Result<(String, String, u64), String> {
+    let bytes = fs::read(source_path).map_err(|error| format!("无法读取文件: {error}"))?;
+    if bytes.is_empty() {
+        return Err("文件为空".to_string());
+    }
+
+    let byte_size = bytes.len() as u64;
+    let mime_type = mime_type_for_path(source_path);
+    let asset_id = assets.register(bytes, mime_type, None, None);
+    Ok((asset_id, mime_type.to_string(), byte_size))
+}
+
+/// 为主题附加一个文件：读取 → 按 SHA-256 登记进 `assets/attachments/` → 写入 `topic.attachment`。
+/// 同一内容重复附加会被资源表去重，但每个主题各自持有一份引用。
+///
+/// `name` 是**可选显示名**：浏览器开发态没有真实路径（传的是 data URL），
+/// 只能把用户在文件选择器里挑的那个文件名带过来；桌面端一律以路径里的真实文件名为准。
+#[tauri::command]
+pub fn set_topic_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    source_path: String,
+    name: Option<String>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let path = Path::new(&source_path);
+    let from_path = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let name = sanitized_attachment_name(if from_path.is_empty() {
+        name.as_deref().unwrap_or_default()
+    } else {
+        &from_path
+    })
+    .map_err(|_| format!("无法确定文件名：{source_path}"))?;
+
+    // 先完成文件读取与资源登记，再动文档，避免半途写入空引用
+    let (asset_id, mime_type, byte_size) = {
+        let mut assets = state
+            .asset_store
+            .lock()
+            .map_err(|_| "unable to acquire asset store".to_string())?;
+        register_attachment_asset(&mut assets, path)?
+    };
+
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_attachment(
+        &topic_id,
+        Some(TopicAttachment {
+            asset_id,
+            name,
+            mime_type: Some(mime_type),
+            byte_size: Some(byte_size),
+        }),
+    )?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 移除主题附件（`topic.attachment` 置空）。撤销标签为「编辑附件」。
+/// 资源本体由保存时的 GC 回收，不在此处删除，保证撤销后仍可恢复。
+#[tauri::command]
+pub fn remove_topic_attachment(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_attachment(&topic_id, None)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 用系统默认应用打开附件，返回已打开的文件名。
+///
+/// 为什么必须落盘：附件在 .mgd 里是资源字节，而系统"打开"需要一个真实路径。
+/// 落点按 **asset_id** 建子目录（内容寻址 ⇒ 同名不同内容不会互相覆盖），
+/// 文件名用净化后的原名（后缀决定系统挑哪个应用）。
+#[tauri::command]
+pub fn open_topic_attachment(
+    state: State<'_, AppState>,
+    topic_id: String,
+) -> Result<String, String> {
+    let (name, asset_id) = {
+        let guard = state
+            .document_session
+            .lock()
+            .map_err(|_| "unable to acquire document state".to_string())?;
+        let snapshot = snapshot_document_session(&guard)?;
+        let attachment = snapshot
+            .document
+            .sheets
+            .iter()
+            .find(|sheet| sheet.id == snapshot.document.active_sheet_id)
+            .and_then(|sheet| find_topic(&sheet.root_topic, &topic_id))
+            .and_then(|topic| topic.attachment.clone())
+            .ok_or_else(|| "当前主题没有附件".to_string())?;
+        let name: String = attachment.name;
+        let asset_id: String = attachment.asset_id;
+        (name, asset_id)
+    };
+
+    let safe_name = sanitized_attachment_name(&name)?;
+    let bytes = {
+        let assets = state
+            .asset_store
+            .lock()
+            .map_err(|_| "unable to acquire asset store".to_string())?;
+        assets
+            .get_bytes(&asset_id)
+            .ok_or_else(|| format!("附件资源 {asset_id} 的字节流缺失"))?
+            .to_vec()
+    };
+
+    let directory = std::env::temp_dir().join("mindgrid-attachments").join(&asset_id);
+    fs::create_dir_all(&directory).map_err(|error| format!("无法创建临时目录: {error}"))?;
+    let target = directory.join(&safe_name);
+    fs::write(&target, &bytes).map_err(|error| format!("无法写出附件: {error}"))?;
+
+    open_with_system_default(&target)?;
+    Ok(safe_name)
+}
+
+/// 交给系统默认应用打开（不经过 shell，避免把路径当命令解析）。
+fn open_with_system_default(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut command = std::process::Command::new("cmd");
+        command.args(["/C", "start", ""]);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = std::process::Command::new("xdg-open");
+
+    command
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("无法打开附件: {error}"))
 }
 
 /// 读取资源字节并编码为 data URL（`data:<mime>;base64,<...>`），供前端直接渲染主题图片。

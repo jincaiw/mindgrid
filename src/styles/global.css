@@ -3462,6 +3462,16 @@ button {
   pointer-events: none;
 }
 
+/* 附件指示器：与备注图标同一排、同一尺寸节奏（回形针） */
+.mindmap-node__attachment-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  margin-left: 4px;
+  pointer-events: none;
+}
+
 .mindmap-node__link-indicator {
   display: inline-flex;
   align-items: center;

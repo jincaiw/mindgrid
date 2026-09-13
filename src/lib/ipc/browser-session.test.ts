@@ -589,6 +589,42 @@ describe('invokeBrowserCommand', () => {
     ).toBeUndefined()
   })
 
+  it('attaches a file to a topic and removes it with undo support', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const topicId = created.document.sheets[0].rootTopic.children[0].id
+
+    const attached = await invokeBrowserCommand<DocumentSessionSnapshot>('set_topic_attachment', {
+      topic_id: topicId,
+      source_path: 'data:text/plain;base64,aGVsbG8=',
+      name: '说明.txt',
+    })
+    const attachment = findTopicById(attached.document.sheets[0].rootTopic, topicId)?.attachment
+    expect(attachment?.name).toBe('说明.txt')
+    expect(attachment?.assetId).toBeTruthy()
+    expect(attachment?.byteSize).toBeGreaterThan(0)
+
+    const removed = await invokeBrowserCommand<DocumentSessionSnapshot>(
+      'remove_topic_attachment',
+      { topic_id: topicId },
+    )
+    expect(findTopicById(removed.document.sheets[0].rootTopic, topicId)?.attachment).toBeUndefined()
+
+    // 一次撤销把附件找回来（与 Rust 侧的富字段通道同一语义）
+    const undone = await invokeBrowserCommand<DocumentSessionSnapshot>('undo_document_command')
+    expect(findTopicById(undone.document.sheets[0].rootTopic, topicId)?.attachment?.name).toBe(
+      '说明.txt',
+    )
+  })
+
+  it('refuses to open an attachment outside the desktop runtime', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const topicId = created.document.sheets[0].rootTopic.children[0].id
+
+    await expect(
+      invokeBrowserCommand<string>('open_topic_attachment', { topic_id: topicId }),
+    ).rejects.toThrow(/桌面版/)
+  })
+
   it('writes a whole batch of free positions as a single undo step', async () => {
     const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
     const children = created.document.sheets[0].rootTopic.children

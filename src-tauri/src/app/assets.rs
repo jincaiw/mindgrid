@@ -115,7 +115,7 @@ impl AssetIndex {
         }
     }
 
-    /// 扫描文档树，收集所有被引用的 asset_id（来自 topic.image.asset_id）。
+    /// 扫描文档树，收集所有被引用的 asset_id（来自 topic.image / topic.attachment）。
     /// 用于 GC 与引用计数验证。
     pub fn collect_referenced_asset_ids(document: &DocumentSnapshot) -> HashSet<String> {
         let mut ids = HashSet::new();
@@ -357,6 +357,13 @@ fn collect_topic_asset_ids(topic: &TopicSnapshot, ids: &mut HashSet<String>) {
             ids.insert(image.asset_id.clone());
         }
     }
+    // 附件也是被引用的资源：漏掉这一支，保存前的 GC 会把用户附件**当成垃圾删掉**
+    // ——而且删除发生在保存路径上，用户下次打开文件才会发现附件没了。
+    if let Some(attachment) = &topic.attachment {
+        if !attachment.asset_id.is_empty() {
+            ids.insert(attachment.asset_id.clone());
+        }
+    }
     for child in &topic.children {
         collect_topic_asset_ids(child, ids);
     }
@@ -440,6 +447,44 @@ mod tests {
     }
 
     #[test]
+    fn collect_referenced_asset_ids_includes_attachments() {
+        // 附件必须在"被引用"集合里：漏掉它，保存前的 GC 会把用户附件当成垃圾删掉，
+        // 而用户要到下次打开文件才会发现。
+        let mut document = crate::domain::document::DocumentSnapshot::new_default();
+        document.sheets[0].root_topic.attachment = Some(crate::domain::document::TopicAttachment {
+            asset_id: "sha256-attachment.bin".to_string(),
+            name: "方案.pdf".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            byte_size: Some(7),
+        });
+
+        let ids = AssetIndex::collect_referenced_asset_ids(&document);
+
+        assert!(ids.contains("sha256-attachment.bin"));
+    }
+
+    #[test]
+    fn garbage_collect_keeps_attachment_assets() {
+        let mut store = AssetStore::default();
+        let asset_id = store.register(b"pdf-bytes".to_vec(), "application/pdf", None, None);
+        assert_eq!(store.index.assets.len(), 1);
+
+        let mut document = crate::domain::document::DocumentSnapshot::new_default();
+        document.sheets[0].root_topic.attachment = Some(crate::domain::document::TopicAttachment {
+            asset_id: asset_id.clone(),
+            name: "方案.pdf".to_string(),
+            mime_type: Some("application/pdf".to_string()),
+            byte_size: Some(9),
+        });
+
+        // garbage_collect 自己会扫描文档收集引用，这里直接传文档
+        let removed = store.garbage_collect(&document);
+
+        assert!(removed.is_empty(), "被附件引用的资源不该被回收");
+        assert_eq!(store.index.assets.len(), 1);
+    }
+
+    #[test]
     fn garbage_collect_removes_unreferenced_assets() {
         let mut store = AssetStore::default();
         let id_referenced = store.register(vec![1, 2, 3], "image/png", None, None);
@@ -489,6 +534,7 @@ mod tests {
                     height: None,
                 }),
                 task: None,
+                attachment: None,
                 layout_hints: None,
                 structure: None,
                 extensions: None,
@@ -502,6 +548,7 @@ mod tests {
             link: None,
             image: None,
             task: None,
+            attachment: None,
             layout_hints: None,
             structure: None,
             extensions: None,

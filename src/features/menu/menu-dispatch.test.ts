@@ -297,6 +297,7 @@ describe('插入', () => {
       'insert.labels',
       'insert.task',
       'insert.link',
+      'insert.attachment',
       'insert.marker',
       'insert.image',
     ] as const

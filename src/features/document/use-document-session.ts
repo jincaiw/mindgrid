@@ -46,6 +46,9 @@ import {
   readAssetDataUrl,
   redoDocumentCommand,
   removeTopicImage,
+  setTopicAttachment as setTopicAttachmentCommand,
+  removeTopicAttachment as removeTopicAttachmentCommand,
+  openTopicAttachment as openTopicAttachmentCommand,
   renameSheet,
   renameTopic,
   saveDocumentFile,
@@ -179,6 +182,14 @@ export interface DocumentSession extends DocumentSessionState {
   /** 插入主题图片：sourcePath 为本地绝对路径（Tauri），浏览器开发态传 data: URL。 */
   setTopicImage: (topicId: string, sourcePath: string) => Promise<void>
   removeTopicImage: (topicId: string) => Promise<void>
+  /**
+   * 为主题附加一个文件：sourcePath 为本地绝对路径（Tauri），
+   * 浏览器开发态传 `data:` URL（此时 `name` 给出显示名）。
+   */
+  setTopicAttachment: (topicId: string, sourcePath: string, name?: string) => Promise<void>
+  removeTopicAttachment: (topicId: string) => Promise<void>
+  /** 用系统默认应用打开附件；返回已打开的文件名。 */
+  openTopicAttachment: (topicId: string) => Promise<string>
   /** 读取资源 data URL 供画布渲染（不入历史栈）。 */
   readAssetDataUrl: (assetId: string) => Promise<string>
   setTopicLink: (topicId: string, link: TopicLink | null) => Promise<void>
@@ -1419,6 +1430,26 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicAttachment = useCallback(
+    async (topicId: string, sourcePath: string, name?: string) => {
+      await runCommand('编辑附件', () => setTopicAttachmentCommand(topicId, sourcePath, name))
+    },
+    [runCommand],
+  )
+
+  const clearTopicAttachment = useCallback(
+    async (topicId: string) => {
+      await runCommand('编辑附件', () => removeTopicAttachmentCommand(topicId))
+    },
+    [runCommand],
+  )
+
+  // 打开附件**不改文档**：不进撤销栈、也不把文档置为"未保存"
+  const launchTopicAttachment = useCallback(
+    (topicId: string) => openTopicAttachmentCommand(topicId),
+    [],
+  )
+
   // 延迟取用命令绑定：渲染期不访问模块属性，避免单元测试对 commands 做部分 mock 时误触发
   const updateTopicLink = useCallback(
     async (topicId: string, link: TopicLink | null) => {
@@ -1751,6 +1782,9 @@ export function useDocumentSession(): DocumentSession {
       setTopicNotes: updateTopicNotes,
       setTopicImage: updateTopicImage,
       removeTopicImage: clearTopicImage,
+      setTopicAttachment: updateTopicAttachment,
+      removeTopicAttachment: clearTopicAttachment,
+      openTopicAttachment: launchTopicAttachment,
       readAssetDataUrl,
       setTopicLink: updateTopicLink,
       setTopicMarkers: updateTopicMarkers,
@@ -1797,6 +1831,9 @@ export function useDocumentSession(): DocumentSession {
       updateTopicNotes,
       updateTopicImage,
       clearTopicImage,
+      updateTopicAttachment,
+      clearTopicAttachment,
+      launchTopicAttachment,
       updateTopicLink,
       updateTopicMarkers,
       updateTopicLabels,

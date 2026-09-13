@@ -352,6 +352,9 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     case 'insert.labels':
     case 'insert.task':
     case 'insert.link':
+    // 附件同样落在右侧面板的「附件」小节里编辑（与其它插入项同一约定：
+    // 系统文件对话框只在该面板里弹，不把对话框逻辑散到派发层）
+    case 'insert.attachment':
     case 'insert.marker':
     case 'insert.image':
       if (ctx.selectedTopicIds.length === 1) {

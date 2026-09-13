@@ -12,7 +12,7 @@ use crate::domain::document::{
     find_topic_mut, normalize_topic_ids_for_batch, normalize_topic_ids_for_delete, Boundary,
     ChartType, DocumentSnapshot, LayoutDirection, LayoutConfig, Relationship, SheetBranchStyle,
     SheetNumbering, SheetSnapshot,
-    SummaryNode, ThemeRef, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
+    SummaryNode, ThemeRef, TopicAttachment, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
     TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask,
 };
 
@@ -42,6 +42,11 @@ pub enum TopicFieldChange {
     Image {
         old: Option<TopicImage>,
         new: Option<TopicImage>,
+    },
+    /// 主题附件（引用 assets/attachments/ 下的资源，None 表示移除附件）。
+    Attachment {
+        old: Option<TopicAttachment>,
+        new: Option<TopicAttachment>,
     },
     /// 节点级骨架覆盖（结构 / 方向）。
     Structure {
@@ -222,6 +227,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     old: new.clone(),
                     new: old.clone(),
                 },
+                TopicFieldChange::Attachment { old, new } => TopicFieldChange::Attachment {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
             };
             Operation::SetTopicField {
                 sheet_id: sheet_id.clone(),
@@ -398,6 +407,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::StyleOverrides { new, .. } => topic.style_overrides = new.clone(),
         TopicFieldChange::Image { new, .. } => topic.image = new.clone(),
         TopicFieldChange::Structure { new, .. } => topic.structure = new.clone(),
+        TopicFieldChange::Attachment { new, .. } => topic.attachment = new.clone(),
     }
 }
 
@@ -885,6 +895,22 @@ impl<'a> DocumentEditor<'a> {
             |t| t.image.clone(),
             |new, old| TopicFieldChange::Image { old, new },
             |t, v| t.image = v,
+        );
+    }
+
+    fn set_topic_attachment_raw(
+        &mut self,
+        sheet_id: &str,
+        topic_id: &str,
+        new_attachment: Option<TopicAttachment>,
+    ) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_attachment,
+            |t| t.attachment.clone(),
+            |new, old| TopicFieldChange::Attachment { old, new },
+            |t, v| t.attachment = v,
         );
     }
 
@@ -1721,6 +1747,18 @@ impl<'a> DocumentEditor<'a> {
     pub fn set_topic_image(&mut self, topic_id: &str, image: Option<TopicImage>) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑图片")?;
         self.set_topic_image_raw(&sheet_id, topic_id, image);
+        Ok(())
+    }
+
+    /// 设置/移除主题附件。`attachment` 为 None 时移除。
+    /// 与图片一样走富字段通道：撤销/重做只需交换 old/new。
+    pub fn set_topic_attachment(
+        &mut self,
+        topic_id: &str,
+        attachment: Option<TopicAttachment>,
+    ) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑附件")?;
+        self.set_topic_attachment_raw(&sheet_id, topic_id, attachment);
         Ok(())
     }
 
