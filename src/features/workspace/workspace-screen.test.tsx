@@ -3208,3 +3208,31 @@ it('applies node font size from the inspector style panel dropdown', () => {
 
   expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', { fontSize: 18 })
 })
+
+/**
+ * 画布页「配色方案」的内联预览网格。
+ *
+ * 这条是**防回归**用的：曾有一轮基于"浮层打开态"的截图误判成
+ * "XMind 只有触发器、网格是重复控件"，把内联网格删掉了。
+ * 基准图 01（默认整窗、无浮层）显示 XMind 的触发器下方就有一排色板卡片。
+ */
+it('画布页配色方案有内联预览网格，点击即应用该配色', () => {
+  // 参数要显式声明：否则 mock.calls[0] 的类型是空元组，取下标会报 TS2493
+  const setDocumentSetting = vi.fn(async (_key: string, _value: unknown) => {})
+
+  renderWithApp(
+    <WorkspaceScreen session={{ ...sessionStub, setDocumentSetting }} />,
+  )
+
+  // 右栏默认停在「画布」子页
+  const inspector = within(screen.getByLabelText('右侧检查器'))
+  const grid = inspector.getByRole('radiogroup', { name: '配色方案预览' })
+  const cards = within(grid).getAllByRole('radio')
+
+  expect(cards.length).toBeGreaterThanOrEqual(3)
+
+  fireEvent.click(cards[1])
+
+  expect(setDocumentSetting).toHaveBeenCalled()
+  expect(setDocumentSetting.mock.calls[0][0]).toBe('canvas.branchPalette')
+})

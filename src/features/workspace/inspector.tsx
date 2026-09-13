@@ -81,6 +81,43 @@ import {
  * 是本项目自创的样式，在实机对照里一眼就能看出和 XMind 不是一家。
  */
 /**
+ * 配色方案的迷你导图缩略图：中心主题 + 3 条分支，分支色取自该配色。
+ *
+ * XMind 画布页的配色卡片就是这种"用该配色渲染的小导图"（不是色块条）。
+ * 骨架选择器里的缩略图是**每种骨架手绘的 SVG**，按配色参数化不了，所以这里单独画一个通用的。
+ */
+function PalettePreviewThumb({ colors }: { colors: readonly string[] }) {
+  const picks = [0, 1, 2].map(
+    (index) => colors[index % Math.max(1, colors.length)] ?? '#c7ccd6',
+  )
+
+  return (
+    <svg
+      className="panel__palette-thumb"
+      viewBox="0 0 84 46"
+      role="presentation"
+      aria-hidden="true"
+    >
+      <rect x="3" y="18" width="24" height="10" rx="2.5" fill="#454b57" />
+      {picks.map((color, index) => {
+        const y = 5 + index * 14
+        return (
+          <g key={`${color}-${index}`}>
+            <path
+              d={`M27 23 L56 ${y + 4.5}`}
+              stroke={color}
+              strokeWidth="1.4"
+              fill="none"
+            />
+            <rect x="56" y={y} width="25" height="9" rx="2" fill={color} />
+          </g>
+        )
+      })}
+    </svg>
+  )
+}
+
+/**
  * 颜色字段：色块触发按钮 + ▾，点开后是 **portal 到 body** 的浮层，内含预设色板与自定义取色。
  *
  * 为什么做成浮层：XMind 的形状分组是「填充 [■▾] [色块]」，预设收在浮层里。
@@ -2296,9 +2333,37 @@ export function Inspector({
                   onDelete={deleteCustomPalette}
                 />
               ) : null}
-              {/* 这里曾有一个内联的「调色板」网格，与上方「分支色板」浮层写的是同一个设置
-                  （canvas.branchPalette），而且只能选内置预设、选不到自定义配色。
-                  XMind 的配色方案只有一个触发器（色带 + 名称 + ▾），故删除重复控件。 */}
+              {/*
+                内联色板网格。**上一轮我基于浮层截图误判成"XMind 只有触发器"，把它删掉了**——
+                基准图 01（默认整窗、无浮层）显示 XMind 的画布页在触发器下方**就有一排色板卡片**，
+                所以这里是恢复，不是新增。
+                卡片按 XMind 的做法画成"用该配色渲染的迷你导图"，选中的加强调色描边。
+              */}
+              <div
+                className="panel__palette-grid"
+                role="radiogroup"
+                aria-label="配色方案预览"
+              >
+                {paletteOptions.map((preset) => {
+                  const active = canvasSettings.branchPalette === preset.id
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      aria-label={preset.label}
+                      title={preset.label}
+                      className={`panel__palette-card${
+                        active ? ' panel__palette-card--active' : ''
+                      }`}
+                      onClick={() => applyBranchPalette(preset.id)}
+                    >
+                      <PalettePreviewThumb colors={preset.colors} />
+                    </button>
+                  )
+                })}
+              </div>
 
             </PanelSection>
 

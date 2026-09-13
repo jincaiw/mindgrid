@@ -1401,6 +1401,36 @@ button {
   color: var(--color-text-primary);
 }
 
+/* 配色方案的内联预览网格：3 列卡片，每张是"用该配色渲染的迷你导图" */
+.panel__palette-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.panel__palette-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.panel__palette-card--active {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 1px var(--color-accent);
+}
+
+.panel__palette-thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 /* 颜色字段：色块 + ▾ 的触发按钮；预设与自定义收在 portal 浮层里 */
 .panel__color-field {
   display: inline-flex;
@@ -4219,6 +4249,9 @@ button {
 .swatch-picker__name {
   flex: 1;
   font-size: 12px;
+
+  /* 不许折行：右栏控件列只有 ~150px，「彩虹」这种两字名会被折成两行 */
+  white-space: nowrap;
 }
 
 .swatch-picker__popover {
