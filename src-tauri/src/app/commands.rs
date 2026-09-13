@@ -1164,6 +1164,31 @@ pub fn delete_summary(
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
 
+/// 从主题新建画布：该主题的整棵子树成为新画布的根主题（XMind 的「从主题新建画布」）。
+///
+/// 画布标题默认取主题文本（前端传入）；为空时回落「新画布」。
+#[tauri::command]
+pub fn create_sheet_from_topic(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    title: Option<String>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    let sheet_title = title
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "新画布".to_string());
+
+    guard.create_sheet_from_topic(&topic_id, &sheet_title)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
 /// 删除主题但保留其子主题（子主题上提到原位置），对齐 XMind 的「删除单个主题」。
 #[tauri::command]
 pub fn delete_topic_only(

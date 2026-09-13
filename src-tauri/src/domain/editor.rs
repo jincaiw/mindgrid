@@ -1839,6 +1839,49 @@ impl<'a> DocumentEditor<'a> {
     ///
     /// 不新增操作类型：用已有的 `RemoveTopic` + 逐个 `InsertTopic` 组成**同一个 ChangeSet**，
     /// `apply_inverse` 按逆序回滚（先按序插回子主题、最后插回该主题本身）即可精确还原。
+    /// 从主题新建画布：把该主题的**整棵子树**摘出来，作为新画布的根主题。
+    ///
+    /// 对齐 XMind 插入菜单的「从主题新建画布」。
+    ///
+    /// 不新增操作类型：用已有的 `RemoveTopic` + `InsertSheet` + `SetActiveSheet`
+    /// 组合成同一个 ChangeSet（`InsertSheet` 携带整份画布快照，所以新画布的根可以是任意子树）。
+    /// 撤销时按逆序回滚 ⇒ 先切回原画布、再删掉新画布、最后把子树插回原位，精确还原。
+    pub fn create_sheet_from_topic(&mut self, topic_id: &str, title: &str) -> Result<String, String> {
+        let sheet_id = self.active_sheet_id();
+        let root_topic_id = self.document.root_topic().id.clone();
+
+        if topic_id == root_topic_id {
+            return Err("中心主题不能变成新画布".into());
+        }
+        // 只处理树内主题：浮动主题没有"子树"，不存在"当成新画布根"的语义
+        if find_topic(&self.document.root_topic(), topic_id).is_none() {
+            return Err("找不到需要移动的主题".into());
+        }
+
+        let mut next_sheet = SheetSnapshot::new(title);
+        let next_sheet_id = next_sheet.id.clone();
+
+        let removed = self
+            .remove_topic_by_id(&sheet_id, topic_id)
+            .ok_or_else(|| "找不到需要移动的主题".to_string())?;
+        let next_root_topic_id = removed.id.clone();
+        next_sheet.root_topic = removed;
+
+        // 新画布插在当前画布之后（与 XMind 的"新建的画布排在当前之后"一致）
+        let insert_index = self
+            .document
+            .sheets
+            .iter()
+            .position(|sheet| sheet.id == sheet_id)
+            .map(|position| position + 1)
+            .unwrap_or_else(|| self.document.sheets.len());
+
+        self.insert_sheet(insert_index, next_sheet);
+        self.set_active_sheet(&next_sheet_id);
+
+        Ok(next_root_topic_id)
+    }
+
     pub fn delete_topic_only(&mut self, topic_ids: &[String]) -> Result<String, String> {
         if topic_ids.is_empty() {
             return Err("没有可删除的主题".into());

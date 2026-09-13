@@ -87,6 +87,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     exportRecoveryCopy: async () => {},
     selectSheet: async () => {},
     createSheet: async () => {},
+    createSheetFromTopic: async () => {},
     renameSheet: async () => {},
     deleteSheet: async () => {},
     moveSheet: async () => {},

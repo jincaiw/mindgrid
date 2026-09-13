@@ -10,6 +10,7 @@ import {
   createDocumentFromTemplate,
   createRelationship,
   createSheet,
+  createSheetFromTopic,
   createSiblingTopic,
   createParentTopic,
   createFloatingTopic,
@@ -134,6 +135,8 @@ export interface DocumentSession extends DocumentSessionState {
   exportRecoveryCopy: () => Promise<void>
   selectSheet: (sheetId: string) => Promise<void>
   createSheet: () => Promise<void>
+  /** 从主题新建画布：该主题的整棵子树成为新画布的根（XMind 的「从主题新建画布」） */
+  createSheetFromTopic: (topicId: string, title?: string) => Promise<void>
   renameSheet: (sheetId: string, title: string) => Promise<void>
   deleteSheet: (sheetId: string) => Promise<void>
   moveSheet: (sheetId: string, direction: 'up' | 'down') => Promise<void>
@@ -1465,6 +1468,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const createDocumentSheetFromTopic = useCallback(
+    async (topicId: string, title?: string) => {
+      await runCommand('从主题新建画布', () => createSheetFromTopic(topicId, title))
+    },
+    [runCommand],
+  )
+
   const deleteSelectedTopicsOnly = useCallback(
     async (topicIds: string[]) => {
       await runCommand('删除单个主题', () => deleteTopicOnly(topicIds))
@@ -1661,6 +1671,7 @@ export function useDocumentSession(): DocumentSession {
       exportRecoveryCopy: exportCurrentRecoveryCopy,
       selectSheet: selectActiveSheet,
       createSheet: createDocumentSheet,
+      createSheetFromTopic: createDocumentSheetFromTopic,
       renameSheet: renameDocumentSheet,
       deleteSheet: deleteDocumentSheet,
       moveSheet: moveDocumentSheet,

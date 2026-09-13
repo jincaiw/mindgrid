@@ -266,6 +266,7 @@ pub fn build_menu<R: Runtime>(
             "insert.new-sheet",
             &format!("新画布{}", combo_alt("N")),
         )?)
+        .item(&item(handle, "insert.new-sheet-from-topic", "从主题新建画布")?)
         .build()?;
 
     // —— 工具 ——

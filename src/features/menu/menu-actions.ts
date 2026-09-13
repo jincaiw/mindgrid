@@ -66,6 +66,7 @@ export type MenuActionId =
   | 'insert.marker'
   | 'insert.image'
   | 'insert.new-sheet'
+  | 'insert.new-sheet-from-topic'
   // 工具
   | 'tools.check-update'
   | 'tools.shortcuts'
@@ -140,6 +141,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'insert.marker',
   'insert.image',
   'insert.new-sheet',
+  'insert.new-sheet-from-topic',
   // 工具
   'tools.check-update',
   'tools.shortcuts',

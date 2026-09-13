@@ -963,6 +963,18 @@ impl DocumentSession {
         self.apply_change_set(&label, |editor| editor.delete_topics(topic_ids))
     }
 
+    /// 从主题新建画布：该主题的整棵子树成为新画布的根主题（XMind 的「从主题新建画布」）。
+    pub fn create_sheet_from_topic(
+        &mut self,
+        topic_id: &str,
+        title: &str,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        let title = title.to_string();
+        self.apply_change_set("从主题新建画布", |editor| {
+            editor.create_sheet_from_topic(topic_id, &title)
+        })
+    }
+
     /// 删除主题但保留其子主题（子主题上提），对齐 XMind 的「删除单个主题」。
     pub fn delete_topic_only(
         &mut self,
@@ -1777,6 +1789,59 @@ mod tests {
         assert_eq!(undone.summary.topic_count, 4);
         assert_eq!(redone.summary.topic_count, 5);
         assert!(redone.can_undo);
+    }
+
+    /// 「从主题新建画布」：该主题的整棵子树成为新画布的根；撤销后回到原画布原位。
+    ///
+    /// 实现是 RemoveTopic + InsertSheet + SetActiveSheet 的组合，撤销靠**逆序回滚**——
+    /// 所以这里必须连"撤销后子树回到原画布的原位置"一起断言，否则顺序写错也测不出来。
+    #[test]
+    fn create_sheet_from_topic_moves_subtree_as_new_root_and_inverts() {
+        let mut session = DocumentSession::create_default();
+        let root_topic = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .clone();
+        let branch_id = root_topic.children[0].id.clone();
+        let branch_text = root_topic.children[0].text.clone();
+        let sheet_count_before = session.document.as_ref().expect("document").sheets.len();
+
+        let after = session
+            .create_sheet_from_topic(&branch_id, &branch_text)
+            .expect("从主题新建画布应成功");
+
+        assert_eq!(after.document.sheets.len(), sheet_count_before + 1);
+        // 新画布插在当前画布之后，并成为活动画布
+        let new_sheet = &after.document.sheets[1];
+        assert_eq!(new_sheet.root_topic.id, branch_id, "子树应成为新画布的根主题");
+        assert_eq!(new_sheet.title, branch_text);
+        assert_eq!(after.document.active_sheet_id, new_sheet.id);
+        // 原画布不再包含该分支
+        assert!(super::find_topic(&after.document.sheets[0].root_topic, &branch_id).is_none());
+
+        // 撤销：画布数回退，子树回到原画布的第一个位置
+        let undone = session.undo().expect("undo should succeed");
+        assert_eq!(undone.document.sheets.len(), sheet_count_before);
+        let restored_root = undone.document.root_topic();
+        assert!(super::find_topic(restored_root, &branch_id).is_some());
+        assert_eq!(restored_root.children[0].id, branch_id);
+    }
+
+    /// 中心主题不能变成新画布（它已经是根主题）。
+    #[test]
+    fn create_sheet_from_topic_rejects_root() {
+        let mut session = DocumentSession::create_default();
+        let root_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .id
+            .clone();
+
+        assert!(session.create_sheet_from_topic(&root_id, "不应成功").is_err());
     }
 
     /// 「删除单个主题」：只摘掉该主题本身，**子主题上提到它的位置**；撤销可精确还原。

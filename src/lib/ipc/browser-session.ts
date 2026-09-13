@@ -1393,6 +1393,36 @@ export async function invokeBrowserCommand<TResult>(
         return keepActiveTopicId(draft)
       }) as TResult
     }
+    case 'create_sheet_from_topic': {
+      const topicId = String(payload.topic_id)
+      const rawTitle = typeof payload.title === 'string' ? payload.title.trim() : ''
+
+      return applyMutation('从主题新建画布', (draft) => {
+        const sheet = getActiveSheet(draft)
+        const rootTopic = sheet.rootTopic
+        if (topicId === rootTopic.id) {
+          throw new Error('中心主题不能变成新画布')
+        }
+        const match = findParentTopicByChildId(rootTopic, topicId)
+        if (!match) {
+          throw new Error('找不到需要移动的主题')
+        }
+
+        // 摘出整棵子树，作为新画布的根主题（与 Rust 侧同一语义）
+        const [detached] = match.parent.children.splice(match.index, 1)
+        const nextSheet = {
+          id: `sheet_${draft.sheets.length + 1}_${Date.now()}`,
+          title: rawTitle || detached.text || '新画布',
+          rootTopic: detached,
+        } as (typeof draft.sheets)[number]
+
+        const activeIndex = draft.sheets.findIndex((item) => item.id === sheet.id)
+        draft.sheets.splice(activeIndex + 1, 0, nextSheet)
+        draft.activeSheetId = nextSheet.id
+
+        return detached.id
+      }) as TResult
+    }
     case 'delete_topic_only': {
       const topicIds = Array.isArray(payload.topic_ids)
         ? payload.topic_ids.map((id) => String(id))

@@ -312,6 +312,21 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       void session.createFloatingTopic('新建浮动主题', 0, bottom + 80)
       return
     }
+    // 从主题新建画布：该主题的整棵子树成为新画布的根。
+    // 画布标题取主题文本（Rust 侧为空时回落「新画布」）。
+    case 'insert.new-sheet-from-topic': {
+      const topicId = resolveTopicId(ctx)
+      if (!topicId || !activeSheet) {
+        return
+      }
+      if (topicId === activeSheet.rootTopic.id) {
+        ctx.notify('中心主题不能变成新画布')
+        return
+      }
+      const topic = findTopicById(activeSheet.rootTopic, topicId)
+      void session.createSheetFromTopic(topicId, topic?.text)
+      return
+    }
     case 'insert.relationship':
       if (ctx.selectedTopicIds.length === 2) {
         void session.createRelationship(ctx.selectedTopicIds[0], ctx.selectedTopicIds[1], null)

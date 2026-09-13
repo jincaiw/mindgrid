@@ -362,6 +362,13 @@ export function deleteSummary(sheetId: string, summaryId: string) {
   })
 }
 
+export function createSheetFromTopic(topicId: string, title?: string) {
+  return invokeCommand<DocumentSessionSnapshot>('create_sheet_from_topic', {
+    topic_id: topicId,
+    title,
+  })
+}
+
 export function deleteTopicOnly(topicIds: string[]) {
   return invokeCommand<DocumentSessionSnapshot>('delete_topic_only', {
     topic_ids: topicIds,

@@ -34,6 +34,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
   return {
     createNewDocument: asyncNoop(),
     createSheet: asyncNoop(),
+    createSheetFromTopic: asyncNoop(),
     openDocument: asyncNoop(),
     clearRecentFiles: asyncNoop(),
     saveDocument: asyncNoop(),
@@ -551,5 +552,25 @@ describe('文件 → 最近打开 → 清除菜单', () => {
     runMenuCommand('file.recent-clear', ctx)
 
     expect(session.clearRecentFiles).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('插入 → 从主题新建画布', () => {
+  it('把选中主题交给会话，标题取主题文本', () => {
+    // 夹具：root → [topic_a「规划主题」(→「子规划」), topic_b「复盘主题」]
+    const { ctx, session } = makeHarness({ activeTopicId: 'topic_b' })
+
+    runMenuCommand('insert.new-sheet-from-topic', ctx)
+
+    expect(session.createSheetFromTopic).toHaveBeenCalledWith('topic_b', '复盘主题')
+  })
+
+  it('中心主题不能变成新画布：给提示且不调用', () => {
+    const { ctx, session, notify } = makeHarness({ activeTopicId: 'topic_root' })
+
+    runMenuCommand('insert.new-sheet-from-topic', ctx)
+
+    expect(session.createSheetFromTopic).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalled()
   })
 })
