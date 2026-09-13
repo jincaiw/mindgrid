@@ -127,6 +127,14 @@ export interface DocumentSession extends DocumentSessionState {
   importDocxOutline: () => Promise<void>
   setDocumentSetting: (key: string, value: unknown) => Promise<void>
   exportPngImage: () => Promise<void>
+  /**
+   * 渲染整幅导图的打印位图（**不写盘**）。文件 → 打印用它。
+   *
+   * 与「导出 PNG」共用同一条渲染管线（buildExportScene + renderSceneToPngBytes），
+   * 所以打印出来的内容与导出结果同源，不存在"打印专用"的第二套渲染。
+   * 文档未加载或渲染失败时返回 `null`，由调用方决定提示文案。
+   */
+  renderPrintImage: () => Promise<Uint8Array | null>
   exportSvgImage: () => Promise<void>
   /** 甘特图导出（批次 26/27）：全文档任务时间轴另存为矢量/位图，粒度跟随视图（日/周/月） */
   exportGanttImage: (zoom?: 'day' | 'week' | 'month') => Promise<void>
@@ -999,6 +1007,28 @@ export function useDocumentSession(): DocumentSession {
     }
   }, [handleError, state.document, state.filePath, state.summary?.rootTopicText])
 
+  /**
+   * 渲染整幅导图为打印位图。与 exportCurrentPngImage 是同一段
+   * `buildExportScene → renderSceneToPngBytes`，只有出口不同（这里不写盘）。
+   *
+   * 打印**故意不跟随当前视口**：纸张上应该是完整的导图，而不是屏幕上恰好
+   * 看到的那一块。故走 enableCulling: false 的全量导出场景。
+   */
+  const renderPrintImage = useCallback(async () => {
+    if (!state.document) {
+      return null
+    }
+
+    const scene = await buildExportScene(state.document)
+    return renderSceneToPngBytes(scene, {
+      scale: 2,
+      // 打印**要画背景**（导出的 PNG 默认透明）。透明底落在白纸上，遇到暗色主题
+      // 文档就是浅色字压白纸——直接看不见。纸张上应该与画布所见一致。
+      drawBackground: true,
+      ...exportRenderOptions(state.document),
+    })
+  }, [state.document])
+
   const exportCurrentSvgImage = useCallback(async () => {
     if (!hasTauriRuntime()) {
       throw new Error('浏览器开发态暂不支持 SVG 导出，请使用桌面版运行')
@@ -1664,6 +1694,7 @@ export function useDocumentSession(): DocumentSession {
       importOpmlOutline,
       importDocxOutline,
       exportPngImage: exportCurrentPngImage,
+      renderPrintImage: renderPrintImage,
       exportSvgImage: exportCurrentSvgImage,
       exportGanttImage: exportCurrentGanttSvg,
       exportGanttPng: exportCurrentGanttPng,

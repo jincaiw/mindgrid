@@ -62,6 +62,8 @@ export interface MenuCommandContext {
   openShortcutsHelp: () => void
   checkForUpdates: () => void
   cycleTheme: () => void
+  /** 文件 → 打印：渲染整幅导图并打开系统打印面板。 */
+  printDocument: () => void
   /** 转发给 CanvasHost（剪贴板、样式剪贴板、相机依赖画布内部状态）。 */
   requestCanvasCommand: (command: CanvasCommand) => void
 }
@@ -94,6 +96,12 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
   // 文件动作要弹系统文件对话框，非 Tauri 运行时直接拒绝并说明原因
   if (FILE_DIALOG_ACTIONS.includes(id) && !ctx.desktopFileActionsEnabled) {
     ctx.notify('该操作需要文件对话框，仅在桌面端可用')
+    return
+  }
+
+  // 打印不弹文件对话框，但要原生打印面板（面板由 Rust 侧打开），故单独挡一层
+  if (id === 'file.print' && !ctx.desktopFileActionsEnabled) {
+    ctx.notify('打印需要系统打印面板，仅在桌面端可用')
     return
   }
 
@@ -144,6 +152,10 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       return
     case 'file.export-recovery':
       void session.exportRecoveryCopy()
+      return
+    // 打印：渲染 → 放进打印页 → 打开系统面板，顺序由 print-controller 钉住
+    case 'file.print':
+      ctx.printDocument()
       return
 
     // —— 编辑 ——

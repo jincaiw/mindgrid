@@ -46,6 +46,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     exportMarkdownOutline: asyncNoop(),
     exportOpmlOutline: asyncNoop(),
     exportPngImage: asyncNoop(),
+    renderPrintImage: async () => null,
     exportSvgImage: asyncNoop(),
     exportPdfDocument: asyncNoop(),
     exportRecoveryCopy: asyncNoop(),
@@ -102,6 +103,7 @@ function makeHarness(options: HarnessOptions = {}) {
     openShortcutsHelp: vi.fn(),
     checkForUpdates: vi.fn(),
     cycleTheme: vi.fn(),
+    printDocument: vi.fn(),
     requestCanvasCommand: vi.fn(),
     focusVisibleTopicIds: options.focusVisibleTopicIds ?? null,
   }
@@ -148,6 +150,25 @@ describe('文件', () => {
       expect(session[method]).toHaveBeenCalledTimes(1)
       expect(notify).not.toHaveBeenCalled()
     }
+  })
+
+  it('routes the print action to the print controller', () => {
+    const { ctx, printDocument, notify } = makeHarness()
+
+    runMenuCommand('file.print', ctx)
+
+    expect(printDocument).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('拒绝在非桌面端打印（打印面板由 Rust 侧打开）', () => {
+    const { ctx, printDocument, notify } = makeHarness({ desktopFileActionsEnabled: false })
+
+    runMenuCommand('file.print', ctx)
+
+    // 用的是打印专属文案：说"需要文件对话框"会指向一个根本不存在的对话框
+    expect(printDocument).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith('打印需要系统打印面板，仅在桌面端可用')
   })
 
   it('blocks file dialogs outside the desktop runtime but still allows in-memory actions', () => {

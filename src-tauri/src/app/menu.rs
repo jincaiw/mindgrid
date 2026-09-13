@@ -148,6 +148,10 @@ pub fn build_menu<R: Runtime>(
         .item(&export)
         .separator()
         .item(&item(handle, "file.export-recovery", "导出修复副本…")?)
+        // 打印的位置对齐 XMind：在导出之后、窗口相关项之前。
+        // 标签**不写省略号**——XMind 的转录就是「打印 ⌘P」，且它开的是打印面板
+        // 而不是文件对话框，加 … 反而与导出那一组的约定打架。
+        .item(&item(handle, "file.print", &format!("打印{}", combo("P")))?)
         .build()?;
 
     // —— 编辑 ——

@@ -4487,3 +4487,53 @@ button {
   flex-shrink: 0;
   margin-left: 12px;
 }
+
+/* ==========================================================================
+   打印（文件 → 打印 ⌘P）
+   --------------------------------------------------------------------------
+   纸张上**只**出现 .print-sheet：打印页用 portal 挂在 body 上，整棵应用外壳
+   （#root）在打印样式里直接藏掉。
+
+   为什么不逐个隐藏工具栏 / 各面板 / 状态条 / 提示条：那样每新增一个 UI 元素
+   都要回来补一条规则，漏掉的那个就会出现在纸上，而且没人会发现。藏整棵树
+   只剩两条规则，天然免疫后续新增的界面元素。
+   ========================================================================== */
+
+/* 屏幕上不显示、不进无障碍树、不参与布局；只有打印样式才让它出现 */
+.print-sheet {
+  display: none;
+}
+
+@media print {
+  #root {
+    display: none !important;
+  }
+
+  .print-sheet {
+    display: block;
+    background: #ffffff;
+  }
+
+  .print-sheet__title {
+    margin: 0 0 6mm;
+    font-size: 12pt;
+    font-weight: 600;
+    color: #1d1d1f;
+  }
+
+  .print-sheet__image {
+    display: block;
+    width: auto;
+    height: auto;
+    /* 一张导图必须落在**一页**内：宽度受纸张内容宽约束，高度再兜一道
+       （A4 纵向去掉 12mm 页边距后内容高约 273mm，留出页眉与余量）。
+       纸张方向由用户在打印面板里选，与 XMind 一致。 */
+    max-width: 100%;
+    max-height: 240mm;
+    object-fit: contain;
+  }
+
+  @page {
+    margin: 12mm;
+  }
+}

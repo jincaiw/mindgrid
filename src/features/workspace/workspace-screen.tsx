@@ -29,13 +29,16 @@ import type {
   PitchThemeStyle,
 } from '../presentation/pitch-controller'
 import { PresentationView } from '../presentation/presentation-view'
+import { PrintSheet } from '../print/print-sheet'
+import { usePrintSheet } from '../print/use-print-sheet'
+import { runPrint } from '../print/print-controller'
 import { ShortcutsHelp } from '../shortcuts/shortcuts-help'
 import { StatusBar } from '../status/status-bar'
 import type { EffectiveTheme, ThemeMode } from '../theme/use-theme'
 import { Inspector, type InspectorTab } from './inspector'
 import { OutlinerView } from './outliner-view'
 import { SheetTabBar } from './sheet-tab-bar'
-import { useDocumentWindowTitle } from './use-document-window-title'
+import { documentTitleFromPath, useDocumentWindowTitle } from './use-document-window-title'
 import { NavPanel } from './nav-panel'
 import { Toolbar } from './toolbar'
 
@@ -235,6 +238,26 @@ export function WorkspaceScreen({
     }
   }, [])
 
+  // 文件 → 打印（⌘P）。打印页常驻 DOM、由打印样式显隐——原因见 print-sheet.tsx。
+  const { printSheet, showPrintSheet } = usePrintSheet()
+  const filePath = session.filePath
+  const rootTopicText = session.summary?.rootTopicText
+  const handlePrint = useCallback(() => {
+    void runPrint({
+      renderImage: () => session.renderPrintImage(),
+      showSheet: showPrintSheet,
+      // 桌面端走 Rust 打开原生打印面板；浏览器开发态退回 window.print()
+      // （macOS 的 WKWebView 不实现 window.print()，所以桌面端不能省这一步）
+      printNative: () =>
+        hasTauriRuntime()
+          ? invoke('print_current_webview')
+          : Promise.resolve(window.print()),
+      // 纸张页眉与窗口标题同源，避免两处各写一套取名规则
+      title: documentTitleFromPath(filePath) ?? rootTopicText ?? '思维导图',
+      notify: (message) => onNotify?.(message),
+    })
+  }, [filePath, onNotify, rootTopicText, session, showPrintSheet])
+
   useEffect(() => {
     if (!activeSheetId || !activeSheetRootTopicId) {
       setSelectedTopicIds([])
@@ -311,6 +334,7 @@ export function WorkspaceScreen({
         openShortcutsHelp: () => setIsShortcutsHelpOpen(true),
         checkForUpdates: () => onCheckForUpdates?.(),
         cycleTheme: () => onCycleTheme?.(),
+        printDocument: handlePrint,
         requestCanvasCommand: (command) =>
           setCanvasCommand((current) => ({ command, nonce: (current?.nonce ?? 0) + 1 })),
       })
@@ -321,6 +345,7 @@ export function WorkspaceScreen({
       focusInspectorTopicTab,
       focusState,
       handleFocusTopicIdChange,
+      handlePrint,
       onCheckForUpdates,
       onCycleTheme,
       onNotify,
@@ -437,6 +462,10 @@ export function WorkspaceScreen({
         if (session.document) {
           setIsPresenting(true)
         }
+      } else if (mod && !e.shiftKey && key === 'p') {
+        // ⌘P 打印。浏览器里是「打印本页」，必须 preventDefault 才轮到我们
+        e.preventDefault()
+        handlePrint()
       } else if (mod && !e.shiftKey && key === 'i') {
         e.preventDefault()
         setInspectorVisible((v) => !v)
@@ -459,7 +488,15 @@ export function WorkspaceScreen({
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
     // 依赖里放原始值而非 activeSheet 对象：后者每次渲染都是新引用，会让监听反复重挂
-  }, [isZenMode, isOutlinerMode, isGanttMode, focusState, session, activeSheetRootTopicId])
+  }, [
+    isZenMode,
+    isOutlinerMode,
+    isGanttMode,
+    focusState,
+    handlePrint,
+    session,
+    activeSheetRootTopicId,
+  ])
 
   return (
     <div
@@ -649,6 +686,8 @@ export function WorkspaceScreen({
         />
       ) : null}
       <ShortcutsHelp open={isShortcutsHelpOpen} onClose={() => setIsShortcutsHelpOpen(false)} />
+      {/* 打印页：屏幕上看不见，只有打印样式才显示（见 .print-sheet 的样式） */}
+      <PrintSheet sheet={printSheet} />
     </div>
   )
 }

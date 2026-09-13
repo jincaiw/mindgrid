@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { useState } from 'react'
-import { vi } from 'vitest'
+import { afterEach, vi } from 'vitest'
 import { renderWithApp } from '../../test/render'
 import type { DocumentSession } from '../document/use-document-session'
 import { WorkspaceScreen } from './workspace-screen'
@@ -75,6 +75,7 @@ const sessionStub: DocumentSession = {
 importOpmlOutline: async () => {},
 importDocxOutline: async () => {},
   exportPngImage: async () => {},
+  renderPrintImage: async () => null,
   exportSvgImage: async () => {},
   exportGanttImage: async () => {},
   exportGanttPng: async () => {},
@@ -3302,4 +3303,102 @@ it('仅显示该分支：中心主题不能被聚焦（会给出提示而不是�
 
   // 不能出现"提示条亮着、画布却毫无变化"的分裂状态
   expect(screen.queryByRole('button', { name: '显示全部' })).not.toBeInTheDocument()
+})
+
+/**
+ * 文件 → 打印（⌘P）。
+ *
+ * 这里验的是**接线**：快捷键是否真的走到渲染 → 打印页 → 打开面板，
+ * 以及打印页是不是挂在 body 上（挂错了整页会被打印样式一起藏掉）。
+ * 顺序问题在 print-controller.test.ts 里单独钉。
+ */
+describe('文件 → 打印（⌘P）', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    Reflect.deleteProperty(URL, 'createObjectURL')
+    Reflect.deleteProperty(URL, 'revokeObjectURL')
+  })
+
+  function stubPrintEnvironment() {
+    const printSpy = vi.fn()
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      writable: true,
+      value: () => 'blob:mindgrid/print',
+    })
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      writable: true,
+      value: () => {},
+    })
+    // 浏览器开发态走的是 window.print()；jsdom 的默认实现会输出 "Not implemented"
+    vi.stubGlobal('print', printSpy)
+    return printSpy
+  }
+
+  it('⌘P 渲染整幅导图、挂上打印页并打开打印面板', async () => {
+    const renderPrintImage = vi.fn(async () => new Uint8Array([137, 80, 78, 71]))
+    const printSpy = stubPrintEnvironment()
+
+    renderWithApp(
+      <WorkspaceScreen
+        session={{ ...sessionStub, document: twoChildDocument, renderPrintImage }}
+      />,
+    )
+
+    // 打印之前不该有任何打印页在 DOM 里
+    expect(document.querySelector('.print-sheet')).toBeNull()
+
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true })
+
+    await waitFor(() => {
+      expect(document.querySelector('.print-sheet')).not.toBeNull()
+    })
+    // 「等一次绘制再开面板」意味着打开面板是两帧之后的事，所以这里要等——
+    // 不等的话断言会跑在 waitForPaint 之前，而且串到下一个用例里（踩过）
+    await waitFor(() => {
+      expect(printSpy).toHaveBeenCalledTimes(1)
+    })
+    expect(renderPrintImage).toHaveBeenCalledTimes(1)
+    // 纸张页眉取文档名（未保存的文档用根主题文字）
+    expect(document.querySelector('.print-sheet__title')?.textContent).toBe('中心主题')
+    expect(document.querySelector('.print-sheet__image')?.getAttribute('src')).toBe(
+      'blob:mindgrid/print',
+    )
+  })
+
+  it('⌘⇧P 仍然是演说模式，不会被打印抢走', async () => {
+    const renderPrintImage = vi.fn(async () => new Uint8Array([1]))
+    stubPrintEnvironment()
+
+    renderWithApp(
+      <WorkspaceScreen
+        session={{ ...sessionStub, document: twoChildDocument, renderPrintImage }}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true, shiftKey: true })
+
+    expect(renderPrintImage).not.toHaveBeenCalled()
+    expect(document.querySelector('.print-sheet')).toBeNull()
+  })
+
+  it('没有可打印内容时给提示，不打开打印面板', async () => {
+    const onNotify = vi.fn()
+    const printSpy = stubPrintEnvironment()
+
+    renderWithApp(
+      <WorkspaceScreen
+        session={{ ...sessionStub, document: twoChildDocument, renderPrintImage: async () => null }}
+        onNotify={onNotify}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: 'p', ctrlKey: true })
+
+    await waitFor(() => {
+      expect(onNotify).toHaveBeenCalledWith('当前没有可打印的内容')
+    })
+    expect(printSpy).not.toHaveBeenCalled()
+  })
 })

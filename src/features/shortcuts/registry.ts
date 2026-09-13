@@ -81,6 +81,14 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     category: '文件',
     scope: 'global',
   },
+  {
+    id: 'file-print',
+    combo: { key: 'p', mod: true },
+    label: '打印',
+    description: '把整幅导图渲染成一张位图并打开系统打印面板',
+    category: '文件',
+    scope: 'global',
+  },
 
   // —— 视图 ——
   {

@@ -43,6 +43,35 @@ fn set_menu_item_checked(app: tauri::AppHandle, id: String, checked: bool) {
     app::menu::set_menu_item_checked(&app, &id, checked)
 }
 
+/// 打开系统打印面板，打印当前窗口内容（文件 → 打印 ⌘P）。
+///
+/// 打的是 **webview 的 DOM**，所以纸张上出现什么完全由前端的 `@media print`
+/// 决定：前端在调用前把整幅导图渲染成一张位图塞进 `.print-sheet`，
+/// 打印样式隐藏除它以外的全部界面（工具栏 / 面板 / 状态条 / 提示条）。
+///
+/// 两个实现细节：
+///
+/// 1. **不能改成前端 `window.print()`。** 在 macOS 上 WKWebView 不实现它
+///    （wry 取的是 `WKWebView.printOperationWithPrintInfo:`），只有走这条路
+///    才会弹出原生打印面板。
+/// 2. 调用是**异步派发**的（tauri 只把消息投给主线程事件循环就返回），
+///    所以 `invoke` 会在面板出现之前就 resolve。前端**不能**靠它来回收打印页，
+///    否则会把内容提前卸掉打出白纸——打印页要留在 DOM 里，由打印样式控制显隐。
+#[tauri::command]
+fn print_current_webview(window: tauri::WebviewWindow) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        return window
+            .print()
+            .map_err(|error| format!("无法打开打印面板：{error}"));
+    }
+    #[cfg(not(desktop))]
+    {
+        let _ = window;
+        Err("当前平台不支持打印".to_string())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -120,7 +149,8 @@ pub fn run() {
             app::commands::undo_document_command,
             app::commands::redo_document_command,
             is_release_build,
-            set_menu_item_checked
+            set_menu_item_checked,
+            print_current_webview
         ])
         .setup(|app| {
             app.handle().plugin(tauri_plugin_dialog::init())?;

@@ -30,6 +30,7 @@ export type MenuActionId =
   | 'file.export-svg'
   | 'file.export-pdf'
   | 'file.export-recovery'
+  | 'file.print'
   // 编辑
   | 'edit.undo'
   | 'edit.redo'
@@ -107,6 +108,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'file.export-svg',
   'file.export-pdf',
   'file.export-recovery',
+  'file.print',
   // 编辑
   'edit.undo',
   'edit.redo',

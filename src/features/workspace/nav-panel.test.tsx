@@ -80,6 +80,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     importOpmlOutline: async () => {},
     importDocxOutline: async () => {},
     exportPngImage: async () => {},
+    renderPrintImage: async () => null,
     exportSvgImage: async () => {},
     exportGanttImage: async () => {},
     exportGanttPng: async () => {},

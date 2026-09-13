@@ -91,6 +91,7 @@ function createSessionStub(overrides: Partial<DocumentSession> = {}): DocumentSe
 importOpmlOutline: async () => {},
 importDocxOutline: async () => {},
     exportPngImage: async () => {},
+    renderPrintImage: async () => null,
     exportSvgImage: async () => {},
     exportGanttImage: async () => {},
     exportGanttPng: async () => {},
