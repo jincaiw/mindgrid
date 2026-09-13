@@ -279,6 +279,58 @@ it('reorders sibling with Alt + ArrowDown', () => {
   expect(moveTopicInParent).toHaveBeenCalledWith('topic_insight', 'down')
 })
 
+/**
+ * ⌘] / ⌘[：缩进 / 减少缩进。
+ *
+ * 这两条键是**唯一能让缩进被自动化验证的入口**——编辑菜单里的同名项只能在
+ * 原生菜单点到，jsdom 与浏览器都驱动不了。目标计算与菜单共用同一个纯函数
+ * （lib/document/topic-outline.ts），这里验的是"按键真的接通了那条动作"。
+ */
+it('indents the topic under its previous sibling with Cmd/Ctrl + ]', () => {
+  const moveTopic = vi.fn(async () => {})
+  const selectTopic = vi.fn(async () => {})
+  const session = createSessionStub({ moveTopic, selectTopic })
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  // 夹具：root → [关键洞察, 行动项, 待验证假设]，行动项的上一个同级是「关键洞察」
+  fireEvent.click(within(scene).getByRole('button', { name: /行动项/ }))
+  fireEvent.keyDown(window, { key: ']', ctrlKey: true })
+
+  expect(moveTopic).toHaveBeenCalledWith('topic_action', 'topic_insight', '缩进')
+})
+
+it('outdents to the grandparent right after the former parent with Cmd/Ctrl + [', () => {
+  const moveTopic = vi.fn(async () => {})
+  const selectTopic = vi.fn(async () => {})
+  const session = createSessionStub({ moveTopic, selectTopic })
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  fireEvent.click(within(scene).getByRole('button', { name: /洞察子主题/ }))
+  fireEvent.keyDown(window, { key: '[', ctrlKey: true })
+
+  // 父「关键洞察」在 root 里排第 0 → 目标下标 1（紧跟其后），不是丢到末尾
+  expect(moveTopic).toHaveBeenCalledWith('topic_insight_child', 'topic_root', '减少缩进', 1)
+})
+
+it('does nothing on Cmd/Ctrl + ] when there is no previous sibling', () => {
+  const moveTopic = vi.fn(async () => {})
+  const selectTopic = vi.fn(async () => {})
+  const session = createSessionStub({ moveTopic, selectTopic })
+
+  renderWithApp(<CanvasHost session={session} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  // 关键洞察已是第一个同级主题：无处可缩，不能静默改树
+  fireEvent.click(within(scene).getByRole('button', { name: /关键洞察/ }))
+  fireEvent.keyDown(window, { key: ']', ctrlKey: true })
+
+  expect(moveTopic).not.toHaveBeenCalled()
+})
+
 it('reorders sibling with Alt + ArrowUp', () => {
   const moveTopicInParent = vi.fn(async () => {})
   const selectTopic = vi.fn(async () => {})

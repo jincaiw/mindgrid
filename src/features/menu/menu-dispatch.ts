@@ -1,7 +1,7 @@
+import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import {
   collectSubtreeTopicIds,
   collectVisibleTopicIds,
-  findParentTopicByChildId,
   findTopicById,
 } from '../../lib/document/tree'
 import type { DocumentSession } from '../document/use-document-session'
@@ -186,16 +186,13 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       if (!topicId || !activeSheet) {
         return
       }
-      const match = findParentTopicByChildId(activeSheet.rootTopic, topicId)
-      if (!match) {
-        return
-      }
-      if (match.index === 0) {
+      // 目标计算与画布 ⌘] 共用同一个纯函数（见 lib/document/topic-outline.ts）
+      const target = resolveIndentTarget(activeSheet.rootTopic, topicId)
+      if (!target) {
         ctx.notify('已是第一个同级主题，无法缩进')
         return
       }
-      const previousSibling = match.parent.children[match.index - 1]
-      void session.moveTopic(topicId, previousSibling.id, '缩进')
+      void session.moveTopic(topicId, target.parentId, '缩进')
       return
     }
     // 减少缩进 = 挂到**祖父主题**之下，位置落在**原父主题之后**。
@@ -206,21 +203,12 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       if (!topicId || !activeSheet) {
         return
       }
-      const parentMatch = findParentTopicByChildId(activeSheet.rootTopic, topicId)
-      if (!parentMatch) {
-        return
-      }
-      const grandMatch = findParentTopicByChildId(activeSheet.rootTopic, parentMatch.parent.id)
-      if (!grandMatch) {
+      const target = resolveOutdentTarget(activeSheet.rootTopic, topicId)
+      if (!target) {
         ctx.notify('父主题已是中心主题，无法减少缩进')
         return
       }
-      void session.moveTopic(
-        topicId,
-        grandMatch.parent.id,
-        '减少缩进',
-        grandMatch.index + 1,
-      )
+      void session.moveTopic(topicId, target.parentId, '减少缩进', target.index)
       return
     }
     // 重设样式 = 清掉 styleRef 与 styleOverrides，回到文档主题的样子。

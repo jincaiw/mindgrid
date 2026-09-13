@@ -172,8 +172,13 @@ pub fn build_menu<R: Runtime>(
         // 所以**不写快捷键提示**——菜单标签不能出现按了没反应的提示。
         .item(&item(handle, "edit.delete-topic-only", "删除单个主题")?)
         .separator()
-        .item(&item(handle, "edit.indent", "缩进")?)
-        .item(&item(handle, "edit.outdent", "减少缩进")?)
+        // ⌘] / ⌘[ 在画布 keydown 里真实注册（macOS 大纲惯例），故菜单可以写提示
+        .item(&item(handle, "edit.indent", &format!("缩进{}", combo("]")))?)
+        .item(&item(
+            handle,
+            "edit.outdent",
+            &format!("减少缩进{}", combo("[")),
+        )?)
         .separator()
         .item(&item(
             handle,

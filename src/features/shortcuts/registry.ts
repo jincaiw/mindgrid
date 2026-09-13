@@ -215,6 +215,22 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     scope: 'outliner',
   },
   {
+    id: 'topic-indent',
+    combo: { key: ']', mod: true },
+    label: '缩进',
+    description: '把主题挂到上一个同级主题下面（与编辑菜单的「缩进」同一动作）',
+    category: '主题',
+    scope: 'canvas',
+  },
+  {
+    id: 'topic-outdent',
+    combo: { key: '[', mod: true },
+    label: '减少缩进',
+    description: '把主题挂到祖父主题之下、原父主题之后（与编辑菜单的「减少缩进」同一动作）',
+    category: '主题',
+    scope: 'canvas',
+  },
+  {
     id: 'topic-reorder-up',
     combo: { key: 'ArrowUp', alt: true },
     label: '同级上移',

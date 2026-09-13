@@ -17,6 +17,7 @@ import {
   findTopicById,
   collectVisibleTopicIds,
 } from '../../lib/document/tree'
+import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import { resolveZoomShortcut } from './zoom-shortcut'
 import { getActiveSheet } from '../../lib/document/sheets'
 import type {
@@ -2799,6 +2800,29 @@ function TreeWorkspace({
         return
       }
 
+      // ⌘] / ⌘[：缩进 / 减少缩进。与编辑菜单的两项**共用同一个目标计算**
+      // （lib/document/topic-outline.ts），不是另写一份。
+      // 给快捷键是因为这两件事只能从原生菜单触发时：既不好用，也无法自动化验证。
+      if (isModifierPressed && !event.altKey && (event.key === ']' || event.key === '[')) {
+        if (event.key === ']') {
+          const target = resolveIndentTarget(rootTopic, selectedTopicId)
+          if (!target) {
+            return
+          }
+          event.preventDefault()
+          void moveTopic(selectedTopicId, target.parentId, '缩进')
+          return
+        }
+
+        const target = resolveOutdentTarget(rootTopic, selectedTopicId)
+        if (!target) {
+          return
+        }
+        event.preventDefault()
+        void moveTopic(selectedTopicId, target.parentId, '减少缩进', target.index)
+        return
+      }
+
       // Alt + ↑/↓：同级内排序（复用 moveTopicInParent，根主题不可排序）
       if (event.altKey && !isModifierPressed && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
         if (selectedTopicId === rootTopic.id) {
@@ -2860,6 +2884,7 @@ function TreeWorkspace({
     handleDuplicateTopic,
     handlePasteStyle,
     handlePasteTopics,
+    moveTopic,
     moveTopicInParent,
     openSearch,
     pasteTopics,
