@@ -18,9 +18,11 @@ import type {
   TopicTextAlign,
   TopicTask,
   TopicTaskStatus,
+  TopicTextTransform,
 } from '../../lib/document/types'
 import type { DocumentSession } from '../document/use-document-session'
 import { pickTopicImageUrl, useTopicImageUrls } from '../canvas/runtime/topic-image-store'
+import { nextTextTransform } from '../canvas/runtime/text-transform'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../canvas/mindmap-layout'
 import {
   TOPIC_IMAGE_DIALOG_OPTIONS,
@@ -142,6 +144,17 @@ const FONT_WEIGHT_OPTIONS: { value: number; label: string }[] = [
 const FONT_SIZE_MIN = 8
 const FONT_SIZE_MAX = 32
 
+/**
+ * Tт 按钮当前档位的说明文案（XMind 文本工具条最后一位）。
+ * 循环顺序由 `text-transform.nextTextTransform` 决定，这里只负责把状态说清楚。
+ */
+const TEXT_TRANSFORM_LABELS: Record<TopicTextTransform, string> = {
+  none: '原样',
+  uppercase: '全大写',
+  lowercase: '全小写',
+  capitalize: '首字母大写',
+}
+
 /** 边框粗细边界（px），0 表示无边框。 */
 const BORDER_WIDTH_MIN = 0
 const BORDER_WIDTH_MAX = 6
@@ -152,37 +165,50 @@ function toOptionalNumber(value: number | ''): number | undefined {
   return value
 }
 
+/** 节点级样式覆盖的草稿集合：空串 / false / 'none' 都表示「未设置」。 */
+interface StyleOverrideDrafts {
+  fill: string
+  textColor: string
+  borderColor: string
+  shape: TopicShape | ''
+  fontSize: number | ''
+  fontWeight: number | ''
+  borderWidth: number | ''
+  width: number | ''
+  borderStyle: TopicBorderStyle | ''
+  textAlign: TopicTextAlign | ''
+  fontFamily: string
+  italic: boolean
+  strikethrough: boolean
+  textTransform: TopicTextTransform
+  branchColor: string
+}
+
 /**
  * 从 draft 字段构造样式覆盖对象；全空返回 null（清除覆盖）。
- * 颜色字段空串视为未设置；形状空串视为未设置（沿用默认 rounded）；
- * 数值字段空串视为未设置（沿用深度分级默认）。
+ * 颜色 / 字体族空串视为未设置；形状空串视为未设置（沿用默认 rounded）；
+ * 数值字段空串视为未设置（沿用深度分级默认）；
+ * 斜体 / 删除线 / 大小写只在「开」时写入——显式 `false` 与 `none` 都是噪音，
+ * 会让「清除全部样式覆盖」判空逻辑失效。
  */
-function buildStyleOverrides(
-  fill: string,
-  textColor: string,
-  borderColor: string,
-  shape: TopicShape | '',
-  fontSize: number | '',
-  fontWeight: number | '',
-  borderWidth: number | '',
-  width: number | '' = '',
-  borderStyle: TopicBorderStyle | '' = '',
-  textAlign: TopicTextAlign | '' = '',
-): TopicStyleOverrides | null {
-  const f = fill.trim() || undefined
-  const t = textColor.trim() || undefined
-  const b = borderColor.trim() || undefined
-  const sh = shape || undefined
-  const fs = toOptionalNumber(fontSize)
-  const fw = toOptionalNumber(fontWeight)
-  const bw = toOptionalNumber(borderWidth)
+function buildStyleOverrides(d: StyleOverrideDrafts): TopicStyleOverrides | null {
+  const f = d.fill.trim() || undefined
+  const t = d.textColor.trim() || undefined
+  const b = d.borderColor.trim() || undefined
+  const sh = d.shape || undefined
+  const fs = toOptionalNumber(d.fontSize)
+  const fw = toOptionalNumber(d.fontWeight)
+  const bw = toOptionalNumber(d.borderWidth)
   // 宽度走同一个规范化入口：空串/NaN 视为未设置（= 按文字自适应）
-  const w = toOptionalNumber(width)
-  const bs = borderStyle || undefined
-  const ta = textAlign || undefined
+  const w = toOptionalNumber(d.width)
+  const bs = d.borderStyle || undefined
+  const ta = d.textAlign || undefined
+  const ff = d.fontFamily.trim() || undefined
+  const tt = d.textTransform !== 'none' ? d.textTransform : undefined
+  const bc = d.branchColor.trim() || undefined
   if (
     !f && !t && !b && !sh && fs == null && fw == null && bw == null &&
-    w == null && !bs && !ta
+    w == null && !bs && !ta && !ff && !d.italic && !d.strikethrough && !tt && !bc
   ) {
     return null
   }
@@ -197,6 +223,11 @@ function buildStyleOverrides(
     ...(w != null ? { width: w } : {}),
     ...(bs ? { borderStyle: bs } : {}),
     ...(ta ? { textAlign: ta } : {}),
+    ...(ff ? { fontFamily: ff } : {}),
+    ...(d.italic ? { italic: true } : {}),
+    ...(d.strikethrough ? { strikethrough: true } : {}),
+    ...(tt ? { textTransform: tt } : {}),
+    ...(bc ? { branchColor: bc } : {}),
   }
 }
 
@@ -455,6 +486,22 @@ export function Inspector({
   const [textAlignDraft, setTextAlignDraft] = useState<TopicTextAlign | ''>(
     activeTopic?.styleOverrides?.textAlign ?? '',
   )
+  // 文本类覆盖：字体族空串 = 跟随画布全局字体；斜体/删除线只有「开」才写入；
+  // 大小写缺省 none（原样）
+  const [fontFamilyDraft, setFontFamilyDraft] = useState(
+    activeTopic?.styleOverrides?.fontFamily ?? '',
+  )
+  const [italicDraft, setItalicDraft] = useState(activeTopic?.styleOverrides?.italic === true)
+  const [strikethroughDraft, setStrikethroughDraft] = useState(
+    activeTopic?.styleOverrides?.strikethrough === true,
+  )
+  const [textTransformDraft, setTextTransformDraft] = useState<TopicTextTransform>(
+    activeTopic?.styleOverrides?.textTransform ?? 'none',
+  )
+  // 节点级分支线条颜色（空串 = 跟随色板）
+  const [branchColorDraft, setBranchColorDraft] = useState(
+    activeTopic?.styleOverrides?.branchColor ?? '',
+  )
   const [borderWidthDraft, setBorderWidthDraft] = useState<number | ''>(
     activeTopic?.styleOverrides?.borderWidth ?? '',
   )
@@ -585,6 +632,11 @@ export function Inspector({
     setWidthDraft(activeTopic?.styleOverrides?.width ?? '')
     setBorderStyleDraft(activeTopic?.styleOverrides?.borderStyle ?? '')
     setTextAlignDraft(activeTopic?.styleOverrides?.textAlign ?? '')
+    setFontFamilyDraft(activeTopic?.styleOverrides?.fontFamily ?? '')
+    setItalicDraft(activeTopic?.styleOverrides?.italic === true)
+    setStrikethroughDraft(activeTopic?.styleOverrides?.strikethrough === true)
+    setTextTransformDraft(activeTopic?.styleOverrides?.textTransform ?? 'none')
+    setBranchColorDraft(activeTopic?.styleOverrides?.branchColor ?? '')
     setTaskStatusDraft(activeTopic?.task?.status ?? 'none')
     setTaskPriorityDraft(
       activeTopic?.task?.priority != null ? String(activeTopic.task.priority) : '',
@@ -745,20 +797,7 @@ export function Inspector({
    * patch 中未提供的字段沿用当前 draft；空串/undefined 语义由 buildStyleOverrides 处理。
    * 仅当与当前文档值不同时提交，避免 noop 入历史栈。
    */
-  const applyStyleOverride = (
-    patch: Partial<{
-      fill: string
-      textColor: string
-      borderColor: string
-      shape: TopicShape | ''
-      fontSize: number | ''
-      fontWeight: number | ''
-      borderWidth: number | ''
-      width: number | ''
-      borderStyle: TopicBorderStyle | ''
-      textAlign: TopicTextAlign | ''
-    }>,
-  ) => {
+  const applyStyleOverride = (patch: Partial<StyleOverrideDrafts>) => {
     const f = patch.fill !== undefined ? patch.fill : fillDraft
     const t = patch.textColor !== undefined ? patch.textColor : textColorDraft
     const b = patch.borderColor !== undefined ? patch.borderColor : borderColorDraft
@@ -769,6 +808,11 @@ export function Inspector({
     const w = patch.width !== undefined ? patch.width : widthDraft
     const bs = patch.borderStyle !== undefined ? patch.borderStyle : borderStyleDraft
     const ta = patch.textAlign !== undefined ? patch.textAlign : textAlignDraft
+    const ff = patch.fontFamily !== undefined ? patch.fontFamily : fontFamilyDraft
+    const it = patch.italic !== undefined ? patch.italic : italicDraft
+    const st = patch.strikethrough !== undefined ? patch.strikethrough : strikethroughDraft
+    const tt = patch.textTransform !== undefined ? patch.textTransform : textTransformDraft
+    const bc = patch.branchColor !== undefined ? patch.branchColor : branchColorDraft
     if (patch.fill !== undefined) setFillDraft(patch.fill)
     if (patch.textColor !== undefined) setTextColorDraft(patch.textColor)
     if (patch.borderColor !== undefined) setBorderColorDraft(patch.borderColor)
@@ -779,8 +823,29 @@ export function Inspector({
     if (patch.width !== undefined) setWidthDraft(patch.width)
     if (patch.borderStyle !== undefined) setBorderStyleDraft(patch.borderStyle)
     if (patch.textAlign !== undefined) setTextAlignDraft(patch.textAlign)
+    if (patch.fontFamily !== undefined) setFontFamilyDraft(patch.fontFamily)
+    if (patch.italic !== undefined) setItalicDraft(patch.italic)
+    if (patch.strikethrough !== undefined) setStrikethroughDraft(patch.strikethrough)
+    if (patch.textTransform !== undefined) setTextTransformDraft(patch.textTransform)
+    if (patch.branchColor !== undefined) setBranchColorDraft(patch.branchColor)
     if (!activeTopic) return
-    const next = buildStyleOverrides(f, t, b, sh, fs, fw, bw, w, bs, ta)
+    const next = buildStyleOverrides({
+      fill: f,
+      textColor: t,
+      borderColor: b,
+      shape: sh,
+      fontSize: fs,
+      fontWeight: fw,
+      borderWidth: bw,
+      width: w,
+      borderStyle: bs,
+      textAlign: ta,
+      fontFamily: ff,
+      italic: it,
+      strikethrough: st,
+      textTransform: tt,
+      branchColor: bc,
+    })
     if (JSON.stringify(activeTopic.styleOverrides ?? null) !== JSON.stringify(next)) {
       void session.setTopicStyleOverrides(activeTopic.id, next)
     }
@@ -966,16 +1031,6 @@ export function Inspector({
                       />
                     </label>
                     <label className="panel__color-input">
-                      <span>文字</span>
-                      <input
-                        type="color"
-                        aria-label="节点文字色"
-                        value={toHexColor(textColorDraft, '#0f172a')}
-                        onChange={(e) => setTextColorDraft(e.target.value)}
-                        onBlur={() => applyStyleOverride({})}
-                      />
-                    </label>
-                    <label className="panel__color-input">
                       <span>边框</span>
                       <input
                         type="color"
@@ -1101,6 +1156,32 @@ export function Inspector({
 
             <PanelSection title="文本">
                 <div className="panel__field">
+                  <span>字体</span>
+                  <select
+                    aria-label="节点字体族"
+                    value={fontFamilyDraft}
+                    onChange={(e) => {
+                      // 存字体栈本身而非选项 id（见 types.ts 的说明），
+                      // 所以这里写入的是 option.segment，不是 option.id。
+                      setFontFamilyDraft(e.target.value)
+                      applyStyleOverride({ fontFamily: e.target.value })
+                    }}
+                  >
+                    <option value="">跟随画布</option>
+                    {GLOBAL_FONT_OPTIONS.map((option) => (
+                      <option key={option.id} value={option.segment}>
+                        {option.label}
+                      </option>
+                    ))}
+                    {/* 手改过的 .mgd 可能带任意字体栈：给个回显项，避免 select 显示成空 */}
+                    {fontFamilyDraft !== '' &&
+                    !GLOBAL_FONT_OPTIONS.some((option) => option.segment === fontFamilyDraft) ? (
+                      <option value={fontFamilyDraft}>自定义</option>
+                    ) : null}
+                  </select>
+                </div>
+
+                <div className="panel__field">
                   <span>
                     字号
                     <output className="panel__value-out">
@@ -1139,6 +1220,82 @@ export function Inspector({
                         </button>
                       )
                     })}
+                  </div>
+                </div>
+
+                <div className="panel__field">
+                  <span>文字色</span>
+                  <div className="panel__field-row">
+                    <label className="panel__color-swatch">
+                      <input
+                        type="color"
+                        aria-label="节点文字色"
+                        value={toHexColor(textColorDraft, '#0f172a')}
+                        onChange={(e) => setTextColorDraft(e.target.value)}
+                        onBlur={() => applyStyleOverride({})}
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* XMind 文本工具条的 B / I / S / Tт 四位。
+                    加粗复用已有的 font-weight 覆盖（B 在两个常用字重间切换），
+                    斜体 / 删除线 / 大小写是本轮新增的节点级覆盖。 */}
+                <div className="panel__field">
+                  <span>
+                    文字样式
+                    <output className="panel__value-out">
+                      {TEXT_TRANSFORM_LABELS[textTransformDraft]}
+                    </output>
+                  </span>
+                  <div className="panel__segmented" role="group" aria-label="文字样式">
+                    <button
+                      type="button"
+                      className={`panel__seg${fontWeightDraft === 700 ? ' panel__seg--active' : ''}`}
+                      aria-pressed={fontWeightDraft === 700}
+                      aria-label="加粗"
+                      title="加粗"
+                      style={{ fontWeight: 700 }}
+                      onClick={() =>
+                        applyStyleOverride({ fontWeight: fontWeightDraft === 700 ? 400 : 700 })
+                      }
+                    >
+                      B
+                    </button>
+                    <button
+                      type="button"
+                      className={`panel__seg${italicDraft ? ' panel__seg--active' : ''}`}
+                      aria-pressed={italicDraft}
+                      aria-label="斜体"
+                      title="斜体"
+                      style={{ fontStyle: 'italic' }}
+                      onClick={() => applyStyleOverride({ italic: !italicDraft })}
+                    >
+                      I
+                    </button>
+                    <button
+                      type="button"
+                      className={`panel__seg${strikethroughDraft ? ' panel__seg--active' : ''}`}
+                      aria-pressed={strikethroughDraft}
+                      aria-label="删除线"
+                      title="删除线"
+                      style={{ textDecoration: 'line-through' }}
+                      onClick={() => applyStyleOverride({ strikethrough: !strikethroughDraft })}
+                    >
+                      S
+                    </button>
+                    <button
+                      type="button"
+                      className={`panel__seg${textTransformDraft !== 'none' ? ' panel__seg--active' : ''}`}
+                      aria-pressed={textTransformDraft !== 'none'}
+                      aria-label="大小写转换"
+                      title="大小写转换：原样 → 全大写 → 全小写 → 首字母大写"
+                      onClick={() =>
+                        applyStyleOverride({ textTransform: nextTextTransform(textTransformDraft) })
+                      }
+                    >
+                      Tт
+                    </button>
                   </div>
                 </div>
 
@@ -1383,8 +1540,39 @@ export function Inspector({
 
             <PanelSection title="分支样式">
               <p className="panel__muted">
-                调整当前画布所有连线的形状、粗细与分支配色（写入画布级覆盖，节点级颜色优先）。
+                连线形状、粗细与分支配色作用于整张画布；「线条颜色」作用于当前主题所在的整条分支
+                （含其后代连线），节点级颜色优先。
               </p>
+
+              <div className="panel__field">
+                <span>
+                  线条颜色
+                  <output className="panel__value-out">
+                    {branchColorDraft === '' ? '跟随色板' : branchColorDraft}
+                  </output>
+                </span>
+                <div className="panel__field-row">
+                  <label className="panel__color-swatch">
+                    <input
+                      type="color"
+                      aria-label="分支线条颜色"
+                      value={toHexColor(branchColorDraft, '#5b8def')}
+                      onChange={(e) => {
+                        setBranchColorDraft(e.target.value)
+                        applyStyleOverride({ branchColor: e.target.value })
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="panel__action panel__action--ghost"
+                    title="清除该分支的线条颜色，回到色板配色"
+                    onClick={() => applyStyleOverride({ branchColor: '' })}
+                  >
+                    跟随色板
+                  </button>
+                </div>
+              </div>
 
               <div className="panel__field">
                 <span>连线类型</span>

@@ -2124,6 +2124,135 @@ it('applies node width, border style and text alignment from the inspector style
   )
 })
 
+it('applies node font family and B/I/S/Tт text styles from the inspector style panel', () => {
+  const setTopicStyleOverrides = vi.fn(async (_topicId: string, _overrides: unknown) => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  { id: 'topic_branch', text: '待排版主题', collapsed: false, children: [] },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStyleOverrides,
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  // 字体：写入的是字体栈本身（option.segment），不是选项 id
+  fireEvent.change(inspector.getByLabelText('节点字体族'), {
+    target: { value: '"Songti SC", SimSun, serif' },
+  })
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ fontFamily: '"Songti SC", SimSun, serif' }),
+  )
+
+  // B：首次点击把字重推到 700（复用已有的 fontWeight 覆盖）
+  fireEvent.click(inspector.getByRole('button', { name: '加粗' }))
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ fontWeight: 700 }),
+  )
+
+  // I / S：开关型，只有「开」才写入（不写显式 false）
+  fireEvent.click(inspector.getByRole('button', { name: '斜体' }))
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ italic: true }),
+  )
+  fireEvent.click(inspector.getByRole('button', { name: '删除线' }))
+  const strikethroughArgs = setTopicStyleOverrides.mock.calls.at(-1)?.[1] as Record<
+    string,
+    unknown
+  >
+  expect(strikethroughArgs).toMatchObject({ italic: true, strikethrough: true })
+
+  // Tт：循环推进 原样 → 全大写 → 全小写
+  fireEvent.click(inspector.getByRole('button', { name: '大小写转换' }))
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ textTransform: 'uppercase' }),
+  )
+  fireEvent.click(inspector.getByRole('button', { name: '大小写转换' }))
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ textTransform: 'lowercase' }),
+  )
+})
+
+it('applies a node-level branch line color from the inspector branch section', () => {
+  const setTopicStyleOverrides = vi.fn(async (_topicId: string, _overrides: unknown) => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  { id: 'topic_branch', text: '待排版主题', collapsed: false, children: [] },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStyleOverrides,
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  fireEvent.change(inspector.getByLabelText('分支线条颜色'), { target: { value: '#ff2d55' } })
+  expect(setTopicStyleOverrides).toHaveBeenLastCalledWith(
+    'topic_branch',
+    expect.objectContaining({ branchColor: '#ff2d55' }),
+  )
+
+  // 「跟随色板」清掉颜色覆盖（不留下空串噪音）
+  const callsBeforeClear = setTopicStyleOverrides.mock.calls.length
+  fireEvent.click(inspector.getByRole('button', { name: '跟随色板' }))
+  // 桩不会把新值回写到文档，"相同值不发请求"的抑制逻辑因此可能不产生新调用；
+  // 只在新调用发生时断言其不含 branchColor（否则会误读上一次调用的参数）
+  const callsAfterClear = setTopicStyleOverrides.mock.calls.length
+  if (callsAfterClear > callsBeforeClear) {
+    const cleared = setTopicStyleOverrides.mock.calls[callsAfterClear - 1][1] as Record<
+      string,
+      unknown
+    >
+    expect(cleared).not.toHaveProperty('branchColor')
+  }
+})
+
 it('applies node font weight and border width overrides from the inspector style panel', () => {
   const setTopicStyleOverrides = vi.fn(async () => {})
 

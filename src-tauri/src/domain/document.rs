@@ -113,6 +113,21 @@ pub struct TopicStyleOverrides {
     /// 标题对齐：left / center / right。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_align: Option<TopicTextAlign>,
+    /// 节点级字体族（完整 CSS font-family 值，含自带回退）；None = 跟随画布全局字体。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub font_family: Option<String>,
+    /// 标题斜体；None = 不倾斜。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub italic: Option<bool>,
+    /// 标题删除线；None = 无删除线。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strikethrough: Option<bool>,
+    /// 标题大小写转换：none / uppercase / lowercase / capitalize。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_transform: Option<TopicTextTransform>,
+    /// 节点级分支线条颜色（整条分支的连线色；只改连线，不改节点填充）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_color: Option<String>,
 }
 
 /// 节点边框线型，与 TS 侧 `TopicBorderStyle` 一致。
@@ -131,6 +146,20 @@ pub enum TopicTextAlign {
     Left,
     Center,
     Right,
+}
+
+/// 标题大小写转换，与 TS 侧 `TopicTextTransform` 一致。
+///
+/// `Normal` 显式重命名为 `none`：TS 侧的取值就是字符串 `"none"`，
+/// 直接用 `None` 作变体名会和 `Option::None` 读混。
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TopicTextTransform {
+    #[serde(rename = "none")]
+    Normal,
+    Uppercase,
+    Lowercase,
+    Capitalize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -2487,5 +2516,59 @@ mod tests {
     /// 测试辅助：直接调用 create_id，避免与 DocumentSnapshot::create_id 混淆。
     fn create_id_str(prefix: &str) -> String {
         super::create_id(prefix)
+    }
+
+    /// 节点级文本类覆盖（字体族 / 斜体 / 删除线 / 大小写）的线格式契约。
+    ///
+    /// 锁两件事：① 键名是 camelCase、枚举值是 lowercase（与前端 `TopicStyleOverrides`
+    /// 逐字段对齐）；② 省略这些字段的旧文档仍能解析（向后兼容）。
+    #[test]
+    fn topic_style_text_overrides_match_ts_wire_format() {
+        let json = serde_json::json!({
+            "fontFamily": "\"Songti SC\", SimSun, serif",
+            "italic": true,
+            "strikethrough": true,
+            "textTransform": "capitalize"
+        });
+        let parsed: super::TopicStyleOverrides =
+            serde_json::from_value(json.clone()).expect("应能解析 TS 侧写出的覆盖");
+        assert_eq!(
+            parsed.font_family.as_deref(),
+            Some("\"Songti SC\", SimSun, serif")
+        );
+        assert_eq!(parsed.italic, Some(true));
+        assert_eq!(parsed.strikethrough, Some(true));
+        assert_eq!(
+            parsed.text_transform,
+            Some(super::TopicTextTransform::Capitalize)
+        );
+
+        // `none` 是 TS 侧的取值，必须映射到 Normal 而不是解析失败
+        let none_case: super::TopicStyleOverrides =
+            serde_json::from_value(serde_json::json!({ "textTransform": "none" }))
+                .expect("none 应可解析");
+        assert_eq!(none_case.text_transform, Some(super::TopicTextTransform::Normal));
+
+        // 省略新字段的旧文档仍可解析
+        let legacy: super::TopicStyleOverrides =
+            serde_json::from_value(serde_json::json!({ "fill": "#fff" })).expect("旧文档应可解析");
+        assert!(legacy.font_family.is_none());
+        assert!(legacy.text_transform.is_none());
+
+        // 往返后键名与取值不变（未设置的字段不写出）
+        let back = serde_json::to_value(&parsed).expect("应能序列化");
+        assert_eq!(back["fontFamily"], json["fontFamily"]);
+        assert_eq!(back["textTransform"], "capitalize");
+        assert!(back.get("textColor").is_none());
+
+        // 分支线条颜色同样是 camelCase 键
+        let branch: super::TopicStyleOverrides =
+            serde_json::from_value(serde_json::json!({ "branchColor": "#ff2d55" }))
+                .expect("分支线条颜色应可解析");
+        assert_eq!(branch.branch_color.as_deref(), Some("#ff2d55"));
+        assert_eq!(
+            serde_json::to_value(&branch).unwrap()["branchColor"],
+            serde_json::json!("#ff2d55")
+        );
     }
 }

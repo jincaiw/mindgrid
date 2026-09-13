@@ -28,6 +28,7 @@ import {
   COLORS,
   FONT_FAMILY,
   SELECTION_RADIUS,
+  STRIKE_THROUGH_RATIO,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
   getNodePadding,
@@ -59,6 +60,7 @@ import {
   RICH_TASK_GAP,
 } from './rich-content-constants'
 import { drawSvgInner } from './svg-inner-canvas'
+import { applyTextTransform } from './text-transform'
 
 export interface RenderDPR {
   dpr: number
@@ -457,13 +459,17 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, font
   const { bounds, text, number, depth, style } = node
   const padding = getNodePadding(depth)
   // 编号是展示层前缀：与 SVG / DOM 三端一致地拼在标题前，不写入主题文本
-  const displayText = number ? `${number} ${text}` : text
+  const numberedText = number ? `${number} ${text}` : text
+  // 大小写转换同样只作用于展示层（三端共用 applyTextTransform，不改写主题文本）
+  const displayText = applyTextTransform(numberedText, style.textTransform)
   // 与 SVG 端保持一致：只要 rich.image 存在就下移标题，即使图片解码失败，
   // 这样 SVG 与 PNG 的版面不会因为个别坏图而错位。
   const titleOffsetY = node.rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0
 
-  // 标题：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
-  ctx.font = `${style.fontWeight} ${style.fontSize}px ${fontFamily}`
+  // 字体族：节点级覆盖优先于画布全局字体（style.fontFamily 为「覆盖」而非最终值）；
+  // 斜体写在 font 简写的 style 段，与 SVG 的 font-style / DOM 的 font-style 同义。
+  const effectiveFontFamily = style.fontFamily ?? fontFamily
+  ctx.font = `${style.italic ? 'italic ' : ''}${style.fontWeight} ${style.fontSize}px ${effectiveFontFamily}`
   ctx.fillStyle = style.textColor
   ctx.textBaseline = 'top'
   // 标题对齐（XMind 样式页的文本对齐）：左/中/右都相对节点的内边距盒子
@@ -482,6 +488,28 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, font
     ctx.fillText(lines[i], textX, titleY + i * lineHeight)
   }
   ctx.textAlign = 'left'
+
+  // 删除线：Canvas 2D 没有原生 line-through，按每行实际宽度手绘一条横线。
+  // 与 SVG 端显式画 <line> 的做法同语义（不用 text-decoration，避免 svg2pdf 不支持）。
+  if (style.strikethrough) {
+    ctx.strokeStyle = style.textColor
+    ctx.lineWidth = Math.max(1, style.fontSize / 14)
+    for (let i = 0; i < lines.length; i++) {
+      const lineWidth = ctx.measureText(lines[i]).width
+      if (lineWidth <= 0) continue
+      const startX =
+        style.textAlign === 'left'
+          ? textX
+          : style.textAlign === 'right'
+            ? textX - lineWidth
+            : textX - lineWidth / 2
+      const strikeY = titleY + i * lineHeight + style.fontSize * STRIKE_THROUGH_RATIO
+      ctx.beginPath()
+      ctx.moveTo(startX, strikeY)
+      ctx.lineTo(startX + lineWidth, strikeY)
+      ctx.stroke()
+    }
+  }
 
   // 元信息已移除（参考 XMind：折叠状态由节点角的 +/− 按钮表达，不再显示文字元信息）
 }

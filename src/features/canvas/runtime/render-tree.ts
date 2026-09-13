@@ -6,7 +6,13 @@
  * 视口剔除在 Scene Builder 阶段完成，只有可见节点进入 Render Tree。
  */
 
-import type { TopicLink, TopicMarker, TopicShape, TopicTask } from '../../../lib/document/types'
+import type {
+  TopicLink,
+  TopicMarker,
+  TopicShape,
+  TopicTask,
+  TopicTextTransform,
+} from '../../../lib/document/types'
 
 // ---- 图层定义（z-order 从低到高）----
 
@@ -73,6 +79,19 @@ export interface ResolvedTopicStyle {
   borderStyle: 'solid' | 'dashed' | 'dotted'
   /** 标题对齐（默认 left）。 */
   textAlign: 'left' | 'center' | 'right'
+  /**
+   * 节点级字体族覆盖；`undefined` 表示跟随画布全局字体（由调用方传入的 fontFamily 决定）。
+   *
+   * 是「覆盖」而非「最终值」：画布全局字体属于文档设置，只有渲染端能拿到它，
+   * 解析器不引入这条依赖，避免 style-resolver 反过来依赖 canvas-settings。
+   */
+  fontFamily?: string
+  /** 标题斜体。 */
+  italic?: boolean
+  /** 标题删除线。 */
+  strikethrough?: boolean
+  /** 标题大小写转换；缺省等同于 none。 */
+  textTransform?: TopicTextTransform
 }
 
   /** 主题上的富内容投影（image / marker / label / note / link / task），全部可选。 */

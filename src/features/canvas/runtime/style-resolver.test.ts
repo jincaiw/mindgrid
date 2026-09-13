@@ -127,6 +127,39 @@ describe('resolveTopicStyle', () => {
     })
   })
 
+  it('passes through text overrides only when explicitly set', () => {
+    // 未设置时不落任何文本字段 —— 三端据此回落「跟随画布字体 / 不倾斜」，
+    // 若固化成 `italic: false` 之类的具体值，就无法再区分「未设置」与「显式关闭」。
+    const plain = resolveTopicStyle('classic-blue', 1, 'left', { fill: '#fff' })
+    expect(plain.fontFamily).toBeUndefined()
+    expect(plain.italic).toBeUndefined()
+    expect(plain.strikethrough).toBeUndefined()
+    expect(plain.textTransform).toBeUndefined()
+
+    const styled = resolveTopicStyle('classic-blue', 1, 'left', {
+      fontFamily: '"Songti SC", SimSun, serif',
+      italic: true,
+      strikethrough: true,
+      textTransform: 'capitalize',
+    })
+    expect(styled.fontFamily).toBe('"Songti SC", SimSun, serif')
+    expect(styled.italic).toBe(true)
+    expect(styled.strikethrough).toBe(true)
+    expect(styled.textTransform).toBe('capitalize')
+
+    // textTransform: 'none' 等价于未设置（不写出无意义的默认值）
+    const noneCase = resolveTopicStyle('classic-blue', 1, 'left', { textTransform: 'none' })
+    expect(noneCase.textTransform).toBeUndefined()
+
+    // 显式 false 同样不写出（否则 buildStyleOverrides 的判空会被噪音打乱）
+    const offCase = resolveTopicStyle('classic-blue', 1, 'left', {
+      italic: false,
+      strikethrough: false,
+    })
+    expect(offCase.italic).toBeUndefined()
+    expect(offCase.strikethrough).toBeUndefined()
+  })
+
   describe('分支配色（缤纷主题）', () => {
     const palette = getTheme('rainbow').branchPalette!
 

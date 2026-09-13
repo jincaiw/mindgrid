@@ -2141,6 +2141,25 @@ button {
   cursor: pointer;
 }
 
+/*
+ * 单色选择器：只渲染色块本身。
+ * 用于 `.panel__field` 已经给出字段名（如「文字色」）的场合——再套
+ * `.panel__color-input` 会在字段名下面多出一行重复的小标签。
+ */
+.panel__color-swatch {
+  display: inline-flex;
+}
+
+.panel__color-swatch input[type="color"] {
+  width: 36px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
 .panel__chip--color {
   width: 24px;
   height: 24px;

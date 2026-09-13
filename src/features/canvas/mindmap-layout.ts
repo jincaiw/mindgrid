@@ -1,4 +1,5 @@
 import type { TopicSnapshot } from '../../lib/document/types'
+import { getFontScale } from './runtime/style-constants'
 import { TOPIC_IMAGE_BLOCK, TOPIC_IMAGE_MIN_WIDTH } from './runtime/topic-image-constants'
 
 type LayoutSide = 'left' | 'right' | 'center'
@@ -106,16 +107,21 @@ function nodeMetrics(depth: number) {
 export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
   const m = nodeMetrics(depth)
+  // 字号覆盖 → 字宽与行高按同一比例缩放，否则大字号会溢出节点框。
+  // 未覆盖时比例为 1，几何与历史完全一致（见 style-constants.getFontScale）。
+  const fontScale = getFontScale(topic.styleOverrides?.fontSize, m.fontSize)
+  const charW = m.charW * fontScale
+  const lineHeight = Math.round(m.lineHeight * fontScale)
   // 节点级固定宽度（XMind 样式页的「宽度」）：设了就照用，不再按文字自适应；
   // 未设时维持自适应，行为与历史一致。
   const fixedWidth = topic.styleOverrides?.width
   const width =
     typeof fixedWidth === 'number' && fixedWidth > 0
       ? Math.min(MAX_FIXED_WIDTH, Math.max(MIN_FIXED_WIDTH, Math.round(fixedWidth)))
-      : Math.min(m.maxW, Math.max(m.minW, Math.round(textLength * m.charW + m.padX * 2)))
+      : Math.min(m.maxW, Math.max(m.minW, Math.round(textLength * charW + m.padX * 2)))
   const usable = Math.max(1, width - m.padX * 2)
-  const lineCount = Math.max(1, Math.ceil((textLength * m.charW) / usable))
-  const height = m.padY * 2 + lineCount * m.lineHeight
+  const lineCount = Math.max(1, Math.ceil((textLength * charW) / usable))
+  const height = m.padY * 2 + lineCount * lineHeight
 
   if (topic.image) {
     return {

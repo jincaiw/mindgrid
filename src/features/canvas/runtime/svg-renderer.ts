@@ -15,6 +15,7 @@
 import {
   COLORS,
   FONT_FAMILY,
+  STRIKE_THROUGH_RATIO,
   TOGGLE_BUTTON_SIZE,
   TOGGLE_RADIUS,
   getNodePadding,
@@ -24,6 +25,7 @@ import {
 } from './style-constants'
 import { TOPIC_IMAGE_TITLE_OFFSET, computeTopicImageRect } from './topic-image-constants'
 import { resolveThemeBackground } from './style-resolver'
+import { applyTextTransform } from './text-transform'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
   LINK_ICON_SVG_INNER,
@@ -218,11 +220,14 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
     }
   }
 
-  // 标题文字：字号 / 字重来自解析样式（深度默认 + 节点覆盖）
-  const titleFont = `${style.fontWeight} ${style.fontSize}px ${fontFamily}`
+  // 标题文字：字号 / 字重 / 字体族来自解析样式（深度默认 + 节点覆盖；
+  // 字体族为节点级覆盖，缺省继承根元素的画布全局字体）
+  const effectiveFontFamily = style.fontFamily ?? fontFamily
+  const titleFont = `${style.italic ? 'italic ' : ''}${style.fontWeight} ${style.fontSize}px ${effectiveFontFamily}`
   const maxTextWidth = bounds.width - padding * 2
-  // 编号是展示层前缀：与 Canvas / DOM 三端一致地拼在标题前
-  const displayText = number ? `${number} ${text}` : text
+  // 编号是展示层前缀：与 Canvas / DOM 三端一致地拼在标题前；大小写转换同理只作用于展示层
+  const numberedText = number ? `${number} ${text}` : text
+  const displayText = applyTextTransform(numberedText, style.textTransform)
   const lines = wrapText(displayText, maxTextWidth, titleFont)
   const lineHeight = style.fontSize * 1.35
   const titleY = bounds.y + padding + titleOffsetY
@@ -252,10 +257,29 @@ function topicToSvg(node: TopicRenderNode, fontFamily: string): string {
   }
 
   elements.push(
-    `  <text x="${fmt(textX)}" y="${fmt(titleY)}" font-size="${fmt(style.fontSize)}" font-weight="${style.fontWeight}" fill="${style.textColor}" text-anchor="${textAnchor}" dominant-baseline="hanging">`,
+    `  <text x="${fmt(textX)}" y="${fmt(titleY)}" font-size="${fmt(style.fontSize)}" font-weight="${style.fontWeight}" fill="${style.textColor}" text-anchor="${textAnchor}" dominant-baseline="hanging"${style.fontFamily ? ` font-family="${escapeXml(style.fontFamily)}"` : ''}${style.italic ? ' font-style="italic"' : ''}>`,
     tspans,
     `  </text>`,
   )
+
+  // 删除线：不用 text-decoration（svg2pdf.js 支持度不可靠），按每行实测宽度手绘横线。
+  // 行宽、锚点与纵向比例与 canvas-renderer 的 drawNodeText 完全同源。
+  if (style.strikethrough) {
+    for (let i = 0; i < lines.length; i++) {
+      const lineWidth = measureTextWidth(lines[i], titleFont)
+      if (lineWidth <= 0) continue
+      const startX =
+        style.textAlign === 'left'
+          ? textX
+          : style.textAlign === 'right'
+            ? textX - lineWidth
+            : textX - lineWidth / 2
+      const strikeY = titleY + i * lineHeight + style.fontSize * STRIKE_THROUGH_RATIO
+      elements.push(
+        `  <line x1="${fmt(startX)}" y1="${fmt(strikeY)}" x2="${fmt(startX + lineWidth)}" y2="${fmt(strikeY)}" stroke="${style.textColor}" stroke-width="${fmt(Math.max(1, style.fontSize / 14))}"/>`,
+      )
+    }
+  }
 
   // —— 富内容投影：task / markers / notes / link / labels（与 DOM 渲染对齐）——
   if (rich) {

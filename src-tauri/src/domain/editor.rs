@@ -2486,6 +2486,11 @@ mod tests {
             width: None,
             border_style: None,
             text_align: None,
+            font_family: None,
+            italic: None,
+            strikethrough: None,
+            text_transform: None,
+            branch_color: None,
         };
         document
             .find_sheet_mut(&document.active_sheet_id.clone())

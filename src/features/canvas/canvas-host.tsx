@@ -1847,12 +1847,21 @@ function MindMapNode({
     transform: dragOffset ? `translate(${dragOffset.x}px, ${dragOffset.y}px)` : undefined,
   }
   // 标题排印：字号 / 字重来自解析样式（深度默认 + 节点覆盖），内联覆盖 CSS 深度分级
+  // 字体族：节点级覆盖优先于画布全局字体；斜体 / 删除线 / 大小写走 CSS，
+  // 与 Canvas 手绘横线、SVG 手绘 <line> 保持同一视觉（转换函数三端同源）。
   const titleStyle: CSSProperties = {
     fontSize: resolvedStyle.fontSize,
     fontWeight: resolvedStyle.fontWeight,
     // 标题对齐（XMind 样式页「对齐」）：左/中/右
     textAlign: resolvedStyle.textAlign,
-    ...(fontFamily ? { fontFamily } : {}),
+    ...(resolvedStyle.fontFamily
+      ? { fontFamily: resolvedStyle.fontFamily }
+      : fontFamily
+        ? { fontFamily }
+        : {}),
+    ...(resolvedStyle.italic ? { fontStyle: 'italic' } : {}),
+    ...(resolvedStyle.strikethrough ? { textDecoration: 'line-through' } : {}),
+    ...(resolvedStyle.textTransform ? { textTransform: resolvedStyle.textTransform } : {}),
   }
   // XMind 式：折叠 toggle 位于"连线起点侧"——中心节点贴下缘、
   // 左侧分支贴左缘、右侧分支贴右缘，16px 按钮半嵌于节点边。

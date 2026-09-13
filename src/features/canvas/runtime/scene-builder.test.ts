@@ -529,8 +529,21 @@ describe('buildScene', () => {
       themeId?: string
       colorPalette?: string[]
       canvasSettings?: Partial<DocumentCanvasSettings>
+      /** 节点级分支线条颜色覆盖：topicId → 颜色。 */
+      branchColorOverrides?: Record<string, string>
     }) => {
-      const layout = computeMindMapLayout(makeRoot())
+      const root = makeRoot()
+      const applyOverrides = (topic: TopicSnapshot) => {
+        const color = options.branchColorOverrides?.[topic.id]
+        if (color) {
+          topic.styleOverrides = { ...(topic.styleOverrides ?? {}), branchColor: color }
+        }
+        for (const child of topic.children) {
+          applyOverrides(child)
+        }
+      }
+      applyOverrides(root)
+      const layout = computeMindMapLayout(root)
       const scene = buildScene({
         layout,
         viewport: defaultViewport,
@@ -583,6 +596,40 @@ describe('buildScene', () => {
       })
       expect(colors.get('a')).toBe('#111111')
       expect(colors.get('b')).toBe('#222222')
+    })
+
+    it('节点级线条颜色覆盖色板，并作用于整条分支', () => {
+      const colors = branchColorByChild({
+        themeId: 'rainbow',
+        branchColorOverrides: { a: '#ff2d55' },
+      })
+
+      expect(colors.get('a')).toBe('#ff2d55')
+      // a1 / a2 是 a 的后代：整条分支同色（XMind「分支 → 线条颜色」的语义）
+      expect(colors.get('a1')).toBe('#ff2d55')
+      expect(colors.get('a2')).toBe('#ff2d55')
+      // 兄弟分支不受影响
+      expect(colors.get('b')).not.toBe('#ff2d55')
+    })
+
+    it('深层节点单独改色只影响它自己那一段', () => {
+      const colors = branchColorByChild({
+        themeId: 'rainbow',
+        branchColorOverrides: { a: '#ff2d55', a1: '#00a6a6' },
+      })
+
+      expect(colors.get('a')).toBe('#ff2d55')
+      expect(colors.get('a1')).toBe('#00a6a6')
+      // a2 仍取距它最近的祖先 a 的颜色
+      expect(colors.get('a2')).toBe('#ff2d55')
+    })
+
+    it('空白颜色的覆盖视为未设置（跟随色板）', () => {
+      const colors = branchColorByChild({
+        themeId: 'classic-blue',
+        branchColorOverrides: { a: '   ' },
+      })
+      expect(colors.get('a')).toBe(BRANCH_COLORS[0])
     })
 
     it('自定义配色方案能真正上色（文档级 canvas.customPalettes）', () => {

@@ -175,6 +175,29 @@ export function buildScene(options: BuildSceneOptions): Scene {
   const resolveBranchColor = (branchIndex: number): string =>
     palette === null ? theme.edge : palette[branchIndex % palette.length]
 
+  /**
+   * 节点级分支线条颜色（XMind 样式页「分支 → 线条颜色」）。
+   *
+   * 语义是**整条分支**：从该边的子主题往上找最近的、设了 `branchColor` 的祖先
+   * （含子主题自己），用它的颜色。找"最近"而不是"根的一级子节点"，
+   * 才能让深层节点单独改色时只影响自己那一段。
+   */
+  const parentOf = new Map<string, string>()
+  for (const rawEdge of layout.edges) {
+    parentOf.set(rawEdge.childId, rawEdge.parentId)
+  }
+  const resolveBranchColorOverride = (childId: string): string | null => {
+    let currentId: string | undefined = childId
+    while (currentId) {
+      const color = layoutNodeMap.get(currentId)?.topic.styleOverrides?.branchColor
+      if (color && color.trim() !== '') {
+        return color
+      }
+      currentId = parentOf.get(currentId)
+    }
+    return null
+  }
+
   const nodes: RenderNode[] = []
 
   // 边界（z-order 最低，在边之前）
@@ -205,13 +228,15 @@ export function buildScene(options: BuildSceneOptions): Scene {
     const branchIndex = branchIndexMap.get(edge.childId) ?? 0
     const baseLineWidth = getEdgeLineWidth(childDepth, childIsActive)
     const finalLineWidth = Math.max(0.5, baseLineWidth * thicknessMultiplier)
+    // 节点级线条颜色覆盖分支色板；没设才回落到色板
+    const branchColor = resolveBranchColorOverride(edge.childId) ?? resolveBranchColor(branchIndex)
     nodes.push(
       edgeToRenderNode(
         edge,
         edgeBounds,
         childIsActive,
         childDepth,
-        resolveBranchColor(branchIndex),
+        branchColor,
         resolvedEdgeType,
         finalLineWidth,
         resolvedEndpoint,

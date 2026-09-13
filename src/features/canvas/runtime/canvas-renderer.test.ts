@@ -308,6 +308,66 @@ describe('renderScene', () => {
     expect(textAligns[textAligns.length - 1]).toBe('left')
   })
 
+  it('renders italic font family and case transform from node overrides', () => {
+    const scene = buildScene({
+      layout: computeMindMapLayout(makeRoot()),
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      themeId: 'classic-blue',
+      enableCulling: false,
+    })
+
+    const branch = scene.nodes.find(
+      (n): n is TopicRenderNode => n.type === 'topic' && n.depth === 1,
+    )!
+    branch.text = 'hello'
+    branch.style = {
+      ...branch.style,
+      fontFamily: '"Songti SC", SimSun, serif',
+      italic: true,
+      textTransform: 'uppercase',
+    }
+
+    const { ctx, calls } = createMockCtx()
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    // 斜体写在 font 简写的 style 段，字体族取节点级覆盖而非画布全局字体
+    const fonts = calls.filter((c) => c.method === 'font').map((c) => String(c.args[0]))
+    expect(fonts.some((f) => f.startsWith('italic ') && f.includes('Songti SC'))).toBe(true)
+
+    // 大小写转换只作用于渲染层：画出来是全大写，文档文本不变
+    const texts = calls.filter((c) => c.method === 'fillText').map((c) => String(c.args[0]))
+    expect(texts).toContain('HELLO')
+    expect(branch.text).toBe('hello')
+  })
+
+  it('draws one extra strike line per text line when strikethrough is on', () => {
+    const strokeCount = (strikethrough: boolean) => {
+      const scene = buildScene({
+        layout: computeMindMapLayout(makeRoot()),
+        viewport: defaultViewport,
+        camera: defaultCamera,
+        visualStates: defaultVisualStates,
+        overlays: defaultOverlays,
+        themeId: 'classic-blue',
+        enableCulling: false,
+      })
+      const branch = scene.nodes.find(
+        (n): n is TopicRenderNode => n.type === 'topic' && n.depth === 1,
+      )!
+      branch.style = { ...branch.style, strikethrough }
+
+      const { ctx, calls } = createMockCtx()
+      renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+      return calls.filter((c) => c.method === 'stroke').length
+    }
+
+    // Canvas 2D 没有原生 line-through：开启后每行文本多一条手绘横线
+    expect(strokeCount(true)).toBeGreaterThan(strokeCount(false))
+  })
+
   it('skips topic text when drawTopics is false but still draws edges', () => {
     const { ctx, calls } = createMockCtx()
     const layout = computeMindMapLayout(makeRoot())

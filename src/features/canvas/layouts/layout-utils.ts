@@ -8,6 +8,7 @@
 import type { TopicSnapshot } from '../../../lib/document/types'
 import type { MindMapEdgeLayout, MindMapNodeLayout } from '../mindmap-layout'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../mindmap-layout'
+import { getFontScale } from '../runtime/style-constants'
 
 export type LayoutSide = 'left' | 'right' | 'center'
 
@@ -25,10 +26,15 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const textLength = topic.text.trim().length || 1
   const metrics =
     depth === 0
-      ? { lineHeight: 27, padX: 22, padY: 20, minW: 160, maxW: 320, charW: 19 }
+      ? { fontSize: 20, lineHeight: 27, padX: 22, padY: 20, minW: 160, maxW: 320, charW: 19 }
       : depth === 1
-        ? { lineHeight: 19, padX: 14, padY: 11, minW: 100, maxW: 250, charW: 13 }
-        : { lineHeight: 18, padX: 12, padY: 9, minW: 90, maxW: 220, charW: 12 }
+        ? { fontSize: 14, lineHeight: 19, padX: 14, padY: 11, minW: 100, maxW: 250, charW: 13 }
+        : { fontSize: 13, lineHeight: 18, padX: 12, padY: 9, minW: 90, maxW: 220, charW: 12 }
+
+  // 字号覆盖 → 字宽与行高按同一比例缩放（口径与 `../mindmap-layout` 完全一致）
+  const fontScale = getFontScale(topic.styleOverrides?.fontSize, metrics.fontSize)
+  const charW = metrics.charW * fontScale
+  const lineHeight = Math.round(metrics.lineHeight * fontScale)
 
   // 节点级固定宽度（XMind 样式页的「宽度」）：设了就照用，不再按文字自适应
   const fixedWidth = topic.styleOverrides?.width
@@ -37,11 +43,11 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
       ? Math.min(MAX_FIXED_WIDTH, Math.max(MIN_FIXED_WIDTH, Math.round(fixedWidth)))
       : Math.min(
           metrics.maxW,
-          Math.max(metrics.minW, Math.round(textLength * metrics.charW + metrics.padX * 2)),
+          Math.max(metrics.minW, Math.round(textLength * charW + metrics.padX * 2)),
         )
   const usable = Math.max(1, width - metrics.padX * 2)
-  const lineCount = Math.max(1, Math.ceil((textLength * metrics.charW) / usable))
-  const height = metrics.padY * 2 + lineCount * metrics.lineHeight
+  const lineCount = Math.max(1, Math.ceil((textLength * charW) / usable))
+  const height = metrics.padY * 2 + lineCount * lineHeight
 
   return { width, height }
 }

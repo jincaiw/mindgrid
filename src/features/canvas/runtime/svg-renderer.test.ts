@@ -130,6 +130,39 @@ describe('renderSceneToSvg', () => {
     expect(svg).toContain('text-anchor="middle"')
   })
 
+  it('renders font family, italic, strikethrough and case transform from node overrides', () => {
+    // 同一个场景渲染两次（只差 strikethrough），用 <line> 增量断言删除线
+    const withOverrides = (strikethrough: boolean) => {
+      const scene = buildTestScene()
+      const branch = scene.nodes.find(
+        (n): n is TopicRenderNode => n.type === 'topic' && n.depth === 1,
+      )!
+      // 单个短词，避免 jsdom 的 8px/字符估算把文本折行
+      branch.text = 'hello'
+      branch.style = {
+        ...branch.style,
+        fontFamily: '"Songti SC", SimSun, serif',
+        italic: true,
+        strikethrough,
+        textTransform: 'uppercase',
+      }
+      return { svg: renderSceneToSvg(scene, { themeId: 'classic-blue' }), branch }
+    }
+
+    const on = withOverrides(true)
+
+    // 字体族与斜体直接写在 <text> 上，覆盖根元素的画布全局字体
+    expect(on.svg).toContain('font-family="&quot;Songti SC&quot;, SimSun, serif"')
+    expect(on.svg).toContain('font-style="italic"')
+    // 大小写转换只作用于渲染层，不改写文档文本
+    expect(on.svg).toContain('>HELLO<')
+    expect(on.branch.text).toBe('hello')
+    // 删除线用显式 <line>，不依赖 svg2pdf 支持度不明的 text-decoration
+    expect(on.svg).not.toContain('text-decoration')
+    const countLines = (svg: string) => (svg.match(/<line /g) ?? []).length
+    expect(countLines(on.svg)).toBeGreaterThan(countLines(withOverrides(false).svg))
+  })
+
   it('renders toggle button for topics with children', () => {
     const scene = buildTestScene()
     const svg = renderSceneToSvg(scene)

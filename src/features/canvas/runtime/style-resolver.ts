@@ -81,6 +81,15 @@ export function resolveTopicStyle(
     borderWidth: overrides?.borderWidth ?? DEFAULT_BORDER_WIDTH,
     borderStyle: overrides?.borderStyle ?? 'solid',
     textAlign: overrides?.textAlign ?? 'left',
+    // 文本类覆盖：字体族 / 斜体 / 删除线 / 大小写。
+    // 只有显式设置才写入，`undefined` 表示「跟随画布全局字体 / 默认不倾斜」——
+    // 三端渲染据此回落，避免把"未设置"固化成某个具体值。
+    ...(overrides?.fontFamily ? { fontFamily: overrides.fontFamily } : {}),
+    ...(overrides?.italic ? { italic: true } : {}),
+    ...(overrides?.strikethrough ? { strikethrough: true } : {}),
+    ...(overrides?.textTransform && overrides.textTransform !== 'none'
+      ? { textTransform: overrides.textTransform }
+      : {}),
   }
 }
 

@@ -94,6 +94,27 @@ export interface TopicStyleOverrides {
   borderStyle?: TopicBorderStyle
   /** 标题对齐方式，缺省 left。 */
   textAlign?: TopicTextAlign
+  /**
+   * 节点级字体族（完整 CSS font-family 值，含自带回退），缺省跟随画布全局字体。
+   *
+   * 存**字体栈本身**而不是选项 id：字体选项列表属于 UI 常量，会随版本增删，
+   * 文档里存 id 会让旧文件在列表变更后静默换字体。存栈则永远渲染同一个字体。
+   */
+  fontFamily?: string
+  /** 标题斜体（对齐 XMind 文本工具条的 I），缺省 false。 */
+  italic?: boolean
+  /** 标题删除线（对齐 XMind 文本工具条的 S），缺省 false。 */
+  strikethrough?: boolean
+  /** 标题大小写转换（对齐 XMind 文本工具条的 Tт），缺省 none。 */
+  textTransform?: TopicTextTransform
+  /**
+   * 节点级分支线条颜色（对齐 XMind 样式页「分支 → 线条颜色」）。
+   *
+   * 语义是**整条分支**：设在一级分支上会让该分支连同其后代的连线同色，
+   * 若某个后代自己也设了颜色，则以距该边最近的那个为准。
+   * 只作用于连线（含终点装饰），不改节点填充——填充色归 `fill`。
+   */
+  branchColor?: string
 }
 
 /** 节点边框线型（对齐 XMind「边框」下方的线型下拉）。 */
@@ -101,6 +122,16 @@ export type TopicBorderStyle = 'solid' | 'dashed' | 'dotted'
 
 /** 标题在节点内的对齐方式。 */
 export type TopicTextAlign = 'left' | 'center' | 'right'
+
+/**
+ * 标题大小写转换（对齐 XMind 文本工具条的 Tт）。
+ * - none：原样（默认）
+ * - uppercase / lowercase：整体转大/小写
+ * - capitalize：每个单词首字母大写
+ *
+ * 转换发生在**渲染层**，不改写主题文本本身（导出与屏幕必须用同一个转换函数）。
+ */
+export type TopicTextTransform = 'none' | 'uppercase' | 'lowercase' | 'capitalize'
 
 export interface TopicSnapshot {
   id: string

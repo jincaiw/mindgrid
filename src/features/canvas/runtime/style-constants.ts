@@ -173,6 +173,39 @@ export function getNodePadding(depth: number): number {
   return 12
 }
 
+/**
+ * 删除线的纵向位置：相对每行文字的**顶部**比例。
+ *
+ * 0.52 落在 x-height 中线上，与 DOM 的 `text-decoration: line-through` 视觉高度一致。
+ * Canvas 2D 与 SVG 都手绘横线（svg2pdf.js 对 text-decoration 的支持度不可靠），
+ * 两端的行宽、锚点与这里的高度必须同源，否则 PNG 与 SVG 的删除线会错位。
+ */
+export const STRIKE_THROUGH_RATIO = 0.52
+
+/**
+ * 节点级字号覆盖相对该深度默认字号的缩放比例。
+ *
+ * 布局的节点高度口径是 `padY×2 + 行数×行高`，行高与字宽都锚在**默认字号**上；
+ * 一旦节点把字号覆盖成 32px 而几何仍按 14px 算，文字就会溢出节点框
+ * （导出用固定 bounds，比 DOM 的自适应更明显）。两处 `estimateNodeSize`
+ * 必须都用这个函数取同一个比例，否则思维导图与其它骨架会不一样大。
+ *
+ * 未覆盖 / 非法值一律回落 1（保持历史几何不变）。
+ */
+export function getFontScale(
+  fontSizeOverride: number | undefined,
+  defaultFontSize: number,
+): number {
+  if (
+    typeof fontSizeOverride !== 'number' ||
+    !Number.isFinite(fontSizeOverride) ||
+    fontSizeOverride <= 0
+  ) {
+    return 1
+  }
+  return fontSizeOverride / defaultFontSize
+}
+
 // ---- 分支色板（8 色循环，参考 XMind）----
 
 /**
