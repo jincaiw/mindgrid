@@ -1,8 +1,8 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DocumentSessionSnapshot } from '../../lib/document/types'
 import { renderWithApp } from '../../test/render'
-import { useDocumentSession } from './use-document-session'
+import { normalizeSessionError, useDocumentSession } from './use-document-session'
 
 const commandMocks = vi.hoisted(() => ({
   clearRepairReport: vi.fn(),
@@ -698,4 +698,24 @@ it('switches the document theme through the session hook', async () => {
     expect(commandMocks.setDocumentTheme).toHaveBeenCalledWith('dark'),
   )
   await waitFor(() => expect(screen.getByText('最近动作：已切换文档主题')).toBeInTheDocument())
+})
+
+describe('normalizeSessionError', () => {
+  it('surfaces string rejections from Tauri commands instead of a generic message', () => {
+    // Tauri 命令返回 Err(String) 时前端拿到的是字符串；旧实现一律回落，
+    // 把 Rust 给出的真实原因（哪个文件读不了、哪条数据不合法）整个吞掉
+    expect(normalizeSessionError('恢复文件损坏：缺少 document.json')).toBe(
+      '恢复文件损坏：缺少 document.json',
+    )
+    expect(normalizeSessionError('  前后有空白  ')).toBe('前后有空白')
+  })
+
+  it('keeps Error messages and falls back only when there is nothing usable', () => {
+    expect(normalizeSessionError(new Error('磁盘只读'))).toBe('磁盘只读')
+    expect(normalizeSessionError({ message: '对象形式的消息' })).toBe('对象形式的消息')
+    expect(normalizeSessionError('')).toBe('文档服务暂时不可用')
+    expect(normalizeSessionError(new Error('   '))).toBe('文档服务暂时不可用')
+    expect(normalizeSessionError(null)).toBe('文档服务暂时不可用')
+    expect(normalizeSessionError(undefined)).toBe('文档服务暂时不可用')
+  })
 })

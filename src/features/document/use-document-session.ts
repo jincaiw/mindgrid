@@ -452,6 +452,29 @@ function exportRenderOptions(document: DocumentSnapshot): {
   }
 }
 
+/**
+ * 归一化错误信息。
+ *
+ * Tauri 命令返回 `Err(String)` 时，前端 `invoke` 会 **reject 一个字符串**而不是 Error，
+ * 旧实现一律回落成"文档服务暂时不可用"，把 Rust 侧给出的真实原因（哪个文件读不了、
+ * 哪条数据不合法）整个吞掉——出问题时只能靠猜。这里优先使用原始信息。
+ */
+export function normalizeSessionError(error: unknown): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message
+  }
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error.trim()
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    const raw = (error as { message?: unknown }).message
+    if (typeof raw === 'string' && raw.trim().length > 0) {
+      return raw.trim()
+    }
+  }
+  return '文档服务暂时不可用'
+}
+
 export function useDocumentSession(): DocumentSession {
   const [state, setState] = useState<DocumentSessionState>(initialDocumentSessionState)
   const [lastFailedOpenPath, setLastFailedOpenPath] = useState<string | null>(null)
@@ -468,7 +491,7 @@ export function useDocumentSession(): DocumentSession {
   }, [])
 
   const handleError = useCallback((error: unknown) => {
-    const message = error instanceof Error ? error.message : '文档服务暂时不可用'
+    const message = normalizeSessionError(error)
 
     setState((current) => ({
       ...current,
