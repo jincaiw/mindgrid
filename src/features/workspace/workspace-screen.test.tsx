@@ -2052,8 +2052,8 @@ it('applies node shape override from the inspector style panel', () => {
 
   const inspector = openInspectorStyleTab()
 
-  // 形状分段控件：点击"胶囊"应用 shape 覆盖（其余 draft 为空，仅提交 shape）
-  fireEvent.click(inspector.getByRole('button', { name: '胶囊' }))
+  // 形状改成 XMind 那种紧凑下拉（原来是 4 段按钮）
+  fireEvent.change(inspector.getByLabelText('节点形状'), { target: { value: 'pill' } })
   expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', {
     shape: 'pill',
   })
@@ -2415,8 +2415,8 @@ it('applies node font weight and border width overrides from the inspector style
 
   const inspector = openInspectorStyleTab()
 
-  // 字重分段控件：点击"粗体"应用 fontWeight=700
-  fireEvent.click(inspector.getByRole('button', { name: '粗体' }))
+  // 字重同样改成下拉：选"粗体"应用 fontWeight=700
+  fireEvent.change(inspector.getByLabelText('节点标题字重'), { target: { value: '700' } })
   expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', {
     fontWeight: 700,
   })
@@ -3167,4 +3167,43 @@ it('分组标题可折叠：收起后该分组内的控件消失，再展开回�
   fireEvent.click(toggle)
 
   expect(inspector.getByText('边框线型')).toBeTruthy()
+})
+
+it('applies node font size from the inspector style panel dropdown', () => {
+  const setTopicStyleOverrides = vi.fn(async () => {})
+
+  renderWithApp(
+    <WorkspaceScreen
+      session={{
+        ...sessionStub,
+        document: {
+          ...sessionStub.document!,
+          sheets: [
+            {
+              id: 'sheet_1',
+              title: '主画布',
+              rootTopic: {
+                id: 'topic_root',
+                text: '中心主题',
+                collapsed: false,
+                children: [
+                  { id: 'topic_branch', text: '待调字号主题', collapsed: false, children: [] },
+                ],
+              },
+            },
+          ],
+        },
+        summary: { ...sessionStub.summary!, topicCount: 2 },
+        activeTopicId: 'topic_branch',
+        setTopicStyleOverrides,
+      }}
+    />,
+  )
+
+  const inspector = openInspectorStyleTab()
+
+  // 字号由滑杆改为离散下拉（XMind 的「14 ▾」）：滑杆拖不准，选 16 容易停在 15
+  fireEvent.change(inspector.getByLabelText('节点标题字号'), { target: { value: '18' } })
+
+  expect(setTopicStyleOverrides).toHaveBeenCalledWith('topic_branch', { fontSize: 18 })
 })

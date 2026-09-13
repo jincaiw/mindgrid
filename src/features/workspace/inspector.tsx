@@ -179,8 +179,12 @@ const FONT_WEIGHT_OPTIONS: { value: number; label: string }[] = [
 ]
 
 /** 字号边界（px），对齐 style-constants 深度分级范围。 */
-const FONT_SIZE_MIN = 8
-const FONT_SIZE_MAX = 32
+/**
+ * 字号下拉的档位（XMind 的「14 ▾」）。
+ * 取 8–32 之间的常用值：滑杆的连续拖动在"选个整数"这件事上没有价值，
+ * 反而容易停在 15 这种非预期值上。
+ */
+const FONT_SIZE_OPTIONS: number[] = [8, 10, 12, 14, 16, 18, 20, 24, 28, 32]
 
 /**
  * Tт 按钮当前档位的说明文案（XMind 文本工具条最后一位）。
@@ -1062,22 +1066,19 @@ export function Inspector({
 
                 <div className="panel__field">
                   <span>形状</span>
-                  <div className="panel__segmented" role="group" aria-label="节点形状">
-                    {SHAPE_OPTIONS.map((opt) => {
-                      const active = (shapeDraft || 'rounded') === opt.value
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          className={`panel__seg${active ? ' panel__seg--active' : ''}`}
-                          aria-pressed={active}
-                          onClick={() => applyStyleOverride({ shape: opt.value })}
-                        >
-                          {opt.label}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <select
+                    aria-label="节点形状"
+                    value={shapeDraft || 'rounded'}
+                    onChange={(event) =>
+                      applyStyleOverride({ shape: event.target.value as TopicShape })
+                    }
+                  >
+                    {SHAPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="panel__field">
                   <span>
@@ -1186,46 +1187,47 @@ export function Inspector({
                   </select>
                 </div>
 
+                {/* 下拉而不是滑杆：XMind 这里就是「14 ▾」。滑杆既占一整行、
+                    也拖不准（想选 16 很容易停在 15），改成离散档位反而更快。 */}
                 <div className="panel__field">
-                  <span>
-                    字号
-                    <output className="panel__value-out">
-                      {fontSizeDraft === '' ? '默认' : `${fontSizeDraft}px`}
-                    </output>
-                  </span>
-                  <input
-                    type="range"
+                  <span>字号</span>
+                  <select
                     aria-label="节点标题字号"
-                    min={FONT_SIZE_MIN}
-                    max={FONT_SIZE_MAX}
-                    step={1}
-                    value={fontSizeDraft === '' ? 14 : fontSizeDraft}
-                    onChange={(e) => setFontSizeDraft(Number(e.target.value))}
-                    onPointerUp={() => applyStyleOverride({})}
-                    onKeyUp={() => applyStyleOverride({})}
-                    onBlur={() => applyStyleOverride({})}
-                  />
+                    value={fontSizeDraft === '' ? '' : String(fontSizeDraft)}
+                    onChange={(event) => {
+                      const next = event.target.value === '' ? '' : Number(event.target.value)
+                      setFontSizeDraft(next)
+                      applyStyleOverride({ fontSize: next })
+                    }}
+                  >
+                    <option value="">默认</option>
+                    {FONT_SIZE_OPTIONS.map((size) => (
+                      <option key={size} value={size}>
+                        {size}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
+                {/* 同理改成下拉：XMind 是「Regular ▾」，4 段按钮白占一整行宽度 */}
                 <div className="panel__field">
                   <span>字重</span>
-                  <div className="panel__segmented" role="group" aria-label="节点标题字重">
-                    {FONT_WEIGHT_OPTIONS.map((opt) => {
-                      const active = fontWeightDraft === opt.value
-                      return (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          className={`panel__seg${active ? ' panel__seg--active' : ''}`}
-                          aria-pressed={active}
-                          onClick={() => applyStyleOverride({ fontWeight: opt.value })}
-                          style={{ fontWeight: opt.value }}
-                        >
-                          {opt.label}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  <select
+                    aria-label="节点标题字重"
+                    value={fontWeightDraft === '' ? '' : String(fontWeightDraft)}
+                    onChange={(event) => {
+                      const next = event.target.value === '' ? '' : Number(event.target.value)
+                      setFontWeightDraft(next)
+                      applyStyleOverride({ fontWeight: next })
+                    }}
+                  >
+                    <option value="">默认</option>
+                    {FONT_WEIGHT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="panel__field">
