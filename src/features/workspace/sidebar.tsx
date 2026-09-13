@@ -24,11 +24,11 @@ interface SidebarProps {
 const CHART_TYPE_OPTIONS: ReadonlyArray<{ value: ChartType; label: string }> = [
   { value: 'mindmap', label: '思维导图（Mind Map）' },
   { value: 'logic', label: '逻辑图（Logic）' },
-  { value: 'tree', label: '树状图（Tree）' },
+  { value: 'tree', label: '树形图（Tree）' },
   { value: 'org', label: '组织结构图（Org）' },
   { value: 'fishbone', label: '鱼骨图（Fishbone）' },
   { value: 'treetable', label: '树型表格（Tree Table）' },
-  { value: 'timeline', label: '时间线（Timeline）' },
+  { value: 'timeline', label: '时间轴（Timeline）' },
   { value: 'brace', label: '括号图（Brace）' },
   { value: 'matrix', label: '矩阵图（Matrix）' },
   { value: 'bubble', label: '气泡图（Bubble）' },

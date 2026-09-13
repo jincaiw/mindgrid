@@ -70,7 +70,9 @@ async function main() {
     }
 
     // 切到树型表格，验证新布局引擎的真实渲染
-    const treeTable = page.locator('.structure-picker__card', { hasText: '树型表格' })
+    // 卡片只有缩略图（对齐 XMind），文字在 aria-label 上 → 必须按可访问名精确匹配，
+    // 否则 '逻辑图' 会同时命中 '逻辑图（向左）'
+    const treeTable = page.getByRole('button', { name: '树型表格', exact: true })
     if ((await treeTable.count()) > 0) {
       await treeTable.first().click()
       await page.waitForTimeout(700)
@@ -127,7 +129,7 @@ async function main() {
   if ((await picker2.count()) > 0) {
     await picker2.first().click()
     await page.waitForTimeout(300)
-    const logicCard = page.locator('.structure-picker__card', { hasText: '逻辑图' })
+    const logicCard = page.getByRole('button', { name: '逻辑图', exact: true })
     if ((await logicCard.count()) > 0) {
       await logicCard.first().click()
       await page.waitForTimeout(700)
@@ -147,7 +149,7 @@ async function main() {
     // 切回思维导图，后面的截图保持默认骨架
     await picker2.first().click()
     await page.waitForTimeout(300)
-    const mindmapCard = page.locator('.structure-picker__card', { hasText: '思维导图' })
+    const mindmapCard = page.getByRole('button', { name: '思维导图', exact: true })
     if ((await mindmapCard.count()) > 0) {
       await mindmapCard.first().click()
       await page.waitForTimeout(600)

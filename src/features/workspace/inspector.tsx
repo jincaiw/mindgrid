@@ -2040,10 +2040,13 @@ export function Inspector({
             <PanelSection title="骨架">
               <StructurePicker
                 value={activeSheet?.chartType ?? 'mindmap'}
-                onChange={(chartType) => {
-                  if (activeSheet) {
-                    void session.setSheetChartType(activeSheet.id, chartType)
-                  }
+                valueDirection={activeSheet?.layoutConfig?.direction}
+                onChange={(chartType, direction) => {
+                  if (!activeSheet) return
+                  void session.setSheetChartType(activeSheet.id, chartType)
+                  // 变体卡片的另一半是方向：向下/水平/双向这类"自然方向"会是 undefined，
+                  // 这时要显式回到 auto，否则从「向上」切回「向下」不会生效
+                  void session.setSheetLayoutDirection(activeSheet.id, direction ?? 'auto')
                 }}
                 disabled={!activeSheet}
               />

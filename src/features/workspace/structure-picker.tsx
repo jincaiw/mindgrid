@@ -1,33 +1,39 @@
 /**
  * 骨架（结构）选择器 —— 对标 XMind 右栏「画布」子页顶部的骨架卡片。
  *
- * XMind 的做法：面板里是一张当前骨架的缩略卡片，点开浮层按
+ * XMind 的做法（基准图 02–06）：面板里是一张当前骨架的缩略卡片，点开的浮层按
  * 「思维导图 / 逻辑图 / 括号图 / 组织结构图 / 树形图 / 时间轴 / 鱼骨图 /
- *   树型表格 / 矩阵图」分组展示缩略图，点选即换。
+ *   树型表格 / 矩阵图」分组，**每组里列的是同一骨架的方向变体**，
+ * 卡片**三列排布且只画缩略图**（不带文字，靠缩略图区分变体）。
  *
- * 两个与 XMind 的差异（有意）：
- * - **气泡图** XMind 截图里没出现，但 MindGrid 有实现，收在「思维导图」组下
- *   作为第二张卡片，不为对齐而砍功能
- * - **树型表格** 已实现：列 = 层级、行 = 叶子，父单元格跨行合并（见 tree-table-layout.ts）
+ * 与 XMind 的差异（有意）：
+ * - 气泡图：XMind 基准图里没出现，MindGrid 有实现，收在「思维导图」组下，不为对齐而砍功能
+ * - 树型表格：已实现
+ * - 锁定角标：XMind 用锁标出 Pro 专属变体，MindGrid 没有付费墙，不画锁
+ * - 变体数量：我们每种骨架给能真实生效的方向变体（思维导图 3 种等），
+ *   不做 XMind 那 12 张里的"换主题"卡片（那是主题不是结构）
  *
  * 缩略图是静态 SVG（84×52 视口），不跑布局引擎——浮层要能瞬间打开。
+ * 反向变体直接对整组图形做镜像（`mirrorThumb`），因为布局本身就是镜像出来的。
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import type { ChartType } from '../../lib/document/types'
+import type { ChartType, TopicDirection } from '../../lib/document/types'
 import { CHART_TYPE_LABELS } from './chart-type-labels'
 import { ChevronDownIcon } from './icons'
 import { usePopoverAnchor } from './use-popover-anchor'
 
 interface StructureOption {
-  value: ChartType | null
+  value: ChartType
+  /**
+   * 该变体的方向；缺省表示"该骨架的自然方向"（组织结构图向下、时间轴水平……），
+   * 选中时会**清掉**方向字段，避免文档里留下冗余配置。
+   */
+  direction?: TopicDirection
   label: string
   /** 84×52 视口内的缩略图内容 */
   thumbnail: React.ReactNode
-  /** 预留：后续新增骨架时可在卡片上标注不可用原因。 */
-  disabled?: boolean
-  disabledHint?: string
 }
 
 interface StructureGroup {
@@ -35,9 +41,24 @@ interface StructureGroup {
   options: StructureOption[]
 }
 
-/** 缩略图里节点方块的统一样式：淡填充 + 描边。 */
-const NODE = { fill: 'var(--color-accent-10)', stroke: 'var(--color-accent)' }
-const LINE = { stroke: 'var(--color-accent)', strokeWidth: 1.2, fill: 'none' }
+/** 缩略图的三种镜像方式：与布局层的变体变换一一对应。 */
+type ThumbFlip = 'x' | 'y' | 'none'
+
+/**
+ * 缩略图里骨架图形的统一样式：**中性灰**。
+ *
+ * 对齐 XMind 基准图（02）：卡片缩略图是无彩色骨架，强调色只用在选中卡片的边框上。
+ * 早期用强调蓝画缩略图，会让整片浮层看起来"全是选中态"。
+ */
+const NODE = { fill: 'var(--color-border-default)', stroke: 'var(--color-border-strong)' }
+const LINE = { stroke: 'var(--color-border-strong)', strokeWidth: 1.2, fill: 'none' }
+
+/** 把缩略图包进一个镜像用的 `<g>`；'none' 时原样返回。 */
+function mirrorThumb(flip: ThumbFlip, content: React.ReactNode) {
+  if (flip === 'none') return content
+  const transform = flip === 'x' ? 'translate(84 0) scale(-1 1)' : 'translate(0 52) scale(1 -1)'
+  return <g transform={transform}>{content}</g>
+}
 
 /** 一组小方块节点：[x, y, w, h]，用于快速拼缩略图。 */
 function nodes(rects: ReadonlyArray<readonly [number, number, number, number]>) {
@@ -225,28 +246,132 @@ function TreeTableThumb() {
   )
 }
 
+/** 单侧思维导图：所有分支在同一侧（对应「向右 / 向左」两个变体）。 */
+function MindMapSideThumb() {
+  return (
+    <>
+      <path d="M30 26 L44 14 L54 14" {...LINE} />
+      <path d="M30 26 L44 30 L54 30" {...LINE} />
+      <path d="M30 26 L44 42 L54 42" {...LINE} />
+      {nodes([
+        [4, 21, 26, 10],
+        [54, 9, 26, 10],
+        [54, 25, 26, 10],
+        [54, 37, 26, 10],
+      ])}
+    </>
+  )
+}
+
+/** 时间轴（垂直）：主轴竖排、事件挂在右侧。 */
+function TimelineVerticalThumb() {
+  return (
+    <>
+      <path d="M26 4 L26 48" {...LINE} />
+      <path d="M26 12 L38 12" {...LINE} />
+      <path d="M26 26 L38 26" {...LINE} />
+      <path d="M26 40 L38 40" {...LINE} />
+      {nodes([
+        [38, 7, 24, 10],
+        [38, 21, 24, 10],
+        [38, 35, 24, 10],
+      ])}
+      <circle cx="26" cy="12" r="2" fill={NODE.stroke} />
+      <circle cx="26" cy="26" r="2" fill={NODE.stroke} />
+      <circle cx="26" cy="40" r="2" fill={NODE.stroke} />
+    </>
+  )
+}
+
 /**
- * 分组顺序按 XMind 截图的骨架浮层排列。
- * 每组未来可扩展多个「变体」卡片（XMind 同组内有多张），当前每种 1 张。
+ * 分组顺序按 XMind 基准图的骨架浮层排列。
+ *
+ * **组内列的是同一骨架的方向变体**（XMind 也是这么组织的：「逻辑图（向左）」不新开一组）。
+ * 变体的方向存进 `layoutConfig.direction`，由布局层的 `applyDirectionVariant` 落地。
  */
 const STRUCTURE_GROUPS: readonly StructureGroup[] = [
   {
     title: '思维导图',
     options: [
       { value: 'mindmap', label: CHART_TYPE_LABELS.mindmap, thumbnail: <MindMapThumb /> },
+      {
+        value: 'mindmap',
+        direction: 'right',
+        label: `${CHART_TYPE_LABELS.mindmap}（向右）`,
+        thumbnail: <MindMapSideThumb />,
+      },
+      {
+        value: 'mindmap',
+        direction: 'left',
+        label: `${CHART_TYPE_LABELS.mindmap}（向左）`,
+        thumbnail: mirrorThumb('x', <MindMapSideThumb />),
+      },
       { value: 'bubble', label: CHART_TYPE_LABELS.bubble, thumbnail: <BubbleThumb /> },
     ],
   },
-  { title: '逻辑图', options: [{ value: 'logic', label: CHART_TYPE_LABELS.logic, thumbnail: <LogicThumb /> }] },
-  { title: '括号图', options: [{ value: 'brace', label: CHART_TYPE_LABELS.brace, thumbnail: <BraceThumb /> }] },
+  {
+    title: '逻辑图',
+    options: [
+      { value: 'logic', label: CHART_TYPE_LABELS.logic, thumbnail: <LogicThumb /> },
+      {
+        value: 'logic',
+        direction: 'left',
+        label: `${CHART_TYPE_LABELS.logic}（向左）`,
+        thumbnail: mirrorThumb('x', <LogicThumb />),
+      },
+    ],
+  },
+  {
+    title: '括号图',
+    options: [
+      { value: 'brace', label: CHART_TYPE_LABELS.brace, thumbnail: <BraceThumb /> },
+      {
+        value: 'brace',
+        direction: 'left',
+        label: `${CHART_TYPE_LABELS.brace}（向左）`,
+        thumbnail: mirrorThumb('x', <BraceThumb />),
+      },
+    ],
+  },
   {
     title: '组织结构图',
-    options: [{ value: 'org', label: CHART_TYPE_LABELS.org, thumbnail: <OrgThumb /> }],
+    options: [
+      { value: 'org', label: `${CHART_TYPE_LABELS.org}（向下）`, thumbnail: <OrgThumb /> },
+      {
+        value: 'org',
+        direction: 'up',
+        label: `${CHART_TYPE_LABELS.org}（向上）`,
+        thumbnail: mirrorThumb('y', <OrgThumb />),
+      },
+    ],
   },
-  { title: '树形图', options: [{ value: 'tree', label: CHART_TYPE_LABELS.tree, thumbnail: <TreeThumb /> }] },
+  {
+    title: '树形图',
+    options: [
+      { value: 'tree', label: `${CHART_TYPE_LABELS.tree}（向下）`, thumbnail: <TreeThumb /> },
+      {
+        value: 'tree',
+        direction: 'up',
+        label: `${CHART_TYPE_LABELS.tree}（向上）`,
+        thumbnail: mirrorThumb('y', <TreeThumb />),
+      },
+    ],
+  },
   {
     title: '时间轴',
-    options: [{ value: 'timeline', label: CHART_TYPE_LABELS.timeline, thumbnail: <TimelineThumb /> }],
+    options: [
+      {
+        value: 'timeline',
+        label: `${CHART_TYPE_LABELS.timeline}（水平）`,
+        thumbnail: <TimelineThumb />,
+      },
+      {
+        value: 'timeline',
+        direction: 'down',
+        label: `${CHART_TYPE_LABELS.timeline}（垂直）`,
+        thumbnail: <TimelineVerticalThumb />,
+      },
+    ],
   },
   { title: '鱼骨图', options: [{ value: 'fishbone', label: CHART_TYPE_LABELS.fishbone, thumbnail: <FishboneThumb /> }] },
   {
@@ -256,11 +381,42 @@ const STRUCTURE_GROUPS: readonly StructureGroup[] = [
   { title: '矩阵图', options: [{ value: 'matrix', label: CHART_TYPE_LABELS.matrix, thumbnail: <MatrixThumb /> }] },
 ]
 
-/** 扁平索引，供「当前骨架」卡片回查缩略图与名称。 */
-function findOption(value: ChartType): StructureOption | null {
+/**
+ * 把方向归一化成"卡片能匹配的形式"。
+ *
+ * 各组里「自然方向」的那张卡（组织结构图向下、时间轴水平、思维导图双向……）不带 `direction`，
+ * 所以文档里若显式存了 `down` / `right` 也要映射回 `undefined`，否则打开文档时没有卡片是高亮的。
+ */
+function normalizeDirection(
+  chartType: ChartType,
+  direction: TopicDirection | undefined,
+): TopicDirection | undefined {
+  switch (chartType) {
+    case 'org':
+    case 'tree':
+      return direction === 'up' ? 'up' : undefined
+    case 'timeline':
+      return direction === 'down' ? 'down' : undefined
+    case 'mindmap':
+      return direction === 'left' || direction === 'right' ? direction : undefined
+    case 'logic':
+    case 'brace':
+      return direction === 'left' ? 'left' : undefined
+    default:
+      return undefined
+  }
+}
+
+/** 按（骨架 + 归一化方向）回查选项；找不到返回 null。 */
+function findOption(
+  chartType: ChartType,
+  direction: TopicDirection | undefined,
+): StructureOption | null {
+  const target = normalizeDirection(chartType, direction)
   for (const group of STRUCTURE_GROUPS) {
     for (const option of group.options) {
-      if (option.value === value) {
+      if (option.value !== chartType) continue
+      if (normalizeDirection(option.value, option.direction) === target) {
         return option
       }
     }
@@ -268,20 +424,33 @@ function findOption(value: ChartType): StructureOption | null {
   return null
 }
 
+/** 卡片的稳定 key：同骨架的不同方向变体必须区分开。 */
+function optionKey(option: StructureOption): string {
+  return `${option.value}-${option.direction ?? 'natural'}`
+}
+
 interface StructurePickerProps {
   value: ChartType
-  onChange: (chartType: ChartType) => void
+  /** 当前画布的结构方向（`layoutConfig.direction`）。 */
+  valueDirection?: TopicDirection
+  onChange: (chartType: ChartType, direction?: TopicDirection) => void
   disabled?: boolean
 }
 
-export function StructurePicker({ value, onChange, disabled = false }: StructurePickerProps) {
+export function StructurePicker({
+  value,
+  valueDirection,
+  onChange,
+  disabled = false,
+}: StructurePickerProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   const triggerRef = useRef<HTMLButtonElement | null>(null)
   const popoverRef = useRef<HTMLDivElement | null>(null)
   // 浮层坐标（视口坐标，fixed 定位）：portal 到 body，否则被右栏滚动容器裁切
   const anchor = usePopoverAnchor(open, triggerRef)
-  const current = findOption(value)
+  const current = findOption(value, valueDirection)
+  const currentDirection = normalizeDirection(value, valueDirection)
 
   // 点击外部 / Esc 关闭浮层（与工具栏下拉、画布标签右键菜单同一套交互）
   useEffect(() => {
@@ -350,23 +519,23 @@ export function StructurePicker({ value, onChange, disabled = false }: Structure
                   <h3 className="structure-picker__group-title">{group.title}</h3>
                   <div className="structure-picker__grid">
                     {group.options.map((option) => {
-                      const selected = option.value !== null && option.value === value
+                      const selected =
+                        option.value === value &&
+                        normalizeDirection(option.value, option.direction) === currentDirection
                       return (
                         <button
-                          key={option.label}
+                          key={optionKey(option)}
                           className={`structure-picker__card${
                             selected ? ' structure-picker__card--selected' : ''
                           }`}
                           type="button"
-                          disabled={option.disabled}
-                          title={option.disabled ? option.disabledHint : option.label}
+                          // XMind 的卡片只画缩略图，不带文字；名字走 tooltip 与无障碍名
+                          title={option.label}
                           aria-label={option.label}
                           aria-pressed={selected}
                           onClick={() => {
-                            if (option.value) {
-                              onChange(option.value)
-                              setOpen(false)
-                            }
+                            onChange(option.value, option.direction)
+                            setOpen(false)
                           }}
                         >
                           <svg
@@ -377,7 +546,6 @@ export function StructurePicker({ value, onChange, disabled = false }: Structure
                           >
                             {option.thumbnail}
                           </svg>
-                          <span className="structure-picker__card-name">{option.label}</span>
                         </button>
                       )
                     })}
