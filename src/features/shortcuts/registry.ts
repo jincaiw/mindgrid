@@ -133,6 +133,17 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     scope: 'global',
   },
   {
+    id: 'view-focus-branch',
+    // 与 XMind 同键（⌘;）。只给**进入**方向配快捷键：退出走 Esc，
+    // 不给退出项配 ⌘⇧; 之类的组合——Shift+; 在多数布局上报的是 ':'，
+    // 以 event.key 为准的绑定会在别的键盘布局上悄悄失灵。
+    combo: { key: ';', mod: true },
+    label: '仅显示该分支',
+    description: '只保留中心主题到该主题的路径与它自己的子树，其余分支隐藏；Esc 退出',
+    category: '视图',
+    scope: 'canvas',
+  },
+  {
     id: 'view-recenter',
     combo: { key: 'r', mod: true },
     label: '前往中心主题',
@@ -374,7 +385,7 @@ export const SHORTCUTS: readonly ShortcutDef[] = [
     id: 'nav-escape',
     combo: { key: 'Escape' },
     label: '退出/取消',
-    description: '退出搜索、大纲视图或专注模式',
+    description: '退出搜索、大纲视图、甘特图、专注模式或分支聚焦',
     category: '画布导航',
     scope: 'global',
   },

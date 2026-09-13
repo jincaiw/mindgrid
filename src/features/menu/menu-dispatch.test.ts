@@ -1,6 +1,7 @@
 import { vi } from 'vitest'
 import type { DocumentSession } from '../document/use-document-session'
 import type { SheetSnapshot } from '../../lib/document/types'
+import { FOCUS_BRANCH_UNAVAILABLE_MESSAGE } from '../../lib/document/focus'
 import { computeLayout } from '../canvas/layouts'
 import { runMenuCommand, type MenuCommandContext } from './menu-dispatch'
 
@@ -77,6 +78,8 @@ interface HarnessOptions {
   desktopFileActionsEnabled?: boolean
   activeSheet?: SheetSnapshot | null
   session?: Partial<DocumentSession>
+  /** 聚焦可见集；缺省视为「未聚焦」（null）。 */
+  focusVisibleTopicIds?: ReadonlySet<string> | null
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -91,6 +94,7 @@ function makeHarness(options: HarnessOptions = {}) {
     toggleSidebar: vi.fn(),
     toggleToolbar: vi.fn(),
     toggleTabBar: vi.fn(),
+    setFocusTopicId: vi.fn(),
     startPresentation: vi.fn(),
     startPitch: vi.fn(),
     openSearch: vi.fn(),
@@ -99,6 +103,7 @@ function makeHarness(options: HarnessOptions = {}) {
     checkForUpdates: vi.fn(),
     cycleTheme: vi.fn(),
     requestCanvasCommand: vi.fn(),
+    focusVisibleTopicIds: options.focusVisibleTopicIds ?? null,
   }
 
   const ctx: MenuCommandContext = {
@@ -404,6 +409,53 @@ describe('查看', () => {
     runMenuCommand('edit.expand-all', ctx)
     expect(setSelectedTopicIds).not.toHaveBeenCalled()
     expect(session.setTopicsCollapsed).not.toHaveBeenCalled()
+  })
+})
+
+describe('查看 → 仅显示该分支 / 显示全部主题', () => {
+  it('聚焦选中主题', () => {
+    const { ctx, setFocusTopicId, notify } = makeHarness({ selectedTopicIds: ['topic_a'] })
+
+    runMenuCommand('view.focus-branch', ctx)
+
+    expect(setFocusTopicId).toHaveBeenCalledWith('topic_a')
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('中心主题不能作为聚焦目标，改为给出提示且不改变状态', () => {
+    // 只显示中心主题的"分支"就是整幅图本身，是一次空操作。
+    // 若放行，提示条会亮起、画布却毫无变化——"聚焦中"这个说法就和画布对不上了。
+    const { ctx, setFocusTopicId, notify } = makeHarness({ selectedTopicIds: ['topic_root'] })
+
+    runMenuCommand('view.focus-branch', ctx)
+
+    expect(setFocusTopicId).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith(FOCUS_BRANCH_UNAVAILABLE_MESSAGE)
+  })
+
+  it('退出聚焦是幂等的：没有聚焦时点它也不报错', () => {
+    const { ctx, setFocusTopicId, notify } = makeHarness()
+
+    runMenuCommand('view.focus-exit', ctx)
+
+    expect(setFocusTopicId).toHaveBeenCalledWith(null)
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('全选在聚焦时只圈住可见主题', () => {
+    // 少了这层收敛，聚焦时按 ⌘A 会把隐藏分支一起选进来，
+    // 接一个 Delete 就删掉了屏幕上看不见的整条分支。
+    const { ctx, setSelectedTopicIds } = makeHarness({
+      focusVisibleTopicIds: new Set(['topic_root', 'topic_a', 'topic_a1']),
+    })
+
+    runMenuCommand('edit.select-all', ctx)
+
+    expect(setSelectedTopicIds).toHaveBeenCalledWith(['topic_root', 'topic_a', 'topic_a1'])
+    // 负向对照：topic_b 不在可见集里，不能被选进来
+    expect((setSelectedTopicIds as ReturnType<typeof vi.fn>).mock.calls[0][0]).not.toContain(
+      'topic_b',
+    )
   })
 })
 

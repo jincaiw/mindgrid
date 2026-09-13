@@ -1057,3 +1057,82 @@ it('creates a floating topic on double-click of blank canvas (XMind-style)', asy
 })
 
 
+
+/**
+ * 「仅显示该分支」（查看菜单 / ⌘;）。
+ *
+ * 断言必须包含**同级分支消失了**——只断言"目标分支还在"是测不出错的：
+ * 完全不做过滤的实现同样会让前半句通过。
+ */
+it('renders only the focused branch and its path when focusTopicId is set', () => {
+  const session = createSessionStub({})
+
+  const { container } = renderWithApp(
+    <CanvasHost session={session} focusTopicId="topic_insight" />,
+  )
+
+  // 保留：中心主题（路径）+ 关键洞察（自身）+ 洞察子主题（子树）
+  expect(container.querySelector('[data-topic-id="topic_root"]')).not.toBeNull()
+  expect(container.querySelector('[data-topic-id="topic_insight"]')).not.toBeNull()
+  expect(container.querySelector('[data-topic-id="topic_insight_child"]')).not.toBeNull()
+
+  // 同级分支必须消失
+  expect(container.querySelector('[data-topic-id="topic_action"]')).toBeNull()
+  expect(container.querySelector('[data-topic-id="topic_hypothesis"]')).toBeNull()
+})
+
+it('keeps the whole canvas when there is no focus', () => {
+  const session = createSessionStub({})
+
+  const { container } = renderWithApp(<CanvasHost session={session} />)
+
+  for (const id of [
+    'topic_root',
+    'topic_insight',
+    'topic_insight_child',
+    'topic_action',
+    'topic_hypothesis',
+  ]) {
+    expect(container.querySelector(`[data-topic-id="${id}"]`)).not.toBeNull()
+  }
+})
+
+it('counts only the visible topics on Cmd/Ctrl + A while focused', () => {
+  const session = createSessionStub({})
+
+  renderWithApp(<CanvasHost session={session} focusTopicId="topic_insight" />)
+
+  fireEvent.keyDown(window, { key: 'a', ctrlKey: true })
+
+  // 未聚焦时是 5 个（见上一条同名测试）；聚焦「关键洞察」后只剩 3 个
+  expect(screen.getByText('已选中 3 个主题')).toBeInTheDocument()
+})
+
+it('requests branch focus with Cmd/Ctrl + ; and refuses the center topic', () => {
+  const onFocusTopicIdChange = vi.fn()
+  const onNotify = vi.fn()
+  const session = createSessionStub({})
+
+  renderWithApp(
+    <CanvasHost session={session} onFocusTopicIdChange={onFocusTopicIdChange} onNotify={onNotify} />,
+  )
+
+  // 默认选区是中心主题：只显示它的"分支"就是整幅图，必须拒绝并说明原因
+  fireEvent.keyDown(window, { key: ';', ctrlKey: true })
+
+  expect(onFocusTopicIdChange).not.toHaveBeenCalled()
+  expect(onNotify).toHaveBeenCalledWith('中心主题不能只显示其分支')
+})
+
+it('requests branch focus for the selected topic with Cmd/Ctrl + ;', () => {
+  const onFocusTopicIdChange = vi.fn()
+  const session = createSessionStub({})
+
+  renderWithApp(<CanvasHost session={session} onFocusTopicIdChange={onFocusTopicIdChange} />)
+
+  const scene = screen.getByLabelText('思维导图舞台')
+  fireEvent.click(within(scene).getByRole('button', { name: /关键洞察/ }))
+  fireEvent.keyDown(window, { key: ';', ctrlKey: true })
+
+  expect(onFocusTopicIdChange).toHaveBeenCalledWith('topic_insight')
+})

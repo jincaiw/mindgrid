@@ -18,6 +18,12 @@ import {
   collectVisibleTopicIds,
 } from '../../lib/document/tree'
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
+import {
+  FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
+  resolveBranchFocusTarget,
+  resolveFocusVisibleTopicIds,
+  restrictToVisibleTopics,
+} from '../../lib/document/focus'
 import { resolveZoomShortcut } from './zoom-shortcut'
 import { getActiveSheet } from '../../lib/document/sheets'
 import type {
@@ -60,7 +66,7 @@ import { findNearestNodeInDirection, type NavigationDirection } from './topic-na
 import { Minimap } from './minimap'
 import type { CanvasCommand, ZoomCommand } from '../menu/menu-actions'
 import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
-import { computeLayout } from './layouts'
+import { computeLayout, restrictLayoutToTopicIds } from './layouts'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveThemeBackground, resolveTopicStyle } from './runtime/style-resolver'
 import {
@@ -134,6 +140,21 @@ interface CanvasHostProps {
    * 外层都驱动不了，故沿用 zoomRequest 的单向 nonce 请求模式。
    */
   canvasCommand?: { command: CanvasCommand; nonce: number } | null
+  /**
+   * 「仅显示该分支」的聚焦主题（`null` = 不聚焦）。
+   *
+   * 与 `canvasCommand` 的 nonce 模式不同：聚焦是**持续状态**而非一次性动作，
+   * 状态栏提示、菜单项、画布三处都要读到同一个值，故走受控 prop。
+   * 悬空 id（主题已被删除）与中心主题一律按"不聚焦"处理，见 lib/document/focus.ts。
+   */
+  focusTopicId?: string | null
+  /**
+   * 请求改变聚焦主题（画布内的 ⌘; 与 Esc 走这里）。
+   *
+   * 状态仍归 WorkspaceScreen 所有——状态栏提示、菜单项可用性都要读同一份值。
+   * 画布只作为又一个入口，不自己存一份，否则两处会各说各话。
+   */
+  onFocusTopicIdChange?: (topicId: string | null) => void
 }
 
 const HISTORY_FOCUS_HIGHLIGHT_MS = 1600
@@ -231,6 +252,7 @@ function MindMapScene({
   numbering,
   layoutDirection,
   canvasSettings,
+  focusVisibleTopicIds,
   activeTopicId,
   selectedTopicIds,
   editingTopicId,
@@ -288,6 +310,13 @@ function MindMapScene({
   layoutDirection: TopicDirection | undefined
   /** 文档级画布设置（彩虹分支 / 色板 / 粗细 / 布局开关）。 */
   canvasSettings: DocumentCanvasSettings
+  /**
+   * 「仅显示该分支」的可见主题集（`null` = 不聚焦，全部可见）。
+   *
+   * 由 TreeWorkspace 用 `resolveFocusVisibleTopicIds` 算出后下传：算一次、三处共用
+   * （布局裁剪 / 装饰元素过滤 / 选中态收敛），不在场景里重复遍历整棵树。
+   */
+  focusVisibleTopicIds: ReadonlySet<string> | null
   activeTopicId: string | null
   selectedTopicIds: string[]
   editingTopicId: string | null
@@ -340,27 +369,59 @@ function MindMapScene({
   /** 双击画布空白时创建浮动主题（XMind 式）。offsetX/offsetY 为根主题相对坐标。 */
   onCreateFloatingTopic?: (text: string, offsetX: number, offsetY: number) => Promise<void>
 }) {
-  const layout = useMemo(
+  const layout = useMemo(() => {
+    const full = computeLayout(rootTopic, chartType, floatingTopics, {
+      balance: canvasSettings.balance,
+      compact: canvasSettings.compact,
+      alignSiblings: canvasSettings.alignSiblings,
+      direction: layoutDirection,
+      freeBranch: canvasSettings.freeBranchLayout,
+      stackTopics: canvasSettings.stackTopics,
+    })
+    // 「仅显示该分支」在**布局出口**裁剪一次：命中测试、视口剔除、缩略图、连线几何、
+    // 拖拽落点读的都是这份 layout，因此裁剪一次即全局生效。若改在画节点时过滤，
+    // 仍会点到看不见的主题、连线仍指向空白处。
+    return focusVisibleTopicIds ? restrictLayoutToTopicIds(full, focusVisibleTopicIds) : full
+  }, [
+    rootTopic,
+    chartType,
+    floatingTopics,
+    canvasSettings.balance,
+    canvasSettings.compact,
+    canvasSettings.alignSiblings,
+    canvasSettings.freeBranchLayout,
+    canvasSettings.stackTopics,
+    layoutDirection,
+    focusVisibleTopicIds,
+  ])
+
+  // 联系线 / 外框 / 概要的世界几何由被引用主题的位置算出，必须一起裁剪：
+  // 否则聚焦模式下会留下连到不可见主题的线，或外框缩成只剩一个主题的小圈
+  // （scene-builder 的 topicGroupBounds 对缺失主题是**跳过**，没有这条就会画出"半截"装饰）。
+  const visibleRelationships = useMemo(
     () =>
-      computeLayout(rootTopic, chartType, floatingTopics, {
-        balance: canvasSettings.balance,
-        compact: canvasSettings.compact,
-        alignSiblings: canvasSettings.alignSiblings,
-        direction: layoutDirection,
-        freeBranch: canvasSettings.freeBranchLayout,
-        stackTopics: canvasSettings.stackTopics,
-      }),
-    [
-      rootTopic,
-      chartType,
-      floatingTopics,
-      canvasSettings.balance,
-      canvasSettings.compact,
-      canvasSettings.alignSiblings,
-      canvasSettings.freeBranchLayout,
-      canvasSettings.stackTopics,
-      layoutDirection,
-    ],
+      focusVisibleTopicIds
+        ? restrictToVisibleTopics(
+            relationships,
+            (item) => [item.fromTopicId, item.toTopicId],
+            focusVisibleTopicIds,
+          )
+        : relationships,
+    [relationships, focusVisibleTopicIds],
+  )
+  const visibleBoundaries = useMemo(
+    () =>
+      focusVisibleTopicIds
+        ? restrictToVisibleTopics(boundaries, (item) => item.topicIds, focusVisibleTopicIds)
+        : boundaries,
+    [boundaries, focusVisibleTopicIds],
+  )
+  const visibleSummaries = useMemo(
+    () =>
+      focusVisibleTopicIds
+        ? restrictToVisibleTopics(summaries, (item) => item.topicIds, focusVisibleTopicIds)
+        : summaries,
+    [summaries, focusVisibleTopicIds],
   )
   // 主题编号：从画布 numbering 配置派生的展示层前缀，不写入主题文本。
   // 屏幕与导出必须算同一份映射，否则编号会一端有一端没有。
@@ -517,9 +578,9 @@ function MindMapScene({
         camera,
         visualStates,
         overlays: { selectionBox: null, dragPreview: null, dropIndicator: null },
-        relationships,
-        boundaries,
-        summaries,
+        relationships: visibleRelationships,
+        boundaries: visibleBoundaries,
+        summaries: visibleSummaries,
         themeId,
         branchStyle,
         numberMap,
@@ -531,9 +592,9 @@ function MindMapScene({
       camera,
       visualStates,
       viewportSize,
-      relationships,
-      boundaries,
-      summaries,
+      visibleRelationships,
+      visibleBoundaries,
+      visibleSummaries,
       themeId,
       branchStyle,
       numberMap,
@@ -2107,6 +2168,8 @@ function TreeWorkspace({
   onCameraChange,
   zoomRequest,
   canvasCommand,
+  focusTopicId,
+  onFocusTopicIdChange,
 }: CanvasHostProps) {
   const {
     activeTopicId,
@@ -2138,6 +2201,28 @@ function TreeWorkspace({
     () => resolveCanvasSettings(session.document!.settings),
     [session.document!.settings],
   )
+  /**
+   * 「仅显示该分支」的可见主题集；`null` = 不聚焦。
+   *
+   * 在这里算一次而不是在 MindMapScene 里算：布局裁剪、⌘A 的可选范围、装饰元素过滤
+   * 三处用的是同一个集合，算三遍会各遍历一遍整棵树。
+   */
+  const focusVisibleTopicIds = useMemo(
+    () => resolveFocusVisibleTopicIds(rootTopic, focusTopicId),
+    [rootTopic, focusTopicId],
+  )
+  /**
+   * ⌘A 的可选范围 = 可见主题 ∩ 聚焦可见集。
+   *
+   * 少了这一层交集，聚焦时按 ⌘A 会把**隐藏分支也选进来**——屏幕上只看到一条分支，
+   * 接一个 Delete 却删掉了整幅图。聚焦模式下"看得见的"与"选得到的"必须一致。
+   */
+  const selectableTopicIds = useMemo(() => {
+    const visible = collectVisibleTopicIds(rootTopic)
+    return focusVisibleTopicIds
+      ? visible.filter((topicId) => focusVisibleTopicIds.has(topicId))
+      : visible
+  }, [rootTopic, focusVisibleTopicIds])
   const [localSelectedTopicIds, setLocalSelectedTopicIds] = useState<string[]>(() =>
     activeTopicId ? [activeTopicId] : [rootTopic.id],
   )
@@ -2702,9 +2787,11 @@ function TreeWorkspace({
       }
 
       // Cmd/Ctrl + A：全选当前画布可见主题（编辑中由 textarea 自行处理文本全选）
+      // 「可见」= 未被折叠隐藏 ∩ 未被聚焦隐藏：聚焦时全选必须只圈住看得见的那些，
+      // 否则接着一个 Delete 会删掉屏幕外看不见的整条分支。
       if (isModifierPressed && event.key.toLowerCase() === 'a' && !editingTopicId) {
         event.preventDefault()
-        setSelectedTopicIds(collectVisibleTopicIds(rootTopic))
+        setSelectedTopicIds(selectableTopicIds)
         return
       }
 
@@ -2712,6 +2799,21 @@ function TreeWorkspace({
       if (isModifierPressed && event.key.toLowerCase() === 'r') {
         event.preventDefault()
         setFocusRootNonce((n) => n + 1)
+        return
+      }
+
+      // ⌘;「仅显示该分支」（与 XMind 同键）。目标解析、中心主题的拒绝、提示文案
+      // 都与「查看 → 仅显示该分支」共用同一份实现——两条入口不能各判一套。
+      // 退出方向不在此处配键（Esc 由 WorkspaceScreen 统一处理），故没有 shift 分支。
+      if (isModifierPressed && event.key === ';') {
+        event.preventDefault()
+        const selectedTopicId = selectedTopicIds[0] ?? activeTopicId ?? rootTopic.id
+        const target = resolveBranchFocusTarget(rootTopic, selectedTopicId)
+        if (!target) {
+          onNotify?.(FOCUS_BRANCH_UNAVAILABLE_MESSAGE)
+          return
+        }
+        onFocusTopicIdChange?.(target)
         return
       }
 
@@ -2886,12 +2988,15 @@ function TreeWorkspace({
     handlePasteTopics,
     moveTopic,
     moveTopicInParent,
+    onFocusTopicIdChange,
+    onNotify,
     openSearch,
     pasteTopics,
     redo,
     rootTopic,
     searchOpen,
     selectTopic,
+    selectableTopicIds,
     selectedTopicIds,
     setFocusRootNonce,
     setSelectedTopicIds,
@@ -2918,6 +3023,7 @@ function TreeWorkspace({
           numbering={activeSheet.numbering}
           layoutDirection={activeSheet.layoutConfig?.direction}
           canvasSettings={canvasSettings}
+          focusVisibleTopicIds={focusVisibleTopicIds}
           activeTopicId={activeTopicId}
           selectedTopicIds={selectedTopicIds}
           editingTopicId={editingTopicId}
@@ -2987,6 +3093,8 @@ export function CanvasHost({
   onCameraChange,
   zoomRequest,
   canvasCommand,
+  focusTopicId,
+  onFocusTopicIdChange,
 }: CanvasHostProps) {
   // 画布背景：主题背景色 + 画布级覆盖，与 PNG/SVG 导出同源。
   // 屏幕过去用的是 UI 令牌，切到暗色主题后「屏幕浅、导出深」，此处统一。
@@ -3018,6 +3126,8 @@ export function CanvasHost({
         onCameraChange,
         zoomRequest,
         canvasCommand,
+        focusTopicId,
+        onFocusTopicIdChange,
       })}
     </main>
   )

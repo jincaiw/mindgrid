@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { getActiveSheet } from '../../lib/document/sheets'
+import { findTopicById } from '../../lib/document/tree'
+import { resolveFocusVisibleTopicIds } from '../../lib/document/focus'
 import {
   PITCH_SETTINGS_KEYS,
   resolvePitchSettings,
@@ -163,6 +165,14 @@ export function WorkspaceScreen({
   const [isOutlinerMode, setIsOutlinerMode] = useState(false)
   // 批次 23：甘特图全屏视图（汇总全文档任务时间轴，Esc 返回）
   const [isGanttMode, setIsGanttMode] = useState(false)
+  /**
+   * 「查看 → 仅显示该分支」的聚焦主题。
+   *
+   * 只留**一个 id**，可见集与提示文案都由它派生（见下方 focusState）：
+   * 若把可见集也存成 state，主题被删除/撤销后两份状态会不同步，
+   * 提示条会继续挂在画布上——"说的"和"显示"就成了两回事。
+   */
+  const [focusTopicId, setFocusTopicId] = useState<string | null>(null)
   // 批次 20：快捷键帮助浮层显隐
   const [isShortcutsHelpOpen, setIsShortcutsHelpOpen] = useState(false)
   // 工具栏“插入→备注/标签/链接/标记”：请求 Inspector 切到样式子页
@@ -186,6 +196,44 @@ export function WorkspaceScreen({
   // 直接依赖它会让本 effect 每渲染重跑一次；取 id 则与文档变更同频
   const activeSheetId = activeSheet?.id
   const activeSheetRootTopicId = activeSheet?.rootTopic.id
+  // 聚焦相关计算要的是根主题**对象**（遍历需要），而不是它的 id
+  const activeSheetRootTopic = activeSheet?.rootTopic
+
+  /**
+   * 「仅显示该分支」的派生状态；`null` = 当前没有生效中的聚焦。
+   *
+   * 三种情况都会落到 `null`（都由 resolveFocusVisibleTopicIds 统一裁决）：
+   * 未聚焦、聚焦的是中心主题、以及被聚焦的主题已经不在树里了（删掉/换了画布）。
+   * 最后一种正是"不能直接拿 state 里的 id 当真相"的原因——那会留下一个悬空的聚焦提示。
+   */
+  const focusState = useMemo(() => {
+    if (!activeSheetRootTopic || !focusTopicId) {
+      return null
+    }
+    const visible = resolveFocusVisibleTopicIds(activeSheetRootTopic, focusTopicId)
+    if (!visible) {
+      return null
+    }
+    return {
+      topicId: focusTopicId,
+      visible,
+      // 提示条要写出聚焦的是哪条分支，否则用户只知道"少了东西"，不知道少了什么
+      label: findTopicById(activeSheetRootTopic, focusTopicId)?.text ?? '',
+    }
+  }, [activeSheetRootTopic, focusTopicId])
+
+  /**
+   * 切换聚焦（`null` = 退出）。菜单、画布快捷键、提示条上的退出按钮共用。
+   *
+   * 进入聚焦时把选区收敛到被聚焦的主题：否则选区里可能留着刚被隐藏的兄弟分支，
+   * 接下来的一次 Delete 就会删掉屏幕上根本看不见的东西。
+   */
+  const handleFocusTopicIdChange = useCallback((topicId: string | null) => {
+    setFocusTopicId(topicId)
+    if (topicId) {
+      setSelectedTopicIds([topicId])
+    }
+  }, [])
 
   useEffect(() => {
     if (!activeSheetId || !activeSheetRootTopicId) {
@@ -253,6 +301,9 @@ export function WorkspaceScreen({
         toggleSidebar: () => setSidebarVisible((v) => !v),
         toggleToolbar: () => setToolbarVisible((v) => !v),
         toggleTabBar: () => setTabBarVisible((v) => !v),
+        setFocusTopicId: handleFocusTopicIdChange,
+        // 「全选」要按聚焦后的可见范围收敛，否则聚焦时 ⌘A 会圈进看不见的分支
+        focusVisibleTopicIds: focusState?.visible ?? null,
         startPresentation: () => setIsPresenting(true),
         startPitch: () => setIsPitching(true),
         openSearch: () => setSearchOpen(true),
@@ -268,6 +319,8 @@ export function WorkspaceScreen({
       activeSheet,
       desktopFileActionsEnabled,
       focusInspectorTopicTab,
+      focusState,
+      handleFocusTopicIdChange,
       onCheckForUpdates,
       onCycleTheme,
       onNotify,
@@ -395,13 +448,18 @@ export function WorkspaceScreen({
           setIsGanttMode(false)
         } else if (isZenMode) {
           setIsZenMode(false)
+        } else if (focusState) {
+          // 分支聚焦的退出放在 Esc 链最后：它是"取消当前受限视图"的最后一段。
+          // 画布内的 Esc 只处理多选收缩，且聚焦生效时会主动让位（见 canvas-host），
+          // 因此一次 Esc 只会退出一层，不会既收选区又退聚焦。
+          setFocusTopicId(null)
         }
       }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
     // 依赖里放原始值而非 activeSheet 对象：后者每次渲染都是新引用，会让监听反复重挂
-  }, [isZenMode, isOutlinerMode, isGanttMode, session, activeSheetRootTopicId])
+  }, [isZenMode, isOutlinerMode, isGanttMode, focusState, session, activeSheetRootTopicId])
 
   return (
     <div
@@ -499,6 +557,28 @@ export function WorkspaceScreen({
               />
             ) : null}
             <div className="canvas-column">
+              {/*
+                「仅显示该分支」生效中的提示条。只在聚焦时出现，退出后整块消失——
+                它不是常驻控件。存在的理由：聚焦会让画布突然"少掉"大半主题，
+                没有就地可见的退出口，用户会以为分支被删了。
+                ZEN 模式下状态条会被隐藏，此处仍可用，故提示不放在状态条里。
+              */}
+              {focusState ? (
+                <div className="focus-branch-chip">
+                  {/* role=status 只挂在文字上：它是给读屏的播报，不该把退出按钮一起圈进去 */}
+                  <span className="focus-branch-chip__label" role="status">
+                    仅显示该分支{focusState.label ? ` · ${focusState.label}` : ''}
+                  </span>
+                  <button
+                    className="focus-branch-chip__exit"
+                    type="button"
+                    onClick={() => setFocusTopicId(null)}
+                    title="显示全部主题（Esc）"
+                  >
+                    显示全部
+                  </button>
+                </div>
+              ) : null}
               <CanvasHost
                 session={session}
                 selectedTopicIds={selectedTopicIds}
@@ -517,6 +597,8 @@ export function WorkspaceScreen({
                 onCameraChange={handleCameraChange}
                 zoomRequest={zoomRequest}
                 canvasCommand={canvasCommand}
+                focusTopicId={focusState?.topicId ?? null}
+                onFocusTopicIdChange={handleFocusTopicIdChange}
               />
             </div>
             {inspectorVisible ? (

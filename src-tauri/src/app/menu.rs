@@ -293,6 +293,17 @@ pub fn build_menu<R: Runtime>(
             &format!("实际大小{}", combo("0")),
         )?)
         .item(&item(handle, "view.zoom-fit", &format!("适应画布{}", combo("1")))?)
+        // 「仅显示该分支」与缩放同组（XMind 的排布），但**必须是两项**：
+        // XMind 只给了一条进入项，退出只能靠再点一次或 Esc——那样菜单无法表达
+        // "怎么回到完整视图"。退出项**不写快捷键提示**：它只由 Esc 触发，
+        // 而 Esc 是上下文通用的取消键，写成 ⌘⇧; 之类会在别的键盘布局上失灵
+        // （Shift+; 报的是 ':'），菜单提示不能出现按了没反应的组合。
+        .item(&item(
+            handle,
+            "view.focus-branch",
+            &format!("仅显示该分支{}", combo(";")),
+        )?)
+        .item(&item(handle, "view.focus-exit", "显示全部主题")?)
         .separator()
         .item(&item(handle, "view.zen", &format!("ZEN 模式{}", combo(".")))?)
         .item(&item(

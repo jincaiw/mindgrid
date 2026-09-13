@@ -12,6 +12,7 @@
  */
 
 import type { TopicSnapshot } from '../../lib/document/types'
+import { restrictLayoutToTopicIds } from '../canvas/layouts'
 import type {
   MindMapLayoutResult,
   MindMapNodeLayout,
@@ -150,19 +151,16 @@ export function computeFitAllCamera(
 
 /**
  * 按揭示集合过滤布局：只保留已揭示的节点，以及两端均已揭示的边。
- * 保留原布局的 width/height/offset，使相机数学与全景一致。
+ *
+ * 与画布聚焦模式（`restrictLayoutToTopicIds`）共用同一个裁剪实现——
+ * 两者语义完全相同，只是集合来源不同（放映是「已揭示」，聚焦是「该分支 + 祖先路径」）。
+ * 放映这条路径是有意**不**保留未揭示的节点：镜头要落在当前幻灯片上。
  */
 export function filterLayoutByRevealed(
   layout: MindMapLayoutResult,
   revealed: Set<string>,
 ): MindMapLayoutResult {
-  return {
-    ...layout,
-    nodes: layout.nodes.filter((n) => revealed.has(n.id)),
-    edges: layout.edges.filter(
-      (e) => revealed.has(e.parentId) && revealed.has(e.childId),
-    ),
-  }
+  return restrictLayoutToTopicIds(layout, revealed)
 }
 
 /** easeInOutCubic 缓动。t ∈ [0, 1]。 */

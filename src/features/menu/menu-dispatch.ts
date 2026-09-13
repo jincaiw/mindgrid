@@ -1,5 +1,9 @@
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import {
+  FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
+  resolveBranchFocusTarget,
+} from '../../lib/document/focus'
+import {
   collectSubtreeTopicIds,
   collectVisibleTopicIds,
   findTopicById,
@@ -36,6 +40,20 @@ export interface MenuCommandContext {
   toggleSidebar: () => void
   toggleToolbar: () => void
   toggleTabBar: () => void
+  /**
+   * 「仅显示该分支」：进入/切换聚焦到给定主题；`null` 表示退出聚焦。
+   *
+   * 聚焦状态由 WorkspaceScreen 持有（状态栏提示、菜单可用性、画布都要读），
+   * 本层只负责算目标与挡掉不能聚焦的情形。
+   */
+  setFocusTopicId: (topicId: string | null) => void
+  /**
+   * 当前「仅显示该分支」的可见主题集（`null` = 未聚焦）。
+   *
+   * 范围性动作（「全选」）必须尊重它：聚焦时按 ⌘A 若把隐藏分支也圈进来，
+   * 接一个 Delete 就会删掉屏幕上看不见的整条分支。
+   */
+  focusVisibleTopicIds: ReadonlySet<string> | null
   startPresentation: () => void
   /** 提案简报（批次 C6）：与演示并存，按一级分支分幕 */
   startPitch: () => void
@@ -135,11 +153,16 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     case 'edit.redo':
       void session.redo()
       return
-    case 'edit.select-all':
+    case 'edit.select-all': {
       if (activeSheet) {
-        ctx.setSelectedTopicIds(collectVisibleTopicIds(activeSheet.rootTopic))
+        const visible = collectVisibleTopicIds(activeSheet.rootTopic)
+        const focusVisible = ctx.focusVisibleTopicIds
+        ctx.setSelectedTopicIds(
+          focusVisible ? visible.filter((topicId) => focusVisible.has(topicId)) : visible,
+        )
       }
       return
+    }
     case 'edit.copy':
     case 'edit.cut':
     case 'edit.paste':
@@ -389,6 +412,25 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     case 'view.zoom-actual':
     case 'view.zoom-fit':
       ctx.requestCanvasCommand(id)
+      return
+    // 「仅显示该分支」：只留从中心主题到该主题的路径 + 该主题的整棵子树。
+    // 目标解析与快捷键共用 resolveBranchFocusTarget，两条入口的判定完全一致；
+    // 中心主题不能作为目标（只显示它的"分支"就是整幅图，语义上是空操作）。
+    case 'view.focus-branch': {
+      if (!activeSheet) {
+        return
+      }
+      const target = resolveBranchFocusTarget(activeSheet.rootTopic, resolveTopicId(ctx))
+      if (!target) {
+        ctx.notify(FOCUS_BRANCH_UNAVAILABLE_MESSAGE)
+        return
+      }
+      ctx.setFocusTopicId(target)
+      return
+    }
+    // 退出聚焦：幂等，没在聚焦时点它没有任何副作用。
+    case 'view.focus-exit':
+      ctx.setFocusTopicId(null)
       return
     case 'view.zen':
       ctx.toggleZenMode()

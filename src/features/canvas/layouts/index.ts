@@ -286,4 +286,29 @@ function mergeFloatingTopics(
   }
 }
 
+/**
+ * 把布局裁剪到给定主题集合：只保留集合内的节点，以及**两端都在集合内**的边。
+ *
+ * 两个设计点：
+ *
+ * 1. **保留 width/height/offset 不动。** 这样相机数学（`screen = cam + world * zoom`）
+ *    与未裁剪时完全一致，进入/退出聚焦时可见主题在屏幕上的位置不会跳动。
+ *    XMind 的「仅显示该分支」同样只隐藏、不重排。
+ * 2. **放在布局层而不是渲染处。** 命中测试、视口剔除、缩略图、连线几何、拖拽落点
+ *    全部读同一份 `layout`；在布局出口裁剪一次即全局生效。若只在画节点时过滤，
+ *    连线与命中测试仍会「看见」隐藏主题（点到看不见的节点、连线指向空白）。
+ */
+export function restrictLayoutToTopicIds(
+  layout: MindMapLayoutResult,
+  visibleTopicIds: ReadonlySet<string>,
+): MindMapLayoutResult {
+  return {
+    ...layout,
+    nodes: layout.nodes.filter((node) => visibleTopicIds.has(node.id)),
+    edges: layout.edges.filter(
+      (edge) => visibleTopicIds.has(edge.parentId) && visibleTopicIds.has(edge.childId),
+    ),
+  }
+}
+
 export { computeBraceLayout, computeBubbleLayout, computeFishboneLayout, computeLogicLayout, computeMatrixLayout, computeOrgLayout, computeTimelineLayout, computeTreeLayout }

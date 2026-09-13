@@ -3255,3 +3255,51 @@ it('演说页挂载预览画布', () => {
   const preview = inspector.getByLabelText('演说模式预览')
   expect(preview.tagName).toBe('CANVAS')
 })
+
+/**
+ * 「仅显示该分支」的端到端接线（画布 ⌘; → 工作区状态 → 提示条 → Esc 退出）。
+ *
+ * 这里验的是**接线**而不是过滤算法（算法在 canvas-host.test.tsx 与 layouts 里各测一遍）：
+ * 快捷键是否真的把状态传到了上层、提示条是否出现、Esc 是否真的退得掉。
+ * 过去几轮踩过的坑正是"零件都对、忘了接最后一根线"。
+ */
+it('仅显示该分支：⌘; 聚焦后隐藏同级分支并显示退出提示，Esc 退出后恢复', () => {
+  renderBatch14Workspace()
+
+  const canvasStage = screen.getByLabelText('思维导图舞台')
+  // 进入前同级分支都在
+  expect(canvasStage.querySelector('[data-topic-id="topic_review"]')).not.toBeNull()
+
+  // activeTopicId = topic_plan，聚焦它
+  fireEvent.keyDown(window, { key: ';', ctrlKey: true })
+
+  // 同级分支消失，被聚焦的分支与其路径还在
+  expect(canvasStage.querySelector('[data-topic-id="topic_review"]')).toBeNull()
+  expect(canvasStage.querySelector('[data-topic-id="topic_plan"]')).not.toBeNull()
+  expect(canvasStage.querySelector('[data-topic-id="topic_root"]')).not.toBeNull()
+
+  // 提示条出现，且写明聚焦的是哪条分支。
+  // 它挂在 canvas-column 上（画布的**兄弟节点**，这样才能浮在画布之上），
+  // 所以不能用「思维导图舞台」去 querySelector。
+  // 断言必须落在 label 上：页面上「规划主题」还出现在画布节点、父主题选择器等处，
+  // 松散的 getByText 会命中多个元素（这正是刚才那次失败的原因）。
+  const chipLabel = document.querySelector('.focus-branch-chip__label')
+  expect(chipLabel).not.toBeNull()
+  expect(chipLabel).toHaveTextContent('仅显示该分支')
+  expect(chipLabel).toHaveTextContent('规划主题')
+
+  // Esc 退出：提示条消失、被隐藏的分支回来
+  fireEvent.keyDown(window, { key: 'Escape' })
+
+  expect(document.querySelector('.focus-branch-chip')).toBeNull()
+  expect(canvasStage.querySelector('[data-topic-id="topic_review"]')).not.toBeNull()
+})
+
+it('仅显示该分支：中心主题不能被聚焦（会给出提示而不是进入空操作状态）', () => {
+  renderBatch14Workspace({ activeTopicId: 'topic_root' })
+
+  fireEvent.keyDown(window, { key: ';', ctrlKey: true })
+
+  // 不能出现"提示条亮着、画布却毫无变化"的分裂状态
+  expect(screen.queryByRole('button', { name: '显示全部' })).not.toBeInTheDocument()
+})

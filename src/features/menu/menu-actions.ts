@@ -79,6 +79,8 @@ export type MenuActionId =
   | 'view.zoom-out'
   | 'view.zoom-actual'
   | 'view.zoom-fit'
+  | 'view.focus-branch'
+  | 'view.focus-exit'
   | 'view.zen'
   | 'view.present'
   | 'view.pitch'
@@ -154,6 +156,8 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'view.zoom-out',
   'view.zoom-actual',
   'view.zoom-fit',
+  'view.focus-branch',
+  'view.focus-exit',
   'view.zen',
   'view.present',
   'view.pitch',

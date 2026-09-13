@@ -82,10 +82,55 @@ button {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  /* 聚焦提示条要浮在画布之上，故本列作为它的定位上下文 */
+  position: relative;
 }
 
 .canvas-column .canvas-host {
   flex: 1 1 auto;
+}
+
+/* 「仅显示该分支」生效中的提示条（左上角浮层，退出后整块消失）。
+   放左上而非右上：右上在 ZEN 模式下被「退出专注」占用，两者可能同时出现。
+   颜色一律走主题令牌，明暗两套外观下都成立。 */
+.focus-branch-chip {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 4px 6px 4px 12px;
+  background: var(--color-surface-glass-strong);
+  border: 1px solid var(--color-border-default);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.focus-branch-chip__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-branch-chip__exit {
+  flex: none;
+  padding: 2px 10px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-surface-hover);
+  color: var(--color-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.focus-branch-chip__exit:hover {
+  background: var(--color-border-default);
 }
 
 /* 检查器隐藏（Cmd/Ctrl + I）：根据左栏是否存在使用两列或一列。 */
