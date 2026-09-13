@@ -280,12 +280,13 @@ pub fn build_menu<R: Runtime>(
         .separator()
         .item(&item(handle, "view.zoom-in", &format!("放大{}", combo("+")))?)
         .item(&item(handle, "view.zoom-out", &format!("缩小{}", combo("-")))?)
+        // ⌘0 = 实际大小、⌘1 = 适应画布（对齐 XMind，也符合平台通例）
         .item(&item(
             handle,
             "view.zoom-actual",
-            &format!("实际大小{}", combo("1")),
+            &format!("实际大小{}", combo("0")),
         )?)
-        .item(&item(handle, "view.zoom-fit", &format!("适应画布{}", combo("0")))?)
+        .item(&item(handle, "view.zoom-fit", &format!("适应画布{}", combo("1")))?)
         .separator()
         .item(&item(handle, "view.zen", &format!("ZEN 模式{}", combo(".")))?)
         .item(&item(
