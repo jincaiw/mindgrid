@@ -41,6 +41,8 @@ import {
   TOPIC_IMAGE_TITLE_OFFSET,
   computeTopicImageFittedRect,
 } from './topic-image-constants'
+import { computeTopicStickerPlacement } from './topic-sticker-constants'
+import { STICKER_VIEWBOX, findStickerDefinition } from '../sticker-definitions'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
   LINK_ICON_SVG_INNER,
@@ -314,6 +316,9 @@ function drawTopic(
   // 富内容：任务状态 / 标记 / 备注 / 链接 / 标签（与 SVG 端同一套几何与图形定义）
   drawRichContent(ctx, node, fontFamily)
 
+  // 贴纸：最上层（可压住文字，与 DOM/SVG 的层级一致）
+  drawNodeStickers(ctx, node)
+
   // 折叠/展开按钮
   if (node.childCount > 0) {
     drawToggleButton(ctx, node, fontFamily)
@@ -453,6 +458,54 @@ function drawNodeBorder(ctx: CanvasRenderingContext2D, node: TopicRenderNode): v
   roundRect(ctx, bounds.x, bounds.y, bounds.width, bounds.height, radius)
   ctx.stroke()
   ctx.setLineDash([])
+}
+
+/**
+ * 绘制主题上的贴纸。
+ *
+ * 几何来自 computeTopicStickerPlacement（与 SVG 端同一个函数），图形来自 STICKER_DEFINITIONS
+ * （与 DOM 端同一份 path 数据）——三端只有一套定义，没有第二处可以走偏。
+ *
+ * `Path2D` 直接吃 SVG 的 d 字符串，所以这里不需要任何路径转换代码。
+ */
+function drawNodeStickers(ctx: CanvasRenderingContext2D, node: TopicRenderNode): void {
+  const stickers = node.rich?.stickers
+  if (!stickers || stickers.length === 0) {
+    return
+  }
+
+  for (const [stickerIndex, sticker] of stickers.entries()) {
+    const definition = findStickerDefinition(sticker.stickerId)
+    if (!definition) {
+      continue
+    }
+
+    const placement = computeTopicStickerPlacement(node.bounds, sticker, stickerIndex)
+    const scale = placement.size / STICKER_VIEWBOX
+
+    ctx.save()
+    ctx.translate(placement.cx, placement.cy)
+    ctx.rotate((placement.rotation * Math.PI) / 180)
+    ctx.scale(scale, scale)
+    ctx.translate(-STICKER_VIEWBOX / 2, -STICKER_VIEWBOX / 2)
+
+    for (const shape of definition.shapes) {
+      const path = new Path2D(shape.d)
+      if (shape.fill) {
+        ctx.fillStyle = shape.fill
+        ctx.fill(path)
+      }
+      if (shape.stroke) {
+        ctx.strokeStyle = shape.stroke
+        ctx.lineWidth = shape.strokeWidth ?? 1
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.stroke(path)
+      }
+    }
+
+    ctx.restore()
+  }
 }
 
 function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, fontFamily: string): void {

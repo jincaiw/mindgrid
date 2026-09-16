@@ -743,3 +743,46 @@ describe('buildScene', () => {
     })
   })
 })
+
+describe('贴纸进入富内容投影', () => {
+  /** 只带贴纸、不带任何其它富内容的主题——专门盯住"聚合布尔量漏字段"这类缺陷。 */
+  function rootWithStickerOnly(): TopicSnapshot {
+    const stickerTopic: TopicSnapshot = {
+      id: 'stickered',
+      text: '带贴纸',
+      collapsed: false,
+      children: [],
+      stickers: [{ id: 's1', stickerId: 'star', offsetX: -14, offsetY: -14 }],
+    }
+    return makeTopic('root', 'Root', [stickerTopic, makeTopic('plain', '素主题')])
+  }
+
+  function build(scene: ReturnType<typeof buildScene>) {
+    return scene
+  }
+
+  it('只贴了贴纸的主题也会生成 rich（漏掉它导出里就没有贴纸）', () => {
+    const layout = computeMindMapLayout(rootWithStickerOnly())
+    const scene = build(
+      buildScene({
+        layout,
+        viewport: defaultViewport,
+        camera: defaultCamera,
+        visualStates: defaultVisualStates,
+        overlays: defaultOverlays,
+        enableCulling: false,
+      }),
+    )
+
+    const stickered = scene.nodes.find((n) => n.type === 'topic' && n.id === 'stickered')
+    const plain = scene.nodes.find((n) => n.type === 'topic' && n.id === 'plain')
+
+    expect(stickered).toBeDefined()
+    // 负向对照：把 hasRichContent 里的贴纸那一支删掉，这条就会红
+    expect(stickered && 'rich' in stickered ? stickered.rich?.stickers : undefined).toEqual([
+      { id: 's1', stickerId: 'star', offsetX: -14, offsetY: -14 },
+    ])
+    // 没有贴纸的主题不该凭空多出 stickers
+    expect(plain && 'rich' in plain ? plain.rich?.stickers : undefined).toBeUndefined()
+  })
+})

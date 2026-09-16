@@ -29,6 +29,20 @@ export interface TopicMarker {
   label?: string
 }
 
+/**
+ * 贴在主题上的一张贴纸（一个**实例**）。
+ *
+ * 同一个内置贴纸可贴多次，故每条记录各有 `id`；`stickerId` 才表示"是哪张图"。
+ * 位置相对**节点中心**（世界单位）——节点尺寸随文字变化，用绝对坐标会让贴纸跑掉。
+ */
+export interface TopicSticker {
+  id: string
+  stickerId: string
+  offsetX?: number
+  offsetY?: number
+  rotation?: number
+}
+
 /** 主题超链接。 */
 export interface TopicLink {
   url: string
@@ -210,6 +224,7 @@ export interface TopicSnapshot {
   /** 节点级样式覆盖（颜色 / 形状 / 排印 / 边框粗细），优先于文档主题。 */
   styleOverrides?: TopicStyleOverrides
   markers?: TopicMarker[]
+  stickers?: TopicSticker[]
   labels?: string[]
   notes?: string
   link?: TopicLink

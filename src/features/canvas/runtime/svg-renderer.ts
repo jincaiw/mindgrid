@@ -29,6 +29,8 @@ import {
   computeTopicImageFittedRect,
   computeTopicImageRect,
 } from './topic-image-constants'
+import { computeTopicStickerPlacement } from './topic-sticker-constants'
+import { STICKER_VIEWBOX, findStickerDefinition } from '../sticker-definitions'
 import { resolveThemeBackground } from './style-resolver'
 import { applyTextTransform } from './text-transform'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
@@ -298,6 +300,26 @@ function topicToSvg(
     const clip = hasImageClip ? ` clip-path="url(#${topicImageClipId(node.id)})"` : ''
     elements.push(
       `  <image x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" preserveAspectRatio="xMidYMid meet" href="${escapeXml(rich.image)}" xlink:href="${escapeXml(rich.image)}"${clip}/>`,
+    )
+  }
+
+  // 贴纸：画在节点之上（可压住文字，与 DOM 的层级一致）。
+  // 几何来自 computeTopicStickerPlacement —— 与 PNG 端同一个函数。
+  for (const [stickerIndex, sticker] of (rich?.stickers ?? []).entries()) {
+    const definition = findStickerDefinition(sticker.stickerId)
+    if (!definition) {
+      continue
+    }
+    const placement = computeTopicStickerPlacement(bounds, sticker, stickerIndex)
+    const scale = placement.size / STICKER_VIEWBOX
+    const shapes = definition.shapes
+      .map(
+        (shape) =>
+          `<path d="${shape.d}" fill="${shape.fill ?? 'none'}" stroke="${shape.stroke ?? 'none'}" stroke-width="${fmt(shape.strokeWidth ?? 0)}" stroke-linecap="round" stroke-linejoin="round"/>`,
+      )
+      .join('')
+    elements.push(
+      `  <g transform="translate(${fmt(placement.cx)} ${fmt(placement.cy)}) rotate(${fmt(placement.rotation)}) scale(${fmt(scale)}) translate(${-STICKER_VIEWBOX / 2} ${-STICKER_VIEWBOX / 2})">${shapes}</g>`,
     )
   }
 

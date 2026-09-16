@@ -130,6 +130,7 @@ importDocxOutline: async () => {},
     readAssetDataUrl: async () => '',
     setTopicLink: async () => {},
     setTopicMarkers: async () => {},
+    setTopicStickers: async () => {},
     setTopicLabels: async () => {},
     setTopicTask: async () => {},
     setTopicStyleRef: async () => {},
@@ -1285,5 +1286,103 @@ describe('主题附件指示器', () => {
 
     // 负向对照：没有附件的主题不该出现回形针
     expect(plain?.querySelector('.mindmap-node__attachment-indicator')).toBeNull()
+  })
+})
+
+/**
+ * 节点贴纸：渲染、拖动提交、以及"没挪动就不写文档"。
+ *
+ * 位置用 `calc(50% ± Npx)` 表达（相对节点中心），与
+ * computeTopicStickerPlacement 的语义一致——PNG/SVG 两端用同一个函数拿绝对坐标。
+ */
+describe('主题贴纸', () => {
+  function makeSessionWithSticker() {
+    const setTopicStickers = vi.fn(async () => {})
+    const session = createSessionStub({
+      setTopicStickers,
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic: {
+              id: 'topic_root',
+              text: '中心主题',
+              collapsed: false,
+              children: [
+                {
+                  id: 'topic_stickered',
+                  text: '带贴纸',
+                  collapsed: false,
+                  children: [],
+                  stickers: [{ id: 's1', stickerId: 'star', offsetX: -14, offsetY: -20 }],
+                },
+                { id: 'topic_plain', text: '没有贴纸', collapsed: false, children: [] },
+              ],
+            },
+          },
+        ],
+      },
+    })
+    return { session, setTopicStickers }
+  }
+
+  it('渲染贴纸并按存下来的偏移定位；没有贴纸的主题不渲染', () => {
+    renderWithApp(<CanvasHost session={makeSessionWithSticker().session} />)
+
+    const stickered = document.querySelector('[data-topic-id="topic_stickered"]')
+    const sticker = stickered?.querySelector('.mindmap-node__sticker') as HTMLElement | null
+    expect(sticker).not.toBeNull()
+    // 负数写成减法：calc(50% - 14px)
+    expect(sticker!.style.left).toBe('calc(50% - 14px)')
+    expect(sticker!.style.top).toBe('calc(50% - 20px)')
+    // 悬停提示取自素材库的标签，便于识别
+    expect(sticker!.getAttribute('title')).toBe('星星')
+
+    const plain = document.querySelector('[data-topic-id="topic_plain"]')
+    expect(plain?.querySelector('.mindmap-node__sticker')).toBeNull()
+  })
+
+  it('拖动贴纸：松手时整批提交一次（一次拖动 = 一条撤销记录）', () => {
+    const { session, setTopicStickers } = makeSessionWithSticker()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const sticker = document.querySelector(
+      '[data-topic-id="topic_stickered"] .mindmap-node__sticker',
+    ) as HTMLElement
+
+    fireEvent.pointerDown(sticker, { button: 0, clientX: 100, clientY: 100, pointerId: 5 })
+    fireEvent.pointerMove(sticker, { button: 0, clientX: 140, clientY: 130, pointerId: 5 })
+    fireEvent.pointerUp(sticker, { button: 0, clientX: 140, clientY: 130, pointerId: 5 })
+
+    expect(setTopicStickers).toHaveBeenCalledTimes(1)
+    const [topicId, next] = setTopicStickers.mock.calls[0] as unknown as [
+      string,
+      Array<{ id: string; offsetX?: number; offsetY?: number }>,
+    ]
+    expect(topicId).toBe('topic_stickered')
+    expect(next).toHaveLength(1)
+    // 默认缩放 1：位移 (40, 30) 直接叠加到原偏移上
+    expect(next[0].offsetX).toBeCloseTo(-14 + 40)
+    expect(next[0].offsetY).toBeCloseTo(-20 + 30)
+  })
+
+  it('按下即松手（没挪动）不写文档', () => {
+    const { session, setTopicStickers } = makeSessionWithSticker()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const sticker = document.querySelector(
+      '[data-topic-id="topic_stickered"] .mindmap-node__sticker',
+    ) as HTMLElement
+
+    fireEvent.pointerDown(sticker, { button: 0, clientX: 100, clientY: 100, pointerId: 6 })
+    fireEvent.pointerUp(sticker, { button: 0, clientX: 100, clientY: 100, pointerId: 6 })
+
+    // 否则每次点一下贴纸都会往撤销栈里塞一条空记录
+    expect(setTopicStickers).not.toHaveBeenCalled()
   })
 })

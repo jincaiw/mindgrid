@@ -355,6 +355,8 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     // 附件同样落在右侧面板的「附件」小节里编辑（与其它插入项同一约定：
     // 系统文件对话框只在该面板里弹，不把对话框逻辑散到派发层）
     case 'insert.attachment':
+    // 贴纸在右侧面板的「贴纸」小节里选（点一下就贴到选中主题上）
+    case 'insert.sticker':
     case 'insert.marker':
     case 'insert.image':
       if (ctx.selectedTopicIds.length === 1) {

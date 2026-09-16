@@ -2,7 +2,8 @@ use crate::app::assets::AssetStore;
 use crate::domain::document::find_topic;
 use crate::domain::document::{
     DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
-    SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker, TopicStructure, TopicStyleOverrides,
+    SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker,
+    TopicSticker, TopicStructure, TopicStyleOverrides,
     TopicTask,
 };
 use crate::AppState;
@@ -922,6 +923,25 @@ pub fn set_topic_markers(
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
 
+/// 整体替换主题的贴纸列表（"贴/拖/删"都收敛到这一条命令）。
+#[tauri::command]
+pub fn set_topic_stickers(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    stickers: Vec<TopicSticker>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_stickers(&topic_id, stickers)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 整体替换主题的标签列表。
 #[tauri::command]
 pub fn set_topic_labels(
     app: AppHandle,

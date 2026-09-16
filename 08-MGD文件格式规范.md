@@ -86,6 +86,7 @@ example.mgd
 - collapsed
 - styleRef
 - markers
+- stickers
 - labels
 - notes
 - link

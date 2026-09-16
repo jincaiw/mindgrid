@@ -20,6 +20,12 @@ import {
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import { isFreelyPositionableTopic } from '../../lib/document/free-topics'
 import { displayAttachmentName } from '../../lib/document/attachment'
+import { StickerIcon } from './stickers'
+import { findStickerDefinition } from './sticker-definitions'
+import {
+  TOPIC_STICKER_SIZE,
+  computeTopicStickerPlacement,
+} from './runtime/topic-sticker-constants'
 import {
   FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
   resolveBranchFocusTarget,
@@ -295,6 +301,7 @@ function MindMapScene({
   onSelect,
   onMoveTopic,
   onPlaceTopicFreely,
+  onStickerMove,
   onCreateChildTopic,
   onCreateSiblingTopic,
   onDeleteTopics,
@@ -367,6 +374,8 @@ function MindMapScene({
   onMoveTopic: (topicId: string, targetParentId: string) => Promise<void>
   /** 分支自由布局下把一级分支摆到指定位置（相对中心主题的世界坐标）。 */
   onPlaceTopicFreely: (topicId: string, offsetX: number, offsetY: number) => Promise<void>
+  /** 松手时提交贴纸新偏移（世界单位，相对节点中心）。一次拖动只调一次。 */
+  onStickerMove: (topicId: string, stickerId: string, offsetX: number, offsetY: number) => void
   // 右键上下文菜单动作（由 TreeWorkspace 注入）
   onCreateChildTopic: (topicId: string) => Promise<void>
   onCreateSiblingTopic: (topicId: string) => Promise<void>
@@ -1692,6 +1701,8 @@ function MindMapScene({
             <MindMapNode
               key={node.id}
               node={node}
+              zoom={camera.zoom}
+              onStickerMove={onStickerMove}
               offsetX={layout.offsetX}
               offsetY={layout.offsetY}
               themeId={themeId}
@@ -1794,6 +1805,17 @@ function NoteGlyph() {
 }
 
 /** 链接指示图标。 */
+/**
+ * 把偏移量写成 `calc(50% ± N px)`。
+ *
+ * 负数不写成 `calc(50% + -14px)`：虽然多数解析器接受，
+ * 但把"加负数"写成减法在任何实现下都无歧义，也更好读。
+ */
+function stickerOffsetExpression(offset: number): string {
+  const rounded = Math.round(offset * 100) / 100
+  return rounded >= 0 ? `calc(50% + ${rounded}px)` : `calc(50% - ${Math.abs(rounded)}px)`
+}
+
 function AttachmentGlyph() {
   // 回形针：XMind 用同一个隐喻表示"这个主题带了附件"
   return (
@@ -1851,6 +1873,8 @@ function MindMapNode({
   onAppearEnd,
   onOpenLink,
   imageUrl,
+  zoom,
+  onStickerMove,
   branchIndex,
   fontFamily,
   numberText,
@@ -1890,6 +1914,10 @@ function MindMapNode({
   onOpenLink?: (url: string) => void
   /** 主题图片的 data URL，null 表示无图或尚未加载完成（此时不渲染图片元素）。 */
   imageUrl: string | null
+  /** 当前相机缩放。贴纸拖动要把屏幕位移换算回世界单位。 */
+  zoom: number
+  /** 拖动贴纸结束（松手）时提交新偏移；一次拖动只提交一次，故只产生一条撤销记录。 */
+  onStickerMove: (topicId: string, stickerId: string, offsetX: number, offsetY: number) => void
   fontFamily?: string
   /** 主题编号（形如 "1.2"），null 表示未启用编号。 */
   numberText?: string | null
@@ -1968,6 +1996,117 @@ function MindMapNode({
         ? { left: `${left - toggleHalf}px`, top: `${top + node.height / 2 - toggleHalf}px` }
         : { left: `${left + node.width - toggleHalf}px`, top: `${top + node.height / 2 - toggleHalf}px` }
 
+  // —— 贴纸：渲染 + 拖动 ——
+  // 拖动时只改本地预览、松手才提交：一次拖动 = 一条撤销记录（与其它动作一致），
+  // 也避免每帧都往文档写一次。
+  const [draggingSticker, setDraggingSticker] = useState<{
+    id: string
+    offsetX: number
+    offsetY: number
+  } | null>(null)
+  const stickerDragRef = useRef<{
+    stickerId: string
+    startClientX: number
+    startClientY: number
+    baseOffsetX: number
+    baseOffsetY: number
+  } | null>(null)
+
+  const stickerList = node.topic.stickers ?? []
+
+  const handleStickerPointerDown = (
+    event: ReactPointerEvent<HTMLSpanElement>,
+    sticker: { id: string; offsetX?: number; offsetY?: number },
+  ) => {
+    if (event.button !== 0) {
+      return
+    }
+    // 不让节点开始自己的拖拽：在贴纸上按下就是要挪贴纸
+    event.stopPropagation()
+    const baseOffsetX = sticker.offsetX ?? 0
+    const baseOffsetY = sticker.offsetY ?? 0
+    stickerDragRef.current = {
+      stickerId: sticker.id,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      baseOffsetX,
+      baseOffsetY,
+    }
+    setDraggingSticker({ id: sticker.id, offsetX: baseOffsetX, offsetY: baseOffsetY })
+    // jsdom 与部分环境没有指针捕获，缺了也不该让拖动整体失效
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const handleStickerPointerMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const drag = stickerDragRef.current
+    if (!drag) {
+      return
+    }
+    event.stopPropagation()
+    const safeZoom = zoom > 0 ? zoom : 1
+    setDraggingSticker({
+      id: drag.stickerId,
+      offsetX: drag.baseOffsetX + (event.clientX - drag.startClientX) / safeZoom,
+      offsetY: drag.baseOffsetY + (event.clientY - drag.startClientY) / safeZoom,
+    })
+  }
+
+  const handleStickerPointerEnd = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const drag = stickerDragRef.current
+    if (!drag) {
+      return
+    }
+    event.stopPropagation()
+    stickerDragRef.current = null
+    const safeZoom = zoom > 0 ? zoom : 1
+    const deltaX = (event.clientX - drag.startClientX) / safeZoom
+    const deltaY = (event.clientY - drag.startClientY) / safeZoom
+    setDraggingSticker(null)
+
+    // 没挪动就是一次点击（选中主题），不该写文档、也不该产生撤销记录
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+      return
+    }
+    onStickerMove(node.id, drag.stickerId, drag.baseOffsetX + deltaX, drag.baseOffsetY + deltaY)
+  }
+
+  const stickerElements =
+    stickerList.length > 0 ? (
+      <>
+        {stickerList.map((sticker, index) => {
+          // 默认落点按节点尺寸现算（未拖过的贴纸存储里没有 offset）
+          const placement =
+            draggingSticker?.id === sticker.id
+              ? draggingSticker
+              : computeTopicStickerPlacement(
+                  { x: 0, y: 0, width: node.width, height: node.height },
+                  sticker,
+                  index,
+                )
+
+          return (
+            <span
+              key={sticker.id}
+              className={`mindmap-node__sticker${draggingSticker?.id === sticker.id ? ' mindmap-node__sticker--dragging' : ''}`}
+              data-sticker-id={sticker.id}
+              title={findStickerDefinition(sticker.stickerId)?.label ?? sticker.stickerId}
+              style={{
+                left: stickerOffsetExpression(placement.offsetX),
+                top: stickerOffsetExpression(placement.offsetY),
+                transform: `translate(-50%, -50%) rotate(` + (sticker.rotation ?? 0) + `deg)`,
+              }}
+              onPointerDown={(event) => handleStickerPointerDown(event, sticker)}
+              onPointerMove={handleStickerPointerMove}
+              onPointerUp={handleStickerPointerEnd}
+              onPointerCancel={handleStickerPointerEnd}
+            >
+              <StickerIcon stickerId={sticker.stickerId} size={TOPIC_STICKER_SIZE} />
+            </span>
+          )
+        })}
+      </>
+    ) : null
+
   // 主题图片元素：编辑态与非编辑态共用一份，避免两条分支各写一遍（曾因此让图片
   // 在进入编辑时凭空消失、节点高度内边距同时跳变）。
   const topicImageElement = imageUrl ? (
@@ -1987,6 +2126,7 @@ function MindMapNode({
           style={baseStyle}
         >
           {topicImageElement}
+          {stickerElements}
           <textarea
             className="mindmap-node__editor"
             aria-label="内联编辑主题"
@@ -2075,6 +2215,7 @@ function MindMapNode({
         onAnimationEnd={() => onAppearEnd(node.id)}
       >
         {topicImageElement}
+        {stickerElements}
         <span className="mindmap-node__title" style={titleStyle}>
           {numberText ? <span className="mindmap-node__number">{numberText}</span> : null}
           {node.topic.text}
@@ -3115,7 +3256,21 @@ function TreeWorkspace({
           onToggleTopicCollapsed={toggleTopicCollapsed}
           onSelect={(topicId) => void selectTopic(topicId)}
           onMoveTopic={(topicId, targetParentId) => moveTopic(topicId, targetParentId)}
-          onPlaceTopicFreely={(topicId, offsetX, offsetY) =>
+          onStickerMove={(topicId, stickerId, offsetX, offsetY) => {
+          // 贴纸是**列表型富字段**：改一张也要整批提交（一次拖动 = 一条撤销记录）。
+          // 主题可能在树里，也可能是浮动主题，两处都要找。
+          const topic =
+            findTopicById(activeSheet.rootTopic, topicId) ??
+            floatingTopics.find((candidate) => candidate.id === topicId)
+          if (!topic) {
+            return
+          }
+          const nextStickers = (topic.stickers ?? []).map((sticker) =>
+            sticker.id === stickerId ? { ...sticker, offsetX, offsetY } : sticker,
+          )
+          void session.setTopicStickers(topicId, nextStickers)
+        }}
+        onPlaceTopicFreely={(topicId, offsetX, offsetY) =>
             moveTopicFreely(topicId, offsetX, offsetY)
           }
           onCreateChildTopic={(parentId) => createChildTopic(parentId)}

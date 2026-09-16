@@ -36,6 +36,7 @@ import {
   type TopicBorderStyle,
   type TopicShape,
   type TopicSnapshot,
+  type TopicSticker,
   type TopicStructure,
   type TopicStyleOverrides,
   type TopicTextAlign,
@@ -50,6 +51,16 @@ import {
   displayAttachmentName,
   formatAttachmentSize,
 } from '../../lib/document/attachment'
+import { StickerIcon } from '../canvas/stickers'
+import {
+  STICKER_DEFINITIONS,
+  findStickerDefinition,
+} from '../canvas/sticker-definitions'
+import {
+  TOPIC_STICKER_MAX_PER_TOPIC,
+  TOPIC_STICKER_ROTATION_STEP,
+  createStickerInstanceId,
+} from '../canvas/runtime/topic-sticker-constants'
 import { nextTextTransform } from '../canvas/runtime/text-transform'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../canvas/mindmap-layout'
 import {
@@ -1044,6 +1055,55 @@ export function Inspector({
 
     // 非 Tauri 环境（pnpm dev / 测试）：点击隐藏 input，由 onChange 读成 data URL 再提交
     imageFileInputRef.current?.click()
+  }
+
+  // —— 贴纸：贴 / 旋 / 删 ——
+  // 三者都是"整批替换列表"，所以这里只需要一个提交入口（session.setTopicStickers），
+  // 贴纸的每种操作都走它 → 撤销栈里每条操作一条记录。
+  const currentStickers = activeTopic?.stickers ?? []
+
+  const commitStickers = async (next: TopicSticker[]) => {
+    if (!activeTopic) {
+      return
+    }
+    await session.setTopicStickers(activeTopic.id, next)
+  }
+
+  const handleAddSticker = (stickerId: string) => {
+    if (!activeTopic) {
+      return
+    }
+    if (currentStickers.length >= TOPIC_STICKER_MAX_PER_TOPIC) {
+      onNotify?.(`一个主题最多贴 ${TOPIC_STICKER_MAX_PER_TOPIC} 张贴纸`)
+      return
+    }
+    // 刻意**不写** offsetX/offsetY：默认位置要按节点尺寸算，而这里只有文档没有布局。
+    // 留着空值，三端各自用 computeTopicStickerPlacement 现算出同一个落点；
+    // 用户拖动之后才会有显式偏移。
+    void commitStickers([
+      ...currentStickers,
+      {
+        id: createStickerInstanceId(),
+        stickerId,
+      },
+    ])
+  }
+
+  const handleRotateSticker = (stickerId: string) => {
+    void commitStickers(
+      currentStickers.map((sticker) =>
+        sticker.id === stickerId
+          ? {
+              ...sticker,
+              rotation: ((sticker.rotation ?? 0) + TOPIC_STICKER_ROTATION_STEP) % 360,
+            }
+          : sticker,
+      ),
+    )
+  }
+
+  const handleRemoveSticker = (stickerId: string) => {
+    void commitStickers(currentStickers.filter((sticker) => sticker.id !== stickerId))
   }
 
   // —— 主题附件：与图片同一套双通道（桌面原生对话框 / 浏览器隐藏 file input）——
@@ -2171,6 +2231,72 @@ export function Inspector({
                     ) : null}
                   </div>
                 </div>
+              </PanelSection>
+            ) : null}
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <PanelSection title="贴纸">
+                <p className="panel__muted">
+                  点一下即贴到选中主题上；拖动可换位置，「旋转」每次转 {TOPIC_STICKER_ROTATION_STEP}°。贴纸不改变节点大小。
+                </p>
+
+                <div className="panel__field">
+                  <span>选择</span>
+                  <div className="sticker-grid">
+                    {STICKER_DEFINITIONS.map((definition) => {
+                      const full = currentStickers.length >= TOPIC_STICKER_MAX_PER_TOPIC
+                      return (
+                        <button
+                          key={definition.id}
+                          type="button"
+                          className="sticker-grid__item"
+                          title={
+                            full
+                              ? `最多贴 ${TOPIC_STICKER_MAX_PER_TOPIC} 张`
+                              : `贴上${definition.label}`
+                          }
+                          aria-label={`贴上${definition.label}`}
+                          disabled={full}
+                          onClick={() => handleAddSticker(definition.id)}
+                        >
+                          <StickerIcon stickerId={definition.id} size={24} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {currentStickers.length > 0 ? (
+                  <div className="panel__field">
+                    <span>已贴</span>
+                    <div className="sticker-list">
+                      {currentStickers.map((sticker) => (
+                        <div key={sticker.id} className="sticker-list__row">
+                          <StickerIcon stickerId={sticker.stickerId} size={18} />
+                          <span className="sticker-list__label">
+                            {findStickerDefinition(sticker.stickerId)?.label ?? sticker.stickerId}
+                          </span>
+                          <button
+                            className="panel__action panel__action--ghost"
+                            type="button"
+                            onClick={() => handleRotateSticker(sticker.id)}
+                          >
+                            旋转
+                          </button>
+                          <button
+                            className="panel__action panel__action--ghost"
+                            type="button"
+                            onClick={() => handleRemoveSticker(sticker.id)}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="panel__muted">当前主题没有贴纸。</p>
+                )}
               </PanelSection>
             ) : null}
 

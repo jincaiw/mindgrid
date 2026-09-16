@@ -23,6 +23,28 @@ pub struct TopicMarker {
     pub label: Option<String>,
 }
 
+/// 贴在主题上的一张贴纸（一个**实例**）。
+///
+/// 同一个内置贴纸可以贴多次，所以每条记录各有 `id`；`sticker_id` 才是"是哪张图"。
+/// 位置相对**节点中心**（世界单位）——节点尺寸随文字变化，用绝对坐标会让贴纸跑掉。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicSticker {
+    /// 贴纸实例 id，文档内唯一。
+    pub id: String,
+    /// 内置贴纸定义 id（见前端 `stickers.tsx` 的 STICKER_DEFINITIONS）。
+    pub sticker_id: String,
+    /// 相对节点中心的横向偏移（世界单位）。缺省 0。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_x: Option<f64>,
+    /// 相对节点中心的纵向偏移（世界单位）。缺省 0。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_y: Option<f64>,
+    /// 旋转角度（度）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotation: Option<f64>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicLink {
@@ -207,6 +229,9 @@ pub struct TopicSnapshot {
     pub style_overrides: Option<TopicStyleOverrides>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub markers: Vec<TopicMarker>,
+    /// 贴纸。与标记的区别：贴纸带位置与旋转，是"贴在节点上"的装饰，可拖动。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stickers: Vec<TopicSticker>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1202,6 +1227,19 @@ impl DocumentSession {
         })
     }
 
+    /// 整体替换主题的贴纸列表（贴/拖/删都走这一条）。
+    /// 与标记同属"列表型富字段"，撤销栈里只留一份 old/new。
+    pub fn set_topic_stickers(
+        &mut self,
+        topic_id: &str,
+        stickers: Vec<TopicSticker>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("编辑贴纸", |editor| {
+            editor.set_topic_stickers(topic_id, stickers)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     pub fn set_topic_labels(
         &mut self,
         topic_id: &str,
@@ -1505,6 +1543,7 @@ impl TopicSnapshot {
             style_ref: None,
             style_overrides: None,
             markers: Vec::new(),
+            stickers: Vec::new(),
             labels: Vec::new(),
             notes: None,
             link: None,
@@ -1536,6 +1575,7 @@ impl SheetSnapshot {
                 style_ref: None,
                 style_overrides: None,
                 markers: Vec::new(),
+                stickers: Vec::new(),
                 labels: Vec::new(),
                 notes: None,
                 link: None,
@@ -1705,6 +1745,7 @@ pub(crate) fn clone_topic_branch(topic: &TopicSnapshot) -> TopicSnapshot {
         style_ref: topic.style_ref.clone(),
         style_overrides: topic.style_overrides.clone(),
         markers: topic.markers.clone(),
+        stickers: topic.stickers.clone(),
         labels: topic.labels.clone(),
         notes: topic.notes.clone(),
         link: topic.link.clone(),
@@ -1738,6 +1779,7 @@ fn clone_topic_branch_with_map(
         style_ref: topic.style_ref.clone(),
         style_overrides: topic.style_overrides.clone(),
         markers: topic.markers.clone(),
+        stickers: topic.stickers.clone(),
         labels: topic.labels.clone(),
         notes: topic.notes.clone(),
         link: topic.link.clone(),
@@ -1765,7 +1807,7 @@ pub fn create_id(prefix: &str) -> String {
 mod tests {
     use super::{
         Boundary, DocumentRepairReport, DocumentSession, DocumentSnapshot, Relationship,
-        SummaryNode, TopicAttachment, TopicSnapshot,
+        SummaryNode, TopicAttachment, TopicSnapshot, TopicSticker,
     };
 
     #[test]
@@ -2441,6 +2483,79 @@ mod tests {
     }
 
     #[test]
+    fn set_topic_stickers_round_trips_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[0]
+            .id
+            .clone();
+        let stickers = vec![
+            TopicSticker {
+                id: "sticker_1".to_string(),
+                sticker_id: "star".to_string(),
+                offset_x: Some(-40.0),
+                offset_y: Some(-24.0),
+                rotation: Some(15.0),
+            },
+            TopicSticker {
+                id: "sticker_2".to_string(),
+                sticker_id: "heart".to_string(),
+                offset_x: None,
+                offset_y: None,
+                rotation: None,
+            },
+        ];
+
+        let applied = session
+            .set_topic_stickers(&topic_id, stickers.clone())
+            .expect("applying stickers should succeed");
+        assert_eq!(
+            super::find_topic(applied.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .stickers,
+            stickers
+        );
+        assert_eq!(applied.next_undo_action.as_deref(), Some("编辑贴纸"));
+
+        // 一次撤销还原到空列表（列表型富字段：整批一份 old/new）
+        let undone = session.undo().expect("undo should succeed");
+        assert!(super::find_topic(undone.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .stickers
+            .is_empty());
+
+        let redone = session.redo().expect("redo should succeed");
+        assert_eq!(
+            super::find_topic(redone.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .stickers
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn clone_topic_branch_keeps_stickers() {
+        // 复制/粘贴走 clone_topic_branch：漏掉贴纸字段的话，粘贴出来的主题会**静默丢贴纸**
+        let mut source = TopicSnapshot::new("带贴纸的主题");
+        source.stickers = vec![TopicSticker {
+            id: "sticker_a".to_string(),
+            sticker_id: "star".to_string(),
+            offset_x: Some(12.0),
+            offset_y: None,
+            rotation: None,
+        }];
+
+        let cloned = super::clone_topic_branch(&source);
+
+        assert_eq!(cloned.stickers, source.stickers);
+    }
+
+    #[test]
     fn clone_topic_branch_keeps_attachment() {
         // 复制/粘贴走的是 clone_topic_branch：漏掉新字段的话，
         // 粘贴出来的主题会**静默丢掉附件**——文件还在资源区，只是没人引用它。
@@ -2768,6 +2883,7 @@ mod tests {
             style_ref: None,
             style_overrides: None,
             markers: Vec::new(),
+            stickers: Vec::new(),
             labels: Vec::new(),
             notes: None,
             link: None,
@@ -2787,6 +2903,7 @@ mod tests {
             style_ref: None,
             style_overrides: None,
             markers: Vec::new(),
+            stickers: Vec::new(),
             labels: Vec::new(),
             notes: None,
             link: None,

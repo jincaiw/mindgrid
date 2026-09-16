@@ -119,6 +119,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     readAssetDataUrl: async () => '',
     setTopicLink: async () => {},
     setTopicMarkers: async () => {},
+    setTopicStickers: async () => {},
     setTopicLabels: async () => {},
     setTopicTask: async () => {},
     setTopicStyleRef: async () => {},

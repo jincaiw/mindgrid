@@ -65,6 +65,7 @@ import {
   setTopicLabels,
   setTopicLink,
   setTopicMarkers,
+  setTopicStickers as setTopicStickersCommand,
   setTopicNotes,
   setTopicStructure,
   setTopicStyleOverrides,
@@ -85,6 +86,7 @@ import type {
   SheetNumbering,
   TopicLink,
   TopicMarker,
+  TopicSticker,
   TopicSnapshot,
   TopicDirection,
   TopicStructure,
@@ -194,6 +196,11 @@ export interface DocumentSession extends DocumentSessionState {
   readAssetDataUrl: (assetId: string) => Promise<string>
   setTopicLink: (topicId: string, link: TopicLink | null) => Promise<void>
   setTopicMarkers: (topicId: string, markers: TopicMarker[]) => Promise<void>
+  /**
+   * 整体替换主题的贴纸列表（贴一张 / 拖动 / 移除都走这一条）。
+   * 列表型富字段：整批一份 old/new，撤销栈里只留一条记录。
+   */
+  setTopicStickers: (topicId: string, stickers: TopicSticker[]) => Promise<void>
   setTopicLabels: (topicId: string, labels: string[]) => Promise<void>
   setTopicTask: (topicId: string, task: TopicTask | null) => Promise<void>
   setTopicStyleRef: (topicId: string, styleRef: string | null) => Promise<void>
@@ -1465,6 +1472,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicStickers = useCallback(
+    async (topicId: string, stickers: TopicSticker[]) => {
+      await runCommand('编辑贴纸', () => setTopicStickersCommand(topicId, stickers))
+    },
+    [runCommand],
+  )
+
   const updateTopicLabels = useCallback(
     async (topicId: string, labels: string[]) => {
       await runCommand('编辑标签', () => setTopicLabels(topicId, labels))
@@ -1788,6 +1802,7 @@ export function useDocumentSession(): DocumentSession {
       readAssetDataUrl,
       setTopicLink: updateTopicLink,
       setTopicMarkers: updateTopicMarkers,
+      setTopicStickers: updateTopicStickers,
       setTopicLabels: updateTopicLabels,
       setTopicTask: updateTopicTask,
       setTopicStyleRef: updateTopicStyleRef,
@@ -1836,6 +1851,7 @@ export function useDocumentSession(): DocumentSession {
       launchTopicAttachment,
       updateTopicLink,
       updateTopicMarkers,
+      updateTopicStickers,
       updateTopicLabels,
       updateTopicTask,
       updateTopicStyleRef,

@@ -329,3 +329,65 @@ describe('renderSceneToSvg', () => {
     expect(svg).not.toContain('fill="rgba(91,140,255,0.12)"')
   })
 })
+
+/**
+ * 贴纸的导出序列化。
+ *
+ * 屏幕上有、导出里没有是最难发现的一类缺陷（用户只在导出后才发现），
+ * 而 SVG 端没有 canvas 依赖，可以在 jsdom 里直接断言。
+ * PNG 端与 SVG 端共用 computeTopicStickerPlacement，几何不会各算一套。
+ */
+describe('贴纸导出', () => {
+  it('把贴纸序列化进 SVG，且位移与旋转都来自计算的落点', () => {
+    const stickered: TopicSnapshot = {
+      id: 'a',
+      text: 'Alpha',
+      collapsed: false,
+      children: [],
+      stickers: [{ id: 's1', stickerId: 'star', offsetX: -14, offsetY: -14, rotation: 30 }],
+    }
+    const root = makeTopic('root', 'Root', [stickered, makeTopic('b', 'Beta')])
+    const layout = computeMindMapLayout(root)
+    const scene = buildScene({
+      layout,
+      viewport: { width: 800, height: 600 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: emptyVisualStates,
+      overlays: emptyOverlays,
+      enableCulling: false,
+    })
+
+    const svg = renderSceneToSvg(scene, {})
+
+    // 贴纸用 <g> 包一组 <path>，并带上 translate/rotate/scale
+    expect(svg).toContain('rotate(30)')
+    expect(svg).toContain('scale(')
+    // 星星的填充色必须出现在导出里（否则等于没画）
+    expect(svg).toContain('#f6be00')
+
+    // 只贴了一张：这个旋转角在整份 SVG 里只该出现一次
+    expect(svg.split('rotate(30)').length - 1).toBe(1)
+  })
+
+  it('未识别的贴纸 id 被跳过（旧文档里的自定义贴纸不该让导出失败）', () => {
+    const unknown: TopicSnapshot = {
+      id: 'a',
+      text: 'Alpha',
+      collapsed: false,
+      children: [],
+      stickers: [{ id: 's1', stickerId: '来自未来的贴纸' }],
+    }
+    const root = makeTopic('root', 'Root', [unknown])
+    const layout = computeMindMapLayout(root)
+    const scene = buildScene({
+      layout,
+      viewport: { width: 800, height: 600 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: emptyVisualStates,
+      overlays: emptyOverlays,
+      enableCulling: false,
+    })
+
+    expect(() => renderSceneToSvg(scene, {})).not.toThrow()
+  })
+})

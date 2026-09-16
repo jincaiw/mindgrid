@@ -10,6 +10,7 @@ import type {
   TopicLink,
   TopicMarker,
   TopicShape,
+  TopicSticker,
   TopicTask,
   TopicTextTransform,
 } from '../../../lib/document/types'
@@ -94,7 +95,7 @@ export interface ResolvedTopicStyle {
   textTransform?: TopicTextTransform
 }
 
-  /** 主题上的富内容投影（image / marker / label / note / link / task），全部可选。 */
+  /** 主题上的富内容投影（image / marker / sticker / label / note / link / task），全部可选。 */
 export interface TopicRichContent {
   /**
    * 主题图片的 data URL（形如 `data:image/png;base64,...`）。
@@ -104,6 +105,11 @@ export interface TopicRichContent {
    */
   image?: string
   markers?: TopicMarker[]
+  /**
+   * 贴纸。与 marker 的区别：贴纸带**位置与旋转**，是贴在节点上的装饰；
+   * 三端都按 `computeTopicStickerPlacement` 画，避免各算一遍。
+   */
+  stickers?: TopicSticker[]
   labels?: string[]
   /** 非空字符串表示有备注。 */
   notes?: string

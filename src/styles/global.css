@@ -3462,6 +3462,77 @@ button {
   pointer-events: none;
 }
 
+/* 贴纸选择网格：与「配色方案」的内联网格同一密度节奏 */
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.sticker-grid__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sticker-grid__item:hover:not(:disabled) {
+  border-color: var(--color-border-subtle);
+  background: var(--color-surface-hover);
+}
+
+.sticker-grid__item:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.sticker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sticker-list__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sticker-list__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* 贴纸：绝对定位在节点内，位置相对**节点中心**（与 computeTopicStickerPlacement 同一语义）。
+   可拖动，所以必须接收指针事件（与 meta 图标不同）。 */
+.mindmap-node__sticker {
+  position: absolute;
+  display: block;
+  line-height: 0;
+  cursor: grab;
+  /* 触控设备上别把拖动判成滚动 */
+  touch-action: none;
+  user-select: none;
+  z-index: 1;
+}
+
+.mindmap-node__sticker--dragging {
+  cursor: grabbing;
+}
+
+.mindmap-node__sticker > svg {
+  display: block;
+  pointer-events: none;
+}
+
 /* 附件指示器：与备注图标同一排、同一尺寸节奏（回形针） */
 .mindmap-node__attachment-indicator {
   display: inline-flex;

@@ -5,6 +5,7 @@ import type {
   SheetNumbering,
   TopicLink,
   TopicMarker,
+  TopicSticker,
   TopicSnapshot,
   TopicStructure,
   TopicStyleOverrides,
@@ -307,6 +308,19 @@ export function setTopicMarkers(topicId: string, markers: TopicMarker[]) {
   return invokeCommand<DocumentSessionSnapshot>('set_topic_markers', {
     topic_id: topicId,
     markers,
+  })
+}
+
+/**
+ * 整体替换主题的贴纸列表。
+ *
+ * "贴一张 / 拖动 / 移除"都收敛到这一条：贴纸是**列表型富字段**，
+ * 整批一份 old/new 交给撤销栈，不用为每种操作各做一个命令。
+ */
+export function setTopicStickers(topicId: string, stickers: TopicSticker[]) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_stickers', {
+    topic_id: topicId,
+    stickers,
   })
 }
 

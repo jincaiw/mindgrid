@@ -13,6 +13,7 @@ use crate::domain::document::{
     ChartType, DocumentSnapshot, LayoutDirection, LayoutConfig, Relationship, SheetBranchStyle,
     SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicAttachment, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
+    TopicSticker,
     TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask,
 };
 
@@ -27,6 +28,11 @@ pub enum TopicFieldChange {
     Link { old: Option<TopicLink>, new: Option<TopicLink> },
     /// 标记列表（整体替换）。
     Markers { old: Vec<TopicMarker>, new: Vec<TopicMarker> },
+    /// 贴纸列表（整体替换）。
+    Stickers {
+        old: Vec<TopicSticker>,
+        new: Vec<TopicSticker>,
+    },
     /// 标签列表（整体替换）。
     Labels { old: Vec<String>, new: Vec<String> },
     /// 任务属性。
@@ -200,6 +206,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     new: old.clone(),
                 },
                 TopicFieldChange::Markers { old, new } => TopicFieldChange::Markers {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
+                TopicFieldChange::Stickers { old, new } => TopicFieldChange::Stickers {
                     old: new.clone(),
                     new: old.clone(),
                 },
@@ -401,6 +411,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::Notes { new, .. } => topic.notes = new.clone(),
         TopicFieldChange::Link { new, .. } => topic.link = new.clone(),
         TopicFieldChange::Markers { new, .. } => topic.markers = new.clone(),
+        TopicFieldChange::Stickers { new, .. } => topic.stickers = new.clone(),
         TopicFieldChange::Labels { new, .. } => topic.labels = new.clone(),
         TopicFieldChange::Task { new, .. } => topic.task = new.clone(),
         TopicFieldChange::StyleRef { new, .. } => topic.style_ref = new.clone(),
@@ -851,6 +862,22 @@ impl<'a> DocumentEditor<'a> {
             |t| t.markers.clone(),
             |new, old| TopicFieldChange::Markers { old, new },
             |t, v| t.markers = v,
+        );
+    }
+
+    fn set_topic_stickers_raw(
+        &mut self,
+        sheet_id: &str,
+        topic_id: &str,
+        new_stickers: Vec<TopicSticker>,
+    ) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_stickers,
+            |t| t.stickers.clone(),
+            |new, old| TopicFieldChange::Stickers { old, new },
+            |t, v| t.stickers = v,
         );
     }
 
@@ -1604,6 +1631,17 @@ impl<'a> DocumentEditor<'a> {
     pub fn set_topic_markers(&mut self, topic_id: &str, markers: Vec<TopicMarker>) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑标记的")?;
         self.set_topic_markers_raw(&sheet_id, topic_id, markers);
+        Ok(())
+    }
+
+    /// 整体替换贴纸列表。`ensure_active_topic_sheet` 保证主题在活动画布里。
+    pub fn set_topic_stickers(
+        &mut self,
+        topic_id: &str,
+        stickers: Vec<TopicSticker>,
+    ) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑贴纸")?;
+        self.set_topic_stickers_raw(&sheet_id, topic_id, stickers);
         Ok(())
     }
 

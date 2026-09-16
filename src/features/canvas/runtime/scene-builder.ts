@@ -395,6 +395,9 @@ function topicToRenderNode(
   const imageUrl = topicImageUrls?.[id]
   const hasRichContent =
     (topic.markers && topic.markers.length > 0) ||
+    // ⚠️ 贴纸必须算进来：这个布尔量决定 rich 是否生成，
+    // 漏掉它会让"只贴了贴纸的主题"在导出里完全没有贴纸（屏幕上有、导出没有）
+    (topic.stickers && topic.stickers.length > 0) ||
     (topic.labels && topic.labels.length > 0) ||
     (topic.notes && topic.notes.length > 0) ||
     topic.link ||
@@ -403,6 +406,7 @@ function topicToRenderNode(
   const rich = hasRichContent
     ? {
         markers: topic.markers?.slice(),
+        stickers: topic.stickers?.slice(),
         labels: topic.labels?.slice(),
         notes: topic.notes,
         link: topic.link,

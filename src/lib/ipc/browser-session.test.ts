@@ -589,6 +589,26 @@ describe('invokeBrowserCommand', () => {
     ).toBeUndefined()
   })
 
+  it('writes stickers as a single undo step', async () => {
+    const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
+    const topicId = created.document.sheets[0].rootTopic.children[0].id
+
+    const applied = await invokeBrowserCommand<DocumentSessionSnapshot>('set_topic_stickers', {
+      topic_id: topicId,
+      stickers: [
+        { id: 's1', stickerId: 'star', offsetX: -14, offsetY: -14 },
+        { id: 's2', stickerId: 'heart' },
+      ],
+    })
+    const stickers = findTopicById(applied.document.sheets[0].rootTopic, topicId)?.stickers
+    expect(stickers?.map((item) => item.stickerId)).toEqual(['star', 'heart'])
+    expect(applied.nextUndoAction).toBe('编辑贴纸')
+
+    // 整批一条记录：一次撤销回到"没有贴纸"（前端用可选数组，故是 undefined 而非 []）
+    const undone = await invokeBrowserCommand<DocumentSessionSnapshot>('undo_document_command')
+    expect(findTopicById(undone.document.sheets[0].rootTopic, topicId)?.stickers).toBeUndefined()
+  })
+
   it('attaches a file to a topic and removes it with undo support', async () => {
     const created = await invokeBrowserCommand<DocumentSessionSnapshot>('create_document')
     const topicId = created.document.sheets[0].rootTopic.children[0].id
