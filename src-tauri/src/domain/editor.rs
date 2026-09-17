@@ -13,6 +13,7 @@ use crate::domain::document::{
     ChartType, DocumentSnapshot, LayoutDirection, LayoutConfig, Relationship, SheetBranchStyle,
     SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicAttachment, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
+    TopicCallout,
     TopicSticker,
     TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask,
 };
@@ -32,6 +33,11 @@ pub enum TopicFieldChange {
     Stickers {
         old: Vec<TopicSticker>,
         new: Vec<TopicSticker>,
+    },
+    /// 标注（整体替换；None 表示移除标注）。
+    Callout {
+        old: Option<TopicCallout>,
+        new: Option<TopicCallout>,
     },
     /// 标签列表（整体替换）。
     Labels { old: Vec<String>, new: Vec<String> },
@@ -210,6 +216,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     new: old.clone(),
                 },
                 TopicFieldChange::Stickers { old, new } => TopicFieldChange::Stickers {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
+                TopicFieldChange::Callout { old, new } => TopicFieldChange::Callout {
                     old: new.clone(),
                     new: old.clone(),
                 },
@@ -412,6 +422,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::Link { new, .. } => topic.link = new.clone(),
         TopicFieldChange::Markers { new, .. } => topic.markers = new.clone(),
         TopicFieldChange::Stickers { new, .. } => topic.stickers = new.clone(),
+        TopicFieldChange::Callout { new, .. } => topic.callout = new.clone(),
         TopicFieldChange::Labels { new, .. } => topic.labels = new.clone(),
         TopicFieldChange::Task { new, .. } => topic.task = new.clone(),
         TopicFieldChange::StyleRef { new, .. } => topic.style_ref = new.clone(),
@@ -878,6 +889,22 @@ impl<'a> DocumentEditor<'a> {
             |t| t.stickers.clone(),
             |new, old| TopicFieldChange::Stickers { old, new },
             |t, v| t.stickers = v,
+        );
+    }
+
+    fn set_topic_callout_raw(
+        &mut self,
+        sheet_id: &str,
+        topic_id: &str,
+        new_callout: Option<TopicCallout>,
+    ) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_callout,
+            |t| t.callout.clone(),
+            |new, old| TopicFieldChange::Callout { old, new },
+            |t, v| t.callout = v,
         );
     }
 
@@ -1642,6 +1669,17 @@ impl<'a> DocumentEditor<'a> {
     ) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑贴纸")?;
         self.set_topic_stickers_raw(&sheet_id, topic_id, stickers);
+        Ok(())
+    }
+
+    /// 设置/移除主题标注。
+    pub fn set_topic_callout(
+        &mut self,
+        topic_id: &str,
+        callout: Option<TopicCallout>,
+    ) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑标注")?;
+        self.set_topic_callout_raw(&sheet_id, topic_id, callout);
         Ok(())
     }
 

@@ -3511,6 +3511,38 @@ button {
   font-size: 12px;
 }
 
+/* 标注（callout）：挂在节点外侧的说明框。
+   文本行由 wrapText 切好并逐行渲染，这里**不靠 CSS 换行**，以免与导出端行数不一致导致框高不同。 */
+.mindmap-node__callout {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  border-radius: 6px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.mindmap-node__callout--dragging {
+  cursor: grabbing;
+}
+
+.mindmap-node__callout-lead {
+  position: absolute;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
+}
+
+.mindmap-node__callout-line {
+  display: block;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 贴纸：绝对定位在节点内，位置相对**节点中心**（与 computeTopicStickerPlacement 同一语义）。
    可拖动，所以必须接收指针事件（与 meta 图标不同）。 */
 .mindmap-node__sticker {

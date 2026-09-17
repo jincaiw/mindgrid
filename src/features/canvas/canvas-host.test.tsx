@@ -132,6 +132,7 @@ importDocxOutline: async () => {},
     setTopicLink: async () => {},
     setTopicMarkers: async () => {},
     setTopicStickers: async () => {},
+    setTopicCallout: async () => {},
     setTopicLabels: async () => {},
     setTopicTask: async () => {},
     setTopicStyleRef: async () => {},
@@ -1385,5 +1386,103 @@ describe('主题贴纸', () => {
 
     // 否则每次点一下贴纸都会往撤销栈里塞一条空记录
     expect(setTopicStickers).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * 主题标注（callout）。
+ *
+ * 与贴纸同属"节点上的装饰对象"，所以照同一套规则验证：
+ * 有内容才渲染、拖动松手才提交一次、没挪动就不写文档（否则点一下就多一条撤销记录）。
+ */
+describe('主题标注', () => {
+  function makeSessionWithCallout() {
+    const setTopicCallout = vi.fn(async () => {})
+    const session = createSessionStub({
+      setTopicCallout,
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic: {
+              id: 'topic_root',
+              text: '中心主题',
+              collapsed: false,
+              children: [
+                {
+                  id: 'topic_called',
+                  text: '带标注',
+                  collapsed: false,
+                  children: [],
+                  callout: { text: '这是一段较长的说明文本，用来验证换行之后框会变高。', offsetX: 260, offsetY: -30 },
+                },
+                { id: 'topic_plain', text: '没有标注', collapsed: false, children: [] },
+              ],
+            },
+          },
+        ],
+      },
+    })
+    return { session, setTopicCallout }
+  }
+
+  it('渲染标注框与文本行；没有标注的主题不渲染', () => {
+    renderWithApp(<CanvasHost session={makeSessionWithCallout().session} />)
+
+    const called = document.querySelector('[data-topic-id="topic_called"]')
+    const callout = called?.querySelector('.mindmap-node__callout') as HTMLElement | null
+    expect(callout).not.toBeNull()
+    // 文本按 wrapText 切行后逐行渲染（不用 CSS 换行，避免与导出端行数不一致）
+    expect(callout!.querySelectorAll('.mindmap-node__callout-line').length).toBeGreaterThan(0)
+    // 存下来的偏移直接决定位置
+    expect(callout!.style.left).toBe('calc(50% + 260px)')
+    expect(callout!.style.top).toBe('calc(50% - 30px)')
+
+    const plain = document.querySelector('[data-topic-id="topic_plain"]')
+    expect(plain?.querySelector('.mindmap-node__callout')).toBeNull()
+  })
+
+  it('拖动标注：松手时提交一次（一次拖动 = 一条撤销记录）', () => {
+    const { session, setTopicCallout } = makeSessionWithCallout()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const callout = document.querySelector(
+      '[data-topic-id="topic_called"] .mindmap-node__callout',
+    ) as HTMLElement
+
+    fireEvent.pointerDown(callout, { button: 0, clientX: 200, clientY: 200, pointerId: 9 })
+    fireEvent.pointerMove(callout, { button: 0, clientX: 240, clientY: 170, pointerId: 9 })
+    fireEvent.pointerUp(callout, { button: 0, clientX: 240, clientY: 170, pointerId: 9 })
+
+    expect(setTopicCallout).toHaveBeenCalledTimes(1)
+    const [topicId, next] = setTopicCallout.mock.calls[0] as unknown as [
+      string,
+      { text: string; offsetX?: number; offsetY?: number },
+    ]
+    expect(topicId).toBe('topic_called')
+    // 位移 (40, -30) 叠加到原偏移 (260, -30) 上
+    expect(next.offsetX).toBeCloseTo(300)
+    expect(next.offsetY).toBeCloseTo(-60)
+    // 文本不能被拖动弄丢
+    expect(next.text.length).toBeGreaterThan(0)
+  })
+
+  it('按下即松手（没挪动）不写文档', () => {
+    const { session, setTopicCallout } = makeSessionWithCallout()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const callout = document.querySelector(
+      '[data-topic-id="topic_called"] .mindmap-node__callout',
+    ) as HTMLElement
+
+    fireEvent.pointerDown(callout, { button: 0, clientX: 200, clientY: 200, pointerId: 10 })
+    fireEvent.pointerUp(callout, { button: 0, clientX: 200, clientY: 200, pointerId: 10 })
+
+    expect(setTopicCallout).not.toHaveBeenCalled()
   })
 })

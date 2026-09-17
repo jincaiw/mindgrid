@@ -13,7 +13,7 @@ import type {
   TopicSticker,
   TopicTask,
   TopicTextTransform,
-} from '../../../lib/document/types'
+  TopicCallout,} from '../../../lib/document/types'
 
 // ---- 图层定义（z-order 从低到高）----
 
@@ -110,6 +110,11 @@ export interface TopicRichContent {
    * 三端都按 `computeTopicStickerPlacement` 画，避免各算一遍。
    */
   stickers?: TopicSticker[]
+  /**
+   * 标注（callout）：挂在节点外侧的说明框。三端都按 `computeTopicCalloutPlacement` 画。
+   * 空文本视为无标注（由渲染端判断，存储侧不额外清洗）。
+   */
+  callout?: TopicCallout
   labels?: string[]
   /** 非空字符串表示有备注。 */
   notes?: string

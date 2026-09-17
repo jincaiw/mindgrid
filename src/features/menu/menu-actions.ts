@@ -74,6 +74,7 @@ export type MenuActionId =
   | 'insert.link'
   | 'insert.attachment'
   | 'insert.sticker'
+  | 'insert.callout'
   | 'insert.marker'
   | 'insert.image'
   | 'insert.new-sheet'
@@ -163,6 +164,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'insert.link',
   'insert.attachment',
   'insert.sticker',
+  'insert.callout',
   'insert.marker',
   'insert.image',
   'insert.new-sheet',

@@ -65,6 +65,7 @@ import {
   setTopicLabels,
   setTopicLink,
   setTopicMarkers,
+  setTopicCallout as setTopicCalloutCommand,
   setTopicStickers as setTopicStickersCommand,
   setTopicNotes,
   setTopicStructure,
@@ -86,6 +87,7 @@ import type {
   SheetNumbering,
   TopicLink,
   TopicMarker,
+  TopicCallout,
   TopicSticker,
   TopicDirection,
   TopicStructure,
@@ -203,6 +205,8 @@ export interface DocumentSession extends DocumentSessionState {
    * 列表型富字段：整批一份 old/new，撤销栈里只留一条记录。
    */
   setTopicStickers: (topicId: string, stickers: TopicSticker[]) => Promise<void>
+  /** 设置 / 移除主题标注（画布上的说明框）。 */
+  setTopicCallout: (topicId: string, callout: TopicCallout | null) => Promise<void>
   setTopicLabels: (topicId: string, labels: string[]) => Promise<void>
   setTopicTask: (topicId: string, task: TopicTask | null) => Promise<void>
   setTopicStyleRef: (topicId: string, styleRef: string | null) => Promise<void>
@@ -1413,6 +1417,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicCallout = useCallback(
+    async (topicId: string, callout: TopicCallout | null) => {
+      await runCommand('编辑标注', () => setTopicCalloutCommand(topicId, callout))
+    },
+    [runCommand],
+  )
+
   const updateTopicStickers = useCallback(
     async (topicId: string, stickers: TopicSticker[]) => {
       await runCommand('编辑贴纸', () => setTopicStickersCommand(topicId, stickers))
@@ -1745,6 +1756,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicLink: updateTopicLink,
       setTopicMarkers: updateTopicMarkers,
       setTopicStickers: updateTopicStickers,
+      setTopicCallout: updateTopicCallout,
       setTopicLabels: updateTopicLabels,
       setTopicTask: updateTopicTask,
       setTopicStyleRef: updateTopicStyleRef,
@@ -1794,6 +1806,7 @@ export function useDocumentSession(): DocumentSession {
       updateTopicLink,
       updateTopicMarkers,
       updateTopicStickers,
+      updateTopicCallout,
       updateTopicLabels,
       updateTopicTask,
       updateTopicStyleRef,

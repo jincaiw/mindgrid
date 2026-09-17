@@ -364,6 +364,8 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     case 'insert.attachment':
     // 贴纸在右侧面板的「贴纸」小节里选（点一下就贴到选中主题上）
     case 'insert.sticker':
+    // 标注在右侧面板的「标注」小节里开关与编辑（画布上直接可见的说明框）
+    case 'insert.callout':
     case 'insert.marker':
     case 'insert.image':
       if (ctx.selectedTopicIds.length === 1) {

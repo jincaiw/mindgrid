@@ -27,6 +27,18 @@ function makeRoot(): TopicSnapshot {
   ])
 }
 
+/** 只在一个分支主题上挂标注——盯住"聚合布尔量漏字段"这类缺陷。 */
+function rootWithOnlyCallout() {
+  const child: TopicSnapshot = {
+    id: 'b',
+    text: 'B',
+    collapsed: false,
+    children: [],
+    callout: { text: '一段说明。' },
+  }
+  return makeTopic('root', 'Root', [makeTopic('a', 'Alpha'), child])
+}
+
 const defaultViewport: Viewport = { width: 1920, height: 1080 }
 const defaultCamera: CameraProjection = { x: 0, y: 0, zoom: 1 }
 const defaultVisualStates: TopicVisualStates = {
@@ -785,4 +797,20 @@ describe('贴纸进入富内容投影', () => {
     // 没有贴纸的主题不该凭空多出 stickers
     expect(plain && 'rich' in plain ? plain.rich?.stickers : undefined).toBeUndefined()
   })
+
+  it('只加了标注的主题也会生成 rich（漏掉它导出里就没有标注）', async () => {
+    const scene = await buildScene({
+      layout: computeMindMapLayout(rootWithOnlyCallout()),
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+    const rich = scene.nodes
+      .filter((node) => node.type === 'topic')
+      .map((node) => (node.type === 'topic' ? node.rich : undefined))
+    expect(rich.some((item) => item?.callout?.text === '一段说明。')).toBe(true)
+  })
+
 })

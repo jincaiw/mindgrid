@@ -41,6 +41,15 @@ import {
   TOPIC_IMAGE_TITLE_OFFSET,
   computeTopicImageFittedRect,
 } from './topic-image-constants'
+import {
+  TOPIC_CALLOUT_FONT_SIZE,
+  TOPIC_CALLOUT_LINE_HEIGHT,
+  TOPIC_CALLOUT_PADDING,
+  TOPIC_CALLOUT_RADIUS,
+  TOPIC_CALLOUT_TEXT_WIDTH,
+  computeTopicCalloutLead,
+  computeTopicCalloutPlacement,
+} from './topic-callout-constants'
 import { computeTopicStickerPlacement } from './topic-sticker-constants'
 import { STICKER_VIEWBOX, findStickerDefinition } from '../sticker-definitions'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
@@ -319,6 +328,9 @@ function drawTopic(
   // 贴纸：最上层（可压住文字，与 DOM/SVG 的层级一致）
   drawNodeStickers(ctx, node)
 
+  // 标注（callout）：挂在节点外侧的说明框 + 一条引线
+  drawNodeCallout(ctx, node, fontFamily)
+
   // 折叠/展开按钮
   if (node.childCount > 0) {
     drawToggleButton(ctx, node, fontFamily)
@@ -505,6 +517,75 @@ function drawNodeStickers(ctx: CanvasRenderingContext2D, node: TopicRenderNode):
     }
 
     ctx.restore()
+  }
+}
+
+/**
+ * 绘制主题的标注（callout）：节点外侧的说明框 + 一条指向节点的引线。
+ *
+ * 三端共用 `computeTopicCalloutPlacement` 与 `wrapText`，所以"几行、框多大、线从哪到哪"在三端同一个结果。
+ * 文字逐行 `fillText`，行高与 DOM 的 line-height 一致。
+ */
+function drawNodeCallout(
+  ctx: CanvasRenderingContext2D,
+  node: TopicRenderNode,
+  fontFamily: string,
+): void {
+  const callout = node.rich?.callout
+  if (!callout || callout.text.trim().length === 0) {
+    return
+  }
+
+  const font = `${TOPIC_CALLOUT_FONT_SIZE}px ${node.style.fontFamily ?? fontFamily}`
+  const lines = wrapText(callout.text, TOPIC_CALLOUT_TEXT_WIDTH, font)
+  const placement = computeTopicCalloutPlacement(
+    node.bounds,
+    callout,
+    lines.length,
+    node.side === 'left' ? 'left' : 'right',
+  )
+  const lead = computeTopicCalloutLead(node.bounds, placement)
+
+  // 引线：underline 形状同样把透明边框回退到文字色（照既有约定）
+  const leadColor =
+    node.style.borderColor === 'transparent' ? node.style.textColor : node.style.borderColor
+
+  ctx.save()
+  ctx.globalAlpha = 0.55
+  ctx.strokeStyle = leadColor
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(lead.x1, lead.y1)
+  ctx.lineTo(lead.x2, lead.y2)
+  ctx.stroke()
+  ctx.restore()
+
+  // 框
+  roundRect(
+    ctx,
+    placement.x,
+    placement.y,
+    placement.width,
+    placement.height,
+    TOPIC_CALLOUT_RADIUS,
+  )
+  ctx.fillStyle = node.style.fill
+  ctx.fill()
+  ctx.strokeStyle = leadColor
+  ctx.lineWidth = node.style.borderWidth
+  ctx.stroke()
+
+  // 文字（逐行）
+  ctx.font = font
+  ctx.fillStyle = node.style.textColor
+  ctx.textAlign = 'left'
+  ctx.textBaseline = 'top'
+  for (let i = 0; i < lines.length; i += 1) {
+    ctx.fillText(
+      lines[i],
+      placement.x + TOPIC_CALLOUT_PADDING,
+      placement.y + TOPIC_CALLOUT_PADDING + i * TOPIC_CALLOUT_LINE_HEIGHT,
+    )
   }
 }
 

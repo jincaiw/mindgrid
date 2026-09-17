@@ -1126,6 +1126,43 @@ export function Inspector({
     attachmentInputRef.current?.click()
   }
 
+  // —— 标注（callout）草稿：与「笔记」面板同一套做法。
+  //
+  // 渲染期校正而非 useEffect；revision 纳入同步依据，保证撤销（⌘Z）之后草稿不会把被撤销掉的文本又提交回去。
+  // 失焦即提交：每输入一个字都写文档会让"输入一句话"产生几十条撤销记录。
+  const calloutTopicId = activeTopic?.id
+  const persistedCallout = activeTopic?.callout ?? null
+  const calloutRevision = session.document?.revision
+  const [calloutDraft, setCalloutDraft] = useState({
+    topicId: calloutTopicId,
+    revision: calloutRevision,
+    value: persistedCallout?.text ?? '',
+  })
+
+  if (calloutDraft.topicId !== calloutTopicId || calloutDraft.revision !== calloutRevision) {
+    setCalloutDraft({
+      topicId: calloutTopicId,
+      revision: calloutRevision,
+      value: persistedCallout?.text ?? '',
+    })
+  }
+
+  const handleCalloutCommit = async () => {
+    if (!calloutTopicId) {
+      return
+    }
+
+    const nextText = calloutDraft.value.trim()
+    const nextCallout = nextText.length > 0
+      ? { ...(persistedCallout ?? {}), text: nextText }
+      : null
+
+    // 只在文本真的变了才写：否则点一下输入框就会多出一条撤销记录。
+    if ((persistedCallout?.text ?? '') !== (nextCallout?.text ?? '')) {
+      await session.setTopicCallout(calloutTopicId, nextCallout)
+    }
+  }
+
   const handleOpenAttachment = async () => {
     if (!activeTopic?.attachment) {
       return
@@ -2297,6 +2334,49 @@ export function Inspector({
                 ) : (
                   <p className="panel__muted">当前主题没有贴纸。</p>
                 )}
+              </PanelSection>
+            ) : null}
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <PanelSection title="标注">
+                <p className="panel__muted">
+                  标注是画布上挂在主题旁边的说明框，带一条指向主题的引线——与「备注」不同，它直接可见。
+                </p>
+
+                <div className="panel__field">
+                  <span>内容</span>
+                  {persistedCallout ? (
+                    <textarea
+                      className="panel__textarea"
+                      aria-label="标注文本"
+                      rows={3}
+                      value={calloutDraft.value}
+                      onChange={(event) => setCalloutDraft({ ...calloutDraft, value: event.target.value })}
+                      onBlur={() => void handleCalloutCommit()}
+                    />
+                  ) : (
+                    <p className="panel__muted">当前主题没有标注。</p>
+                  )}
+                  <div className="panel__field-row">
+                    {persistedCallout ? (
+                      <button
+                        className="panel__action panel__action--ghost"
+                        type="button"
+                        onClick={() => void session.setTopicCallout(activeTopic.id, null)}
+                      >
+                        移除标注
+                      </button>
+                    ) : (
+                      <button
+                        className="panel__action"
+                        type="button"
+                        onClick={() => void session.setTopicCallout(activeTopic.id, { text: '' })}
+                      >
+                        添加标注
+                      </button>
+                    )}
+                  </div>
+                </div>
               </PanelSection>
             ) : null}
 

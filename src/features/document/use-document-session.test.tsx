@@ -51,6 +51,7 @@ const commandMocks = vi.hoisted(() => ({
   setTopicLink: vi.fn(),
   setTopicMarkers: vi.fn(),
   setTopicStickers: async () => {},
+  setTopicCallout: async () => {},
   setTopicLabels: vi.fn(),
   setTopicTask: vi.fn(),
   setTopicStyleRef: vi.fn(),

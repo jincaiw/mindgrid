@@ -10,6 +10,7 @@ import type {
   SheetNumbering,
   TopicLink,
   TopicMarker,
+  TopicCallout,
   TopicSticker,
   TopicSnapshot,
   TopicDirection,
@@ -1256,6 +1257,23 @@ export async function invokeBrowserCommand<TResult>(
           throw new Error('找不到需要编辑贴纸的主题')
         }
         topic.stickers = nextStickers
+        return activeTopicId ?? topicId
+      }) as TResult
+    }
+    case 'set_topic_callout': {
+      const topicId = String(payload.topic_id)
+      const nextCallout = (payload.callout as TopicCallout | null | undefined) ?? null
+
+      return applyMutation('编辑标注', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+        if (!topic) {
+          throw new Error('找不到需要编辑标注的主题')
+        }
+        topic.callout = nextCallout ?? undefined
         return activeTopicId ?? topicId
       }) as TResult
     }

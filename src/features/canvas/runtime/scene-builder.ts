@@ -398,6 +398,8 @@ function topicToRenderNode(
     // ⚠️ 贴纸必须算进来：这个布尔量决定 rich 是否生成，
     // 漏掉它会让"只贴了贴纸的主题"在导出里完全没有贴纸（屏幕上有、导出没有）
     (topic.stickers && topic.stickers.length > 0) ||
+    // ⚠️ 标注必须算进来（同贴纸）：漏掉它会让"只加了标注的主题"在导出里完全没有标注
+    topic.callout ||
     (topic.labels && topic.labels.length > 0) ||
     (topic.notes && topic.notes.length > 0) ||
     topic.link ||
@@ -407,6 +409,7 @@ function topicToRenderNode(
     ? {
         markers: topic.markers?.slice(),
         stickers: topic.stickers?.slice(),
+        callout: topic.callout,
         labels: topic.labels?.slice(),
         notes: topic.notes,
         link: topic.link,

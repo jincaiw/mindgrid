@@ -29,6 +29,15 @@ import {
   computeTopicImageFittedRect,
   computeTopicImageRect,
 } from './topic-image-constants'
+import {
+  TOPIC_CALLOUT_FONT_SIZE,
+  TOPIC_CALLOUT_LINE_HEIGHT,
+  TOPIC_CALLOUT_PADDING,
+  TOPIC_CALLOUT_RADIUS,
+  TOPIC_CALLOUT_TEXT_WIDTH,
+  computeTopicCalloutLead,
+  computeTopicCalloutPlacement,
+} from './topic-callout-constants'
 import { computeTopicStickerPlacement } from './topic-sticker-constants'
 import { STICKER_VIEWBOX, findStickerDefinition } from '../sticker-definitions'
 import { resolveThemeBackground } from './style-resolver'
@@ -300,6 +309,41 @@ function topicToSvg(
     const clip = hasImageClip ? ` clip-path="url(#${topicImageClipId(node.id)})"` : ''
     elements.push(
       `  <image x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" preserveAspectRatio="xMidYMid meet" href="${escapeXml(rich.image)}" xlink:href="${escapeXml(rich.image)}"${clip}/>`,
+    )
+  }
+
+  // 标注（callout）：挂在节点外侧的说明框 + 一条引线（几何与 PNG 端同一个函数）
+  const callout = rich?.callout
+  if (callout && callout.text.trim().length > 0) {
+    const lines = wrapText(
+      callout.text,
+      TOPIC_CALLOUT_TEXT_WIDTH,
+      `${TOPIC_CALLOUT_FONT_SIZE}px ${style.fontFamily ?? fontFamily}`,
+    )
+    const placement = computeTopicCalloutPlacement(
+      bounds,
+      callout,
+      lines.length,
+      node.side === 'left' ? 'left' : 'right',
+    )
+    const lead = computeTopicCalloutLead(bounds, placement)
+    const strokeColor =
+      style.borderColor === 'transparent' ? style.textColor : style.borderColor
+
+    elements.push(
+      `  <line x1="${fmt(lead.x1)}" y1="${fmt(lead.y1)}" x2="${fmt(lead.x2)}" y2="${fmt(lead.y2)}" stroke="${escapeXml(strokeColor)}" stroke-width="1" opacity="0.55"/>`,
+    )
+    elements.push(
+      `  <rect x="${fmt(placement.x)}" y="${fmt(placement.y)}" width="${fmt(placement.width)}" height="${fmt(placement.height)}" rx="${fmt(TOPIC_CALLOUT_RADIUS)}" ry="${fmt(TOPIC_CALLOUT_RADIUS)}" fill="${escapeXml(style.fill)}" stroke="${escapeXml(strokeColor)}" stroke-width="${fmt(style.borderWidth)}"/>`,
+    )
+    const tspans = lines
+      .map(
+        (line, index) =>
+          `<tspan x="${fmt(placement.x + TOPIC_CALLOUT_PADDING)}" dy="${index === 0 ? 0 : fmt(TOPIC_CALLOUT_LINE_HEIGHT)}">${escapeXml(line)}</tspan>`,
+      )
+      .join('')
+    elements.push(
+      `  <text x="${fmt(placement.x + TOPIC_CALLOUT_PADDING)}" y="${fmt(placement.y + TOPIC_CALLOUT_PADDING)}" font-size="${fmt(TOPIC_CALLOUT_FONT_SIZE)}" font-weight="400" fill="${escapeXml(style.textColor)}" text-anchor="start" dominant-baseline="hanging">${tspans}</text>`,
     )
   }
 

@@ -123,6 +123,7 @@ pub fn run() {
             app::commands::set_topic_link,
             app::commands::set_topic_markers,
             app::commands::set_topic_stickers,
+            app::commands::set_topic_callout,
             app::commands::set_topic_labels,
             app::commands::set_topic_task,
             app::commands::set_topic_style_ref,

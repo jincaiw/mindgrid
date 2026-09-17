@@ -45,6 +45,21 @@ pub struct TopicSticker {
     pub rotation: Option<f64>,
 }
 
+/// 主题标注（callout）：挂在节点外侧的说明框 + 一条指向节点的引线。
+///
+/// 与附件/贴纸一样**不参与布局**——它是画布上的说明文字，不改节点尺寸。
+/// 位置相对节点中心；未显式摆放过（`offset_*` 为 None）时由渲染端按默认落点现算。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicCallout {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_x: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset_y: Option<f64>,
+}
+
+/// 主题超链接。 */
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TopicLink {
@@ -232,6 +247,9 @@ pub struct TopicSnapshot {
     /// 贴纸。与标记的区别：贴纸带位置与旋转，是"贴在节点上"的装饰，可拖动。
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stickers: Vec<TopicSticker>,
+    /// 标注（画布上的说明框）。与备注不同：它在画布上可见，且带位置。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub callout: Option<TopicCallout>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub labels: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1240,6 +1258,18 @@ impl DocumentSession {
         })
     }
 
+    /// 设置/移除主题标注。与贴纸同属"带位置的画布对象"，同样整批一份 old/new。
+    pub fn set_topic_callout(
+        &mut self,
+        topic_id: &str,
+        callout: Option<TopicCallout>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("编辑标注", |editor| {
+            editor.set_topic_callout(topic_id, callout)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     pub fn set_topic_labels(
         &mut self,
         topic_id: &str,
@@ -1544,6 +1574,7 @@ impl TopicSnapshot {
             style_overrides: None,
             markers: Vec::new(),
             stickers: Vec::new(),
+            callout: None,
             labels: Vec::new(),
             notes: None,
             link: None,
@@ -1576,6 +1607,7 @@ impl SheetSnapshot {
                 style_overrides: None,
                 markers: Vec::new(),
                 stickers: Vec::new(),
+                callout: None,
                 labels: Vec::new(),
                 notes: None,
                 link: None,
@@ -1746,6 +1778,7 @@ pub(crate) fn clone_topic_branch(topic: &TopicSnapshot) -> TopicSnapshot {
         style_overrides: topic.style_overrides.clone(),
         markers: topic.markers.clone(),
         stickers: topic.stickers.clone(),
+        callout: topic.callout.clone(),
         labels: topic.labels.clone(),
         notes: topic.notes.clone(),
         link: topic.link.clone(),
@@ -1780,6 +1813,7 @@ fn clone_topic_branch_with_map(
         style_overrides: topic.style_overrides.clone(),
         markers: topic.markers.clone(),
         stickers: topic.stickers.clone(),
+        callout: topic.callout.clone(),
         labels: topic.labels.clone(),
         notes: topic.notes.clone(),
         link: topic.link.clone(),
@@ -1807,7 +1841,7 @@ pub fn create_id(prefix: &str) -> String {
 mod tests {
     use super::{
         Boundary, DocumentRepairReport, DocumentSession, DocumentSnapshot, Relationship,
-        SummaryNode, TopicAttachment, TopicSnapshot, TopicSticker,
+        SummaryNode, TopicAttachment, TopicCallout, TopicSnapshot, TopicSticker,
     };
 
     #[test]
@@ -2539,6 +2573,67 @@ mod tests {
     }
 
     #[test]
+    fn set_topic_callout_round_trips_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[0]
+            .id
+            .clone();
+
+        let applied = session
+            .set_topic_callout(
+                &topic_id,
+                Some(TopicCallout {
+                    text: "这里是补充说明".to_string(),
+                    offset_x: Some(200.0),
+                    offset_y: Some(-60.0),
+                }),
+            )
+            .expect("applying callout should succeed");
+        let callout = super::find_topic(applied.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .callout
+            .clone();
+        assert_eq!(
+            callout.map(|item| item.text),
+            Some("这里是补充说明".to_string())
+        );
+        assert_eq!(applied.next_undo_action.as_deref(), Some("编辑标注"));
+
+        // 一次撤销移除标注；重做再拿回来
+        let undone = session.undo().expect("undo should succeed");
+        assert!(super::find_topic(undone.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .callout
+            .is_none());
+
+        let redone = session.redo().expect("redo should succeed");
+        assert!(super::find_topic(redone.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .callout
+            .is_some());
+    }
+
+    #[test]
+    fn clone_topic_branch_keeps_callout() {
+        // 复制/粘贴主题会静默丢掉标注——与附件/贴纸同一类坑
+        let mut source = TopicSnapshot::new("带标注的主题");
+        source.callout = Some(TopicCallout {
+            text: "别丢下我".to_string(),
+            offset_x: None,
+            offset_y: None,
+        });
+
+        let cloned = super::clone_topic_branch(&source);
+
+        assert_eq!(cloned.callout, source.callout);
+    }
+
+    #[test]
     fn clone_topic_branch_keeps_stickers() {
         // 复制/粘贴走 clone_topic_branch：漏掉贴纸字段的话，粘贴出来的主题会**静默丢贴纸**
         let mut source = TopicSnapshot::new("带贴纸的主题");
@@ -2884,6 +2979,7 @@ mod tests {
             style_overrides: None,
             markers: Vec::new(),
             stickers: Vec::new(),
+            callout: None,
             labels: Vec::new(),
             notes: None,
             link: None,
@@ -2904,6 +3000,7 @@ mod tests {
             style_overrides: None,
             markers: Vec::new(),
             stickers: Vec::new(),
+            callout: None,
             labels: Vec::new(),
             notes: None,
             link: None,

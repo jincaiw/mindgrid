@@ -87,6 +87,7 @@ example.mgd
 - styleRef
 - markers
 - stickers
+- callout
 - labels
 - notes
 - link

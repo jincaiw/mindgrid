@@ -5,6 +5,7 @@ import type {
   SheetNumbering,
   TopicLink,
   TopicMarker,
+  TopicCallout,
   TopicSticker,
   TopicSnapshot,
   TopicStructure,
@@ -321,6 +322,14 @@ export function setTopicStickers(topicId: string, stickers: TopicSticker[]) {
   return invokeCommand<DocumentSessionSnapshot>('set_topic_stickers', {
     topic_id: topicId,
     stickers,
+  })
+}
+
+/** 设置 / 移除主题标注（画布上的说明框）。 */
+export function setTopicCallout(topicId: string, callout: TopicCallout | null) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_callout', {
+    topic_id: topicId,
+    callout,
   })
 }
 

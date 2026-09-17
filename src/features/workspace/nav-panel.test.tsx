@@ -121,6 +121,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     setTopicLink: async () => {},
     setTopicMarkers: async () => {},
     setTopicStickers: async () => {},
+    setTopicCallout: async () => {},
     setTopicLabels: async () => {},
     setTopicTask: async () => {},
     setTopicStyleRef: async () => {},

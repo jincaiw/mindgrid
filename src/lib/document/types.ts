@@ -43,6 +43,18 @@ export interface TopicSticker {
   rotation?: number
 }
 
+/**
+ * 主题标注（callout）：画布上挂在节点外侧的说明框 + 一条指向节点的引线。
+ *
+ * 与备注不同：它在画布上直接可见，且带位置。
+ * 位置相对节点中心；没显式摆放过（offsetX/offsetY 缺省）时由渲染端按默认落点现算。
+ */
+export interface TopicCallout {
+  text: string
+  offsetX?: number
+  offsetY?: number
+}
+
 /** 主题超链接。 */
 export interface TopicLink {
   url: string
@@ -225,6 +237,7 @@ export interface TopicSnapshot {
   styleOverrides?: TopicStyleOverrides
   markers?: TopicMarker[]
   stickers?: TopicSticker[]
+  callout?: TopicCallout
   labels?: string[]
   notes?: string
   link?: TopicLink

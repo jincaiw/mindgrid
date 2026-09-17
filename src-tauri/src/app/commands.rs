@@ -3,7 +3,7 @@ use crate::domain::document::find_topic;
 use crate::domain::document::{
     DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
     SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker,
-    TopicSticker, TopicStructure, TopicStyleOverrides,
+    TopicCallout, TopicSticker, TopicStructure, TopicStyleOverrides,
     TopicTask,
 };
 use crate::AppState;
@@ -937,6 +937,24 @@ pub fn set_topic_stickers(
         .map_err(|_| "unable to acquire document state".to_string())?;
 
     guard.set_topic_stickers(&topic_id, stickers)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 设置/移除主题标注（画布上的说明框）。
+#[tauri::command]
+pub fn set_topic_callout(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    callout: Option<TopicCallout>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_callout(&topic_id, callout)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }

@@ -27,6 +27,16 @@ import {
   computeTopicStickerPlacement,
 } from './runtime/topic-sticker-constants'
 import {
+  TOPIC_CALLOUT_FONT_SIZE,
+  TOPIC_CALLOUT_LINE_HEIGHT,
+  TOPIC_CALLOUT_PADDING,
+  TOPIC_CALLOUT_TEXT_WIDTH,
+  TOPIC_CALLOUT_WIDTH,
+  computeTopicCalloutLeadBox,
+  computeTopicCalloutPlacement,
+} from './runtime/topic-callout-constants'
+import { wrapText } from './runtime/style-constants'
+import {
   FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
   resolveBranchFocusTarget,
   resolveFocusVisibleTopicIds,
@@ -302,6 +312,7 @@ function MindMapScene({
   onMoveTopic,
   onPlaceTopicFreely,
   onStickerMove,
+  onCalloutMove,
   onCreateChildTopic,
   onCreateSiblingTopic,
   onDeleteTopics,
@@ -376,6 +387,7 @@ function MindMapScene({
   onPlaceTopicFreely: (topicId: string, offsetX: number, offsetY: number) => Promise<void>
   /** 松手时提交贴纸新偏移（世界单位，相对节点中心）。一次拖动只调一次。 */
   onStickerMove: (topicId: string, stickerId: string, offsetX: number, offsetY: number) => void
+  onCalloutMove: (topicId: string, offsetX: number, offsetY: number) => void
   // 右键上下文菜单动作（由 TreeWorkspace 注入）
   onCreateChildTopic: (topicId: string) => Promise<void>
   onCreateSiblingTopic: (topicId: string) => Promise<void>
@@ -1703,6 +1715,7 @@ function MindMapScene({
               node={node}
               zoom={camera.zoom}
               onStickerMove={onStickerMove}
+              onCalloutMove={onCalloutMove}
               offsetX={layout.offsetX}
               offsetY={layout.offsetY}
               themeId={themeId}
@@ -1816,6 +1829,14 @@ function stickerOffsetExpression(offset: number): string {
   return rounded >= 0 ? `calc(50% + ${rounded}px)` : `calc(50% - ${Math.abs(rounded)}px)`
 }
 
+/** 标注在装饰拖动状态里用的 id（与贴纸实例 id 区分开）。 */
+export const CALLOUT_DECOR_ID = '__callout__'
+
+/** 透明边框回退到文字色，与 underline 形状的既有约定一致。 */
+function calloutStrokeColor(style: { borderColor: string; textColor: string }): string {
+  return style.borderColor === 'transparent' ? style.textColor : style.borderColor
+}
+
 function AttachmentGlyph() {
   // 回形针：XMind 用同一个隐喻表示"这个主题带了附件"
   return (
@@ -1875,6 +1896,7 @@ function MindMapNode({
   imageUrl,
   zoom,
   onStickerMove,
+  onCalloutMove,
   branchIndex,
   fontFamily,
   numberText,
@@ -1918,6 +1940,8 @@ function MindMapNode({
   zoom: number
   /** 拖动贴纸结束（松手）时提交新偏移；一次拖动只提交一次，故只产生一条撤销记录。 */
   onStickerMove: (topicId: string, stickerId: string, offsetX: number, offsetY: number) => void
+  /** 拖动标注结束（松手）时提交新偏移，规则与贴纸相同。 */
+  onCalloutMove: (topicId: string, offsetX: number, offsetY: number) => void
   fontFamily?: string
   /** 主题编号（形如 "1.2"），null 表示未启用编号。 */
   numberText?: string | null
@@ -1999,13 +2023,14 @@ function MindMapNode({
   // —— 贴纸：渲染 + 拖动 ——
   // 拖动时只改本地预览、松手才提交：一次拖动 = 一条撤销记录（与其它动作一致），
   // 也避免每帧都往文档写一次。
-  const [draggingSticker, setDraggingSticker] = useState<{
+  const [decorDrag, setDecorDrag] = useState<{
     id: string
     offsetX: number
     offsetY: number
   } | null>(null)
-  const stickerDragRef = useRef<{
-    stickerId: string
+  const decorDragRef = useRef<{
+    /** 被拖动的是哪个装饰：贴纸实例 id，或 CALLOUT_DECOR_ID（标注）。 */
+    itemId: string
     startClientX: number
     startClientY: number
     baseOffsetX: number
@@ -2025,49 +2050,53 @@ function MindMapNode({
     event.stopPropagation()
     const baseOffsetX = sticker.offsetX ?? 0
     const baseOffsetY = sticker.offsetY ?? 0
-    stickerDragRef.current = {
-      stickerId: sticker.id,
+    decorDragRef.current = {
+      itemId: sticker.id,
       startClientX: event.clientX,
       startClientY: event.clientY,
       baseOffsetX,
       baseOffsetY,
     }
-    setDraggingSticker({ id: sticker.id, offsetX: baseOffsetX, offsetY: baseOffsetY })
+    setDecorDrag({ id: sticker.id, offsetX: baseOffsetX, offsetY: baseOffsetY })
     // jsdom 与部分环境没有指针捕获，缺了也不该让拖动整体失效
     event.currentTarget.setPointerCapture?.(event.pointerId)
   }
 
-  const handleStickerPointerMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
-    const drag = stickerDragRef.current
+  const handleDecorPointerMove = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const drag = decorDragRef.current
     if (!drag) {
       return
     }
     event.stopPropagation()
     const safeZoom = zoom > 0 ? zoom : 1
-    setDraggingSticker({
-      id: drag.stickerId,
+    setDecorDrag({
+      id: drag.itemId,
       offsetX: drag.baseOffsetX + (event.clientX - drag.startClientX) / safeZoom,
       offsetY: drag.baseOffsetY + (event.clientY - drag.startClientY) / safeZoom,
     })
   }
 
-  const handleStickerPointerEnd = (event: ReactPointerEvent<HTMLSpanElement>) => {
-    const drag = stickerDragRef.current
+  const handleDecorPointerEnd = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    const drag = decorDragRef.current
     if (!drag) {
       return
     }
     event.stopPropagation()
-    stickerDragRef.current = null
+    decorDragRef.current = null
     const safeZoom = zoom > 0 ? zoom : 1
     const deltaX = (event.clientX - drag.startClientX) / safeZoom
     const deltaY = (event.clientY - drag.startClientY) / safeZoom
-    setDraggingSticker(null)
+    setDecorDrag(null)
 
     // 没挪动就是一次点击（选中主题），不该写文档、也不该产生撤销记录
     if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
       return
     }
-    onStickerMove(node.id, drag.stickerId, drag.baseOffsetX + deltaX, drag.baseOffsetY + deltaY)
+    if (drag.itemId === CALLOUT_DECOR_ID) {
+      onCalloutMove(node.id, drag.baseOffsetX + deltaX, drag.baseOffsetY + deltaY)
+      return
+    }
+    onStickerMove(node.id, drag.itemId, drag.baseOffsetX + deltaX, drag.baseOffsetY + deltaY)
   }
 
   const stickerElements =
@@ -2076,8 +2105,8 @@ function MindMapNode({
         {stickerList.map((sticker, index) => {
           // 默认落点按节点尺寸现算（未拖过的贴纸存储里没有 offset）
           const placement =
-            draggingSticker?.id === sticker.id
-              ? draggingSticker
+            decorDrag?.id === sticker.id
+              ? decorDrag
               : computeTopicStickerPlacement(
                   { x: 0, y: 0, width: node.width, height: node.height },
                   sticker,
@@ -2087,7 +2116,7 @@ function MindMapNode({
           return (
             <span
               key={sticker.id}
-              className={`mindmap-node__sticker${draggingSticker?.id === sticker.id ? ' mindmap-node__sticker--dragging' : ''}`}
+              className={`mindmap-node__sticker${decorDrag?.id === sticker.id ? ' mindmap-node__sticker--dragging' : ''}`}
               data-sticker-id={sticker.id}
               title={findStickerDefinition(sticker.stickerId)?.label ?? sticker.stickerId}
               style={{
@@ -2096,15 +2125,95 @@ function MindMapNode({
                 transform: `translate(-50%, -50%) rotate(` + (sticker.rotation ?? 0) + `deg)`,
               }}
               onPointerDown={(event) => handleStickerPointerDown(event, sticker)}
-              onPointerMove={handleStickerPointerMove}
-              onPointerUp={handleStickerPointerEnd}
-              onPointerCancel={handleStickerPointerEnd}
+              onPointerMove={handleDecorPointerMove}
+              onPointerUp={handleDecorPointerEnd}
+              onPointerCancel={handleDecorPointerEnd}
             >
               <StickerIcon stickerId={sticker.stickerId} size={TOPIC_STICKER_SIZE} />
             </span>
           )
         })}
       </>
+    ) : null
+
+  // —— 标注（callout）：挂在节点外侧的说明框 ——
+  //
+  // **文本行由 wrapText 切好并逐行渲染**（不使用 CSS 自动换行）：于是 DOM 与 PNG/SVG 用的是同一份换行结果，
+  // 不会出现"两端行数不同 → 框高不同"这类偏差。
+  const calloutInfo = node.topic.callout ?? null
+  const calloutFont = `${TOPIC_CALLOUT_FONT_SIZE}px ${resolvedStyle.fontFamily ?? fontFamily}`
+  const calloutLines =
+    calloutInfo && calloutInfo.text.trim().length > 0
+      ? wrapText(calloutInfo.text, TOPIC_CALLOUT_TEXT_WIDTH, calloutFont)
+      : []
+
+  const calloutPlacement =
+    calloutInfo && calloutLines.length > 0
+      ? computeTopicCalloutPlacement(
+          { x: 0, y: 0, width: node.width, height: node.height },
+          calloutInfo,
+          calloutLines.length,
+          node.side === 'left' ? 'left' : 'right',
+        )
+      : null
+
+  const handleCalloutPointerDown = (event: ReactPointerEvent<HTMLSpanElement>) => {
+    if (event.button !== 0 || !calloutPlacement) {
+      return
+    }
+    // 与贴纸同理：在标注上按下是挪标注，不让节点开始自己的拖拽
+    event.stopPropagation()
+    decorDragRef.current = {
+      itemId: CALLOUT_DECOR_ID,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      baseOffsetX: calloutPlacement.offsetX,
+      baseOffsetY: calloutPlacement.offsetY,
+    }
+    setDecorDrag({
+      id: CALLOUT_DECOR_ID,
+      offsetX: calloutPlacement.offsetX,
+      offsetY: calloutPlacement.offsetY,
+    })
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const calloutElement =
+    calloutPlacement && calloutLines.length > 0 ? (
+      <span
+        className={`mindmap-node__callout${decorDrag?.id === CALLOUT_DECOR_ID ? ' mindmap-node__callout--dragging' : ''}`}
+        data-callout="true"
+        title={calloutInfo?.text ?? ''}
+        style={{
+          left: stickerOffsetExpression(calloutPlacement.offsetX),
+          top: stickerOffsetExpression(calloutPlacement.offsetY),
+          // ⚠️ 偏移量是**框中心**相对节点中心的偏移（与导出端的 placement.x/y 同源），
+          // 所以必须再平移半个自身尺寸把自己摆正。漏了这行，框会整体向右下各偏半宽/半高——
+          // 单测只断言 style 字符串、看不出这个错，是**真引擎量出来**的（dev/capture-callout.mjs）。
+          transform: 'translate(-50%, -50%)',
+          width: `${TOPIC_CALLOUT_WIDTH}px`,
+          padding: `${TOPIC_CALLOUT_PADDING}px`,
+          fontSize: `${TOPIC_CALLOUT_FONT_SIZE}px`,
+          lineHeight: `${TOPIC_CALLOUT_LINE_HEIGHT}px`,
+          background: resolvedStyle.fill,
+          border: `${resolvedStyle.borderWidth}px solid ${calloutStrokeColor(resolvedStyle)}`,
+          color: resolvedStyle.textColor,
+        }}
+        onPointerDown={handleCalloutPointerDown}
+        onPointerMove={handleDecorPointerMove}
+        onPointerUp={handleDecorPointerEnd}
+        onPointerCancel={handleDecorPointerEnd}
+      >
+        <span
+          className="mindmap-node__callout-lead"
+          style={computeTopicCalloutLeadBox(node.width, calloutPlacement)}
+        />
+        {calloutLines.map((line, index) => (
+          <span key={index} className="mindmap-node__callout-line">
+            {line}
+          </span>
+        ))}
+      </span>
     ) : null
 
   // 主题图片元素：编辑态与非编辑态共用一份，避免两条分支各写一遍（曾因此让图片
@@ -2127,6 +2236,7 @@ function MindMapNode({
         >
           {topicImageElement}
           {stickerElements}
+          {calloutElement}
           <textarea
             className="mindmap-node__editor"
             aria-label="内联编辑主题"
@@ -2216,6 +2326,7 @@ function MindMapNode({
       >
         {topicImageElement}
         {stickerElements}
+        {calloutElement}
         <span className="mindmap-node__title" style={titleStyle}>
           {numberText ? <span className="mindmap-node__number">{numberText}</span> : null}
           {node.topic.text}
@@ -3256,6 +3367,16 @@ function TreeWorkspace({
           onToggleTopicCollapsed={toggleTopicCollapsed}
           onSelect={(topicId) => void selectTopic(topicId)}
           onMoveTopic={(topicId, targetParentId) => moveTopic(topicId, targetParentId)}
+          onCalloutMove={(topicId, offsetX, offsetY) => {
+            // 与贴纸同一套规则：拖动结束才提交，一次拖动 = 一条撤销记录
+            const topic =
+              findTopicById(activeSheet.rootTopic, topicId) ??
+              floatingTopics.find((candidate) => candidate.id === topicId)
+            if (!topic?.callout) {
+              return
+            }
+            void session.setTopicCallout(topicId, { ...topic.callout, offsetX, offsetY })
+          }}
           onStickerMove={(topicId, stickerId, offsetX, offsetY) => {
           // 贴纸是**列表型富字段**：改一张也要整批提交（一次拖动 = 一条撤销记录）。
           // 主题可能在树里，也可能是浮动主题，两处都要找。
