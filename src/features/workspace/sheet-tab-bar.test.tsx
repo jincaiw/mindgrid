@@ -65,6 +65,7 @@ function makeSession(overrides: {
 importOpmlOutline: noop,
 importDocxOutline: noop,
     exportPngImage: noop,
+    exportSelectedTopicsPng: async () => {},
     renderPrintImage: async () => null,
     exportSvgImage: noop,
     exportGanttImage: async () => {},

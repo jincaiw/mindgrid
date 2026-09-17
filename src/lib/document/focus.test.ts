@@ -10,6 +10,7 @@ import type { TopicSnapshot } from './types'
 import {
   resolveBranchFocusTarget,
   resolveFocusVisibleTopicIds,
+  resolveSelectionVisibleTopicIds,
   restrictToVisibleTopics,
 } from './focus'
 
@@ -118,5 +119,49 @@ describe('restrictToVisibleTopics', () => {
   it('空引用视为可见（外框/概要理论上不会为空，但不应因此被误删）', () => {
     const items = [{ id: 'empty', refs: [] as string[] }]
     expect(restrictToVisibleTopics(items, (item) => item.refs, new Set()).length).toBe(1)
+  })
+})
+
+/**
+ * 「导出选中主题」的保留集。
+ *
+ * 与「仅显示该分支」同一套语义（根→目标路径 + 目标子树），但目标可以是多个：
+ * 逐个求可见集再取并集。这里盯住三件事：并集正确、含中心主题时不裁剪、
+ * 以及"一个都找不到"时不裁剪（否则会导出一张空图）。
+ */
+describe('resolveSelectionVisibleTopicIds', () => {
+  it('单个目标：等于「仅显示该分支」的可见集', () => {
+    const root = makeRoot()
+
+    expect(resolveSelectionVisibleTopicIds(root, ['a'])).toEqual(
+      resolveFocusVisibleTopicIds(root, 'a'),
+    )
+  })
+
+  it('多个目标：取各自可见集的并集（同级分支互不影响）', () => {
+    const visible = resolveSelectionVisibleTopicIds(makeRoot(), ['a1', 'b1'])
+
+    expect(visible).not.toBeNull()
+    // 两个目标的路径都保留：root → a → a1 与 root → b → b1
+    expect([...(visible as Set<string>)].sort()).toEqual(['a', 'a1', 'b', 'b1', 'root'])
+    // 没有被选中的同级不该被带进来
+    expect((visible as Set<string>).has('a2')).toBe(false)
+    expect((visible as Set<string>).has('c')).toBe(false)
+  })
+
+  it('选中里含中心主题 → 不裁剪（等于导出整幅图）', () => {
+    // 与聚焦不同：聚焦会**拒绝**中心主题，而导出应当照常工作
+    expect(resolveSelectionVisibleTopicIds(makeRoot(), ['root', 'a'])).toBeNull()
+  })
+
+  it('没有选中、或 id 全都找不到 → 不裁剪（避免导出一张空图）', () => {
+    expect(resolveSelectionVisibleTopicIds(makeRoot(), [])).toBeNull()
+    expect(resolveSelectionVisibleTopicIds(makeRoot(), ['不存在', '也不存在'])).toBeNull()
+  })
+
+  it('部分 id 失效时用剩下那些（旧文档里删除过主题的常见情形）', () => {
+    const visible = resolveSelectionVisibleTopicIds(makeRoot(), ['a1', '已被删除的主题'])
+
+    expect([...(visible as Set<string>)].sort()).toEqual(['a', 'a1', 'root'])
   })
 })

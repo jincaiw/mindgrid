@@ -46,6 +46,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     exportMarkdownOutline: asyncNoop(),
     exportOpmlOutline: asyncNoop(),
     exportPngImage: asyncNoop(),
+    exportSelectedTopicsPng: async () => {},
     renderPrintImage: async () => null,
     exportSvgImage: asyncNoop(),
     exportPdfDocument: asyncNoop(),
@@ -104,6 +105,7 @@ function makeHarness(options: HarnessOptions = {}) {
     checkForUpdates: vi.fn(),
     cycleTheme: vi.fn(),
     printDocument: vi.fn(),
+    exportSelectedTopicsPng: vi.fn(),
     setTopicsPosition: vi.fn(),
     requestCanvasCommand: vi.fn(),
     focusVisibleTopicIds: options.focusVisibleTopicIds ?? null,
@@ -352,6 +354,27 @@ describe('插入', () => {
     runMenuCommand('insert.boundary', ctx)
     expect(session.createBoundary).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalledWith('请先选中至少 2 个主题')
+  })
+
+  it('导出选中主题：把选区交给导出命令', () => {
+    const { ctx, exportSelectedTopicsPng, notify } = makeHarness({
+      selectedTopicIds: ['topic_a', 'topic_b'],
+    })
+
+    runMenuCommand('tools.map-shot', ctx)
+
+    expect(notify).not.toHaveBeenCalled()
+    expect(exportSelectedTopicsPng).toHaveBeenCalledTimes(1)
+    expect(exportSelectedTopicsPng).toHaveBeenCalledWith(['topic_a', 'topic_b'])
+  })
+
+  it('没有选中时不导出，只提示（否则会静默导出一张整图或空图）', () => {
+    const { ctx, exportSelectedTopicsPng, notify } = makeHarness({ selectedTopicIds: [] })
+
+    runMenuCommand('tools.map-shot', ctx)
+
+    expect(exportSelectedTopicsPng).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith('请先选中要导出的主题（导出会连同各自的子主题一起）')
   })
 
   it('creates a new sheet from the insert menu', () => {

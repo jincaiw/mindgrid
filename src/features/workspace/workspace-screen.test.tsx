@@ -75,6 +75,7 @@ const sessionStub: DocumentSession = {
 importOpmlOutline: async () => {},
 importDocxOutline: async () => {},
   exportPngImage: async () => {},
+  exportSelectedTopicsPng: async () => {},
   renderPrintImage: async () => null,
   exportSvgImage: async () => {},
   exportGanttImage: async () => {},
@@ -3386,6 +3387,48 @@ describe('文件 → 打印（⌘P）', () => {
 
     expect(renderPrintImage).not.toHaveBeenCalled()
     expect(document.querySelector('.print-sheet')).toBeNull()
+  })
+
+  it('⌘⇧E 导出选中主题（菜单提示的快捷键必须真的能按）', async () => {
+    // 这条盯的是"菜单上写着 ⇧⌘E 就必须真能按"——本项目里
+    // 快捷键提示与实际处理是两处代码，不一致时界面上不会报任何错，只会撒谎。
+    const exportSelectedTopicsPng = vi.fn(async (_topicIds: readonly string[]) => {})
+
+    renderWithApp(
+      <WorkspaceScreen
+        session={{ ...sessionStub, document: twoChildDocument, exportSelectedTopicsPng }}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: 'e', metaKey: true, shiftKey: true })
+
+    await waitFor(() => {
+      expect(exportSelectedTopicsPng).toHaveBeenCalled()
+    })
+    // 传的是当前选区（选区内容本身由 menu-dispatch 那组用例精确断言，
+    // 这里只钉"快捷键确实接到导出、且带了非空选区"）
+    expect(exportSelectedTopicsPng.mock.calls[0][0].length).toBeGreaterThan(0)
+  })
+
+  it('⌘⇧E 在默认选区（中心主题）下也照常导出——不裁剪即整幅图，不该被拦下', async () => {
+    const exportSelectedTopicsPng = vi.fn(async (_topicIds: readonly string[]) => {})
+    const onNotify = vi.fn()
+
+    renderWithApp(
+      <WorkspaceScreen
+        session={{ ...sessionStub, document: twoChildDocument, exportSelectedTopicsPng }}
+        onNotify={onNotify}
+      />,
+    )
+
+    fireEvent.keyDown(window, { key: 'e', metaKey: true, shiftKey: true })
+
+    // 只要选区非空就走导出；"含中心主题 = 导出整幅图"这条判断在纯函数里，
+    // 不在这里另判（否则两处判断迟早不一致）
+    await waitFor(() => {
+      expect(exportSelectedTopicsPng).toHaveBeenCalled()
+    })
+    expect(onNotify).not.toHaveBeenCalled()
   })
 
   it('没有可打印内容时给提示，不打开打印面板', async () => {

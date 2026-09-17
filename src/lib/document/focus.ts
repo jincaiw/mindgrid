@@ -39,6 +39,47 @@ export function resolveFocusVisibleTopicIds(
 }
 
 /**
+ * 计算「导出选中主题」时应保留的主题 id 集合。
+ *
+ * 语义与「仅显示该分支」相同（根→目标路径 + 目标子树），只是目标可以有多个：
+ * 逐个求可见集再取并集。
+ *
+ * 返回 `null` 表示**不裁剪**（导出整幅图），两种情况：
+ * - 没有选中任何主题
+ * - 选中里含**中心主题**——中心主题的"分支"就是整幅图本身，此时裁剪没有意义
+ *   （注意这与聚焦不同：聚焦会**拒绝**中心主题，而导出应当照常工作）
+ * - 选中的 id 在树里一个都找不到（文档变了之后的残留 id）
+ */
+export function resolveSelectionVisibleTopicIds(
+  rootTopic: TopicSnapshot,
+  topicIds: readonly string[],
+): Set<string> | null {
+  if (topicIds.length === 0) {
+    return null
+  }
+
+  if (topicIds.includes(rootTopic.id)) {
+    return null
+  }
+
+  const visible = new Set<string>()
+  let resolvedAny = false
+
+  for (const topicId of topicIds) {
+    const ids = resolveFocusVisibleTopicIds(rootTopic, topicId)
+    if (!ids) {
+      continue
+    }
+    resolvedAny = true
+    for (const id of ids) {
+      visible.add(id)
+    }
+  }
+
+  return resolvedAny ? visible : null
+}
+
+/**
  * 过滤「引用了若干主题」的装饰元素，只保留**引用全部可见**的那些。
  *
  * 用于联系线 / 外框 / 概要：它们的世界几何由被引用主题的位置算出。

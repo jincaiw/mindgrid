@@ -77,6 +77,7 @@ const sessionStub: DocumentSession = {
 importOpmlOutline: async () => {},
 importDocxOutline: async () => {},
   exportPngImage: async () => {},
+  exportSelectedTopicsPng: async () => {},
   renderPrintImage: async () => null,
   exportSvgImage: async () => {},
   exportGanttImage: async () => {},

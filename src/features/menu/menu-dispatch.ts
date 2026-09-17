@@ -66,6 +66,13 @@ export interface MenuCommandContext {
     actionLabel: string,
   ) => void
   /**
+   * 把选中的主题（含子树）导出为一张 PNG。
+   *
+   * 与「导出 PNG 图片」只差可见集：这条只画选中的那部分。
+   * 裁剪复用画布「仅显示该分支」的同一套函数，所以连线/外框/概要在导出里也会一并裁掉。
+   */
+  exportSelectedTopicsPng: (topicIds: readonly string[]) => void
+  /**
    * 当前「仅显示该分支」的可见主题集（`null` = 未聚焦）。
    *
    * 范围性动作（「全选」）必须尊重它：聚焦时按 ⌘A 若把隐藏分支也圈进来，
@@ -431,6 +438,13 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       return
 
     // —— 工具 ——
+    case 'tools.map-shot':
+      if (ctx.selectedTopicIds.length === 0) {
+        ctx.notify('请先选中要导出的主题（导出会连同各自的子主题一起）')
+        return
+      }
+      ctx.exportSelectedTopicsPng(ctx.selectedTopicIds)
+      return
     case 'tools.check-update':
       ctx.checkForUpdates()
       return

@@ -335,6 +335,9 @@ export function WorkspaceScreen({
         checkForUpdates: () => onCheckForUpdates?.(),
         cycleTheme: () => onCycleTheme?.(),
         printDocument: handlePrint,
+        exportSelectedTopicsPng: (topicIds) => {
+          void session.exportSelectedTopicsPng(topicIds)
+        },
         // 对齐走批量接口：整批一条撤销记录
         setTopicsPosition: (positions, actionLabel) => {
           void session.setTopicsPosition(positions, actionLabel)
@@ -466,6 +469,16 @@ export function WorkspaceScreen({
         if (session.document) {
           setIsPresenting(true)
         }
+      } else if (mod && e.shiftKey && key === 'e') {
+        // ⇧⌘E 导出选中主题为图片。
+        // 与 XMind 的 Map Shot 能力对应，但**没有**沿用它的 ⇧⌘P——
+        // 那个组合在本项目已经给了演说（⇧⌘P），后加的功能不抢既有功能的键。
+        e.preventDefault()
+        if (selectedTopicIds.length === 0) {
+          onNotify?.('请先选中要导出的主题（导出会连同各自的子主题一起）')
+        } else {
+          void session.exportSelectedTopicsPng(selectedTopicIds)
+        }
       } else if (mod && !e.shiftKey && key === 'p') {
         // ⌘P 打印。浏览器里是「打印本页」，必须 preventDefault 才轮到我们
         e.preventDefault()
@@ -500,6 +513,9 @@ export function WorkspaceScreen({
     handlePrint,
     session,
     activeSheetRootTopicId,
+    // ⇧⌘E 导出选中主题：要读当前选区的长度与提示回调
+    selectedTopicIds,
+    onNotify,
   ])
 
   return (

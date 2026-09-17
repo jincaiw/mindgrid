@@ -41,7 +41,16 @@ export interface ShortcutDef {
  */
 export const SHORTCUTS: readonly ShortcutDef[] = [
   // —— 文件 ——
+  
   {
+    id: 'tools.map-shot',
+    combo: { key: 'e', mod: true, shift: true },
+    label: '导出选中主题为图片',
+    description: '把选中的主题及其子主题导出为一张 PNG 图片',
+    category: '文件',
+    scope: 'global',
+  },
+{
     id: 'file-new',
     combo: { key: 'n', mod: true },
     label: '新建文档',

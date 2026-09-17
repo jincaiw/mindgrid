@@ -297,6 +297,14 @@ pub fn build_menu<R: Runtime>(
 
     // —— 工具 ——
     let tools = SubmenuBuilder::new(handle, "工具")
+        // XMind 的 Map Shot 用的是 ⇧⌘P，但那个组合在本项目已经给了「演说」
+        // （先来后到，不抢既有功能的键）。这里用 ⇧⌘E，语义也说得通（Export）。
+        .item(&item(
+            handle,
+            "tools.map-shot",
+            &format!("导出选中主题为图片{}", combo_shift("E")),
+        )?)
+        .separator()
         .item(&item(handle, "tools.check-update", "检查更新…")?)
         .item(&item(handle, "tools.shortcuts", "快捷键…")?)
         .item(&item(handle, "tools.cycle-theme", "切换明暗外观")?)

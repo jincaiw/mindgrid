@@ -87,20 +87,15 @@ import type {
   TopicLink,
   TopicMarker,
   TopicSticker,
-  TopicSnapshot,
   TopicDirection,
   TopicStructure,
   TopicStyleOverrides,
   TopicTask,
 } from '../../lib/document/types'
+import { resolveSelectionVisibleTopicIds } from '../../lib/document/focus'
 import { getActiveSheet } from '../../lib/document/sheets'
-import { computeLayout } from '../canvas/layouts'
-import { buildTopicNumbers } from '../canvas/numbering'
-import {
-  collectTopicImageAssetIds,
-  collectTopicImageRefs,
-} from '../canvas/runtime/topic-image-store'
-import { buildScene, type InteractionOverlays, type TopicVisualStates } from '../canvas/runtime/scene-builder'
+// 导出场景的构建已抽成独立模块（可单测「导出选中主题」的裁剪是否生效）
+import { buildExportScene, exportRenderOptions } from './export-scene'
 import { renderSceneToSvg } from '../canvas/runtime/svg-renderer'
 import { preloadTopicImageSizes, renderSceneToPngBytes } from '../canvas/runtime/png-exporter'
 import { renderSceneToPdfBytes } from '../canvas/runtime/pdf-exporter'
@@ -112,7 +107,6 @@ import {
   type RecentActionRecord,
   type DocumentSessionState,
 } from './document-session-store'
-import { buildFontStack, resolveCanvasSettings } from '../../lib/document/canvas-settings'
 
 export interface DocumentSession extends DocumentSessionState {
   createNewDocument: () => Promise<void>
@@ -133,6 +127,14 @@ export interface DocumentSession extends DocumentSessionState {
   importDocxOutline: () => Promise<void>
   setDocumentSetting: (key: string, value: unknown) => Promise<void>
   exportPngImage: () => Promise<void>
+  /**
+   * 把**选中的主题**（含各自子树）导出为一张 PNG。
+   *
+   * 与「导出 PNG 图片」的区别只在可见集：这条只画选中的那部分。
+   * 裁剪复用画布「仅显示该分支」的同一套函数，所以连线、外框、概要
+   * 在导出里也会一并裁掉，不会留下"连到看不见的主题"的线。
+   */
+  exportSelectedTopicsPng: (topicIds: readonly string[]) => Promise<void>
   /**
    * 渲染整幅导图的打印位图（**不写盘**）。文件 → 打印用它。
    *
@@ -396,121 +398,6 @@ function appendRecentActions(currentActions: RecentActionRecord[], action: strin
 }
 
 /** 导出用的空交互状态（无选中/激活/搜索态，确保导出图不含运行态视觉标记）。 */
-const EXPORT_VISUAL_STATES: TopicVisualStates = {
-  activeTopicId: null,
-  selectedTopicIds: new Set(),
-  editingTopicId: null,
-  searchMatchedTopicIds: new Set(),
-  activeSearchTopicId: null,
-  historyFocusTopicId: null,
-  dropTargetTopicId: null,
-  draggingTopicId: null,
-}
-
-const EXPORT_OVERLAYS: InteractionOverlays = {
-  selectionBox: null,
-  dragPreview: null,
-  dropIndicator: null,
-}
-
-/**
- * 把当前工作表里主题引用的图片资产解析为 data URL：topicId → data URL。
- *
- * 渲染端需要的是字节本身（`<image href>` / `drawImage` 都吃 data URL），
- * 而文档里只存 assetId，所以导出前必须做这一次解析。
- *
- * 单个资产解析失败（资源缺失 / 后端未就绪）时**静默跳过**该主题：
- * 导出不应因为一张坏图就整体失败，退化为「该主题无图」但版式与其余内容完整。
- */
-async function resolveTopicImageUrls(rootTopic: TopicSnapshot): Promise<Record<string, string>> {
-  const refs = collectTopicImageRefs(rootTopic)
-  if (refs.length === 0) {
-    return {}
-  }
-
-  // 按 assetId 去重，同一张图被多个主题引用时只请求一次
-  const assetIds = collectTopicImageAssetIds(refs.map((ref) => ({ assetId: ref.assetId })))
-
-  const entries = await Promise.all(
-    assetIds.map(async (assetId) => {
-      try {
-        return { assetId, dataUrl: await readAssetDataUrl(assetId) }
-      } catch {
-        return { assetId, dataUrl: '' }
-      }
-    }),
-  )
-
-  const dataUrlByAssetId = new Map<string, string>()
-  for (const entry of entries) {
-    if (entry.dataUrl) {
-      dataUrlByAssetId.set(entry.assetId, entry.dataUrl)
-    }
-  }
-
-  const result: Record<string, string> = {}
-  for (const ref of refs) {
-    const dataUrl = dataUrlByAssetId.get(ref.assetId)
-    if (dataUrl) {
-      result[ref.topicId] = dataUrl
-    }
-  }
-
-  return result
-}
-
-/** 从文档构建全量导出场景（关闭视口剔除，渲染所有节点，并解析主题图片）。 */
-async function buildExportScene(document: DocumentSnapshot) {
-  const sheet = getActiveSheet(document)
-  const canvasSettings = resolveCanvasSettings(document.settings)
-  const layout = computeLayout(sheet.rootTopic, sheet.chartType ?? 'mindmap', undefined, {
-    balance: canvasSettings.balance,
-    compact: canvasSettings.compact,
-    alignSiblings: canvasSettings.alignSiblings,
-    direction: sheet.layoutConfig?.direction,
-    freeBranch: canvasSettings.freeBranchLayout,
-    stackTopics: canvasSettings.stackTopics,
-  })
-  const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
-
-  return buildScene({
-    layout,
-    viewport: { width: layout.width, height: layout.height },
-    camera: { x: 0, y: 0, zoom: 1 },
-    visualStates: EXPORT_VISUAL_STATES,
-    overlays: EXPORT_OVERLAYS,
-    relationships: document.relationships,
-    boundaries: sheet.boundaries,
-    summaries: sheet.summaries,
-    themeId: document.theme?.id,
-    branchStyle: sheet.branchStyle,
-    // 编号必须与屏幕同源：导出少了这一项，PDF/PNG 就没有编号
-    numberMap: buildTopicNumbers(sheet.rootTopic, sheet.numbering),
-    canvasSettings: resolveCanvasSettings(document.settings),
-    enableCulling: false,
-    topicImageUrls,
-  })
-}
-
-/**
- * 导出链路的渲染参数（主题 + 画布级背景覆盖）。
- *
- * **三个导出器都必须传**：PNG/SVG/PDF 在渲染时才解析背景色，
- * 不传 themeId 会一律回退到默认主题——暗色主题文档导出成浅底。
- */
-function exportRenderOptions(document: DocumentSnapshot): {
-  themeId: string | undefined
-  background: string | null
-  fontFamily: string
-} {
-  const canvasSettings = resolveCanvasSettings(document.settings)
-  return {
-    themeId: document.theme?.id,
-    background: canvasSettings.background,
-    fontFamily: buildFontStack(canvasSettings.fontFamily, canvasSettings.cjkFont),
-  }
-}
-
 /**
  * 归一化错误信息。
  *
@@ -1036,6 +923,60 @@ export function useDocumentSession(): DocumentSession {
       handleError(error)
     }
   }, [handleError, state.document, state.filePath, state.summary?.rootTopicText])
+
+  const exportSelectedTopicsPng = useCallback(
+    async (topicIds: readonly string[]) => {
+      if (!hasTauriRuntime()) {
+        throw new Error('浏览器开发态暂不支持导出图片，请使用桌面版运行')
+      }
+
+      if (!state.document || topicIds.length === 0) {
+        return
+      }
+
+      const sheet = getActiveSheet(state.document)
+      // 含中心主题时不裁剪（等于导出整幅图）——由纯函数统一裁决，不在这里另判
+      const visibleTopicIds = resolveSelectionVisibleTopicIds(sheet.rootTopic, topicIds)
+
+      const selected = await save({
+        defaultPath: state.filePath
+          ? state.filePath.replace(/\.mgd$/i, '-选中部分.png')
+          : `${state.summary?.rootTopicText ?? 'MindGrid'}-选中部分.png`,
+        filters: [{ name: 'PNG 图片', extensions: ['png'] }],
+      })
+
+      if (!selected) {
+        return
+      }
+
+      const selectedPath = selected.toLowerCase().endsWith('.png') ? selected : `${selected}.png`
+
+      setState((current) => ({
+        ...current,
+        error: null,
+        recentAction: '正在导出选中主题',
+      }))
+
+      try {
+        const scene = await buildExportScene(state.document, visibleTopicIds)
+        const bytes = await renderSceneToPngBytes(scene, {
+          scale: 2,
+          ...exportRenderOptions(state.document),
+        })
+        await exportPngFile(selectedPath, bytes)
+
+        setState((current) => ({
+          ...current,
+          status: 'ready',
+          error: null,
+          recentAction: '已导出选中主题为图片',
+        }))
+      } catch (error) {
+        handleError(error)
+      }
+    },
+    [handleError, state.document, state.filePath, state.summary?.rootTopicText],
+  )
 
   /**
    * 渲染整幅导图为打印位图。与 exportCurrentPngImage 是同一段
@@ -1766,6 +1707,7 @@ export function useDocumentSession(): DocumentSession {
       importOpmlOutline,
       importDocxOutline,
       exportPngImage: exportCurrentPngImage,
+      exportSelectedTopicsPng,
       renderPrintImage: renderPrintImage,
       exportSvgImage: exportCurrentSvgImage,
       exportGanttImage: exportCurrentGanttSvg,
@@ -1884,6 +1826,7 @@ export function useDocumentSession(): DocumentSession {
       importOpmlOutline,
       importDocxOutline,
       exportCurrentPngImage,
+      exportSelectedTopicsPng,
       exportCurrentSvgImage,
       exportCurrentGanttSvg,
       exportCurrentGanttPng,
