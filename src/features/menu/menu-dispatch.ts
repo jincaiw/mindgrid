@@ -115,6 +115,8 @@ const FILE_DIALOG_ACTIONS: readonly string[] = [
   'file.export-svg',
   'file.export-pdf',
   'file.export-recovery',
+  // 合并文件要选一个 .mgd：同样只有桌面端读得到文件
+  'tools.merge-document',
 ]
 
 export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void {
@@ -133,6 +135,28 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
   }
 
   switch (id) {
+    // 工具 → 合并文件：把另一个 .mgd 的每张画布追加进来。
+    // 摘要里报清"合并了什么"——只说"合并完成"的话，用户分不清
+    // "对方是空文件"与"命令没生效"。
+    case 'tools.merge-document': {
+      void session.mergeDocument().then((report) => {
+        if (!report) {
+          return
+        }
+        const parts = [`${report.sheets} 张画布`, `${report.topics} 个主题`]
+        if (report.assets > 0) {
+          parts.push(`导入 ${report.assets} 个资源`)
+        }
+        if (report.missingAssets > 0) {
+          parts.push(`⚠️ ${report.missingAssets} 个资源在源文件里已缺失`)
+        }
+        ctx.notify(
+          `已合并「${report.fileName}」：${parts.join(' / ')}（⌘Z 可整次撤销）`,
+        )
+      })
+      return
+    }
+
     // —— 文件 ——
     case 'file.new':
       void session.createNewDocument()

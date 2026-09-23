@@ -403,6 +403,34 @@ export interface ThemeRef {
   id: string
 }
 
+/**
+ * 一次「合并文件」的结果摘要。
+ *
+ * 命令**不只返回新快照**：用户需要知道"到底合并了什么"，否则界面一变、
+ * 却说不清发生了什么（也分不清"合并成功但对方是空的"与"命令没生效"）。
+ */
+export interface MergeSummary {
+  /** 追加进来的画布数。 */
+  sheets: number
+  /** 追加进来的主题数（含浮动主题）。 */
+  topics: number
+  /** 带过来的关系线数。 */
+  relationships: number
+  /** 真正写进资源库的新资源数（内容重复、去重命中的不计）。 */
+  assets: number
+  /** 源文件里"被引用但实际不存在"的资源数（源文件已损坏时才会 > 0）。 */
+  missingAssets: number
+}
+
+/**
+ * 面向提示文案的合并结果：摘要 + 源文件名。
+ *
+ * 文件名只取末段（完整路径又长又没信息量，提示里放不下）。
+ */
+export interface MergeReport extends MergeSummary {
+  fileName: string
+}
+
 export interface DocumentSnapshot {
   schemaVersion: string
   documentId: string

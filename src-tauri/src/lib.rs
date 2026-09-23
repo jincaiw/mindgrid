@@ -81,6 +81,7 @@ pub fn run() {
             app::commands::create_document_from_template,
             app::commands::get_document_state,
             app::commands::open_document_file,
+            app::commands::merge_document_file,
             app::commands::open_recent_file,
             app::commands::clear_recent_files,
             app::commands::save_document_file,

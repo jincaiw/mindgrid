@@ -306,6 +306,11 @@ pub fn build_menu<R: Runtime>(
             "tools.map-shot",
             &format!("导出选中主题为图片{}", combo_shift("E")),
         )?)
+        .item(&item(
+            handle,
+            "tools.merge-document",
+            "合并 MindGrid 文件…",
+        )?)
         .separator()
         .item(&item(handle, "tools.check-update", "检查更新…")?)
         .item(&item(handle, "tools.shortcuts", "快捷键…")?)

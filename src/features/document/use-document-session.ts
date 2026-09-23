@@ -32,6 +32,7 @@ import {
   importDocxFile,
   importMarkdownFile,
   importOpmlFile,
+  mergeDocumentFile as mergeDocumentFileCommand,
   moveSheet,
   moveTopic,
   moveTopics,
@@ -85,6 +86,7 @@ import type {
   CanvasIllustration,
   ChartType,
   DocumentSnapshot,
+  MergeReport,
   SheetBranchStyle,
   SheetNumbering,
   TopicLink,
@@ -116,6 +118,12 @@ export interface DocumentSession extends DocumentSessionState {
   createNewDocument: () => Promise<void>
   createFromTemplate: (document: DocumentSnapshot) => Promise<void>
   openDocument: () => Promise<void>
+  /**
+   * 工具 → 合并文件：选一个 .mgd，把它的每张画布追加到当前文档。
+   *
+   * 返回摘要供调用方提示用户；**用户取消选择时返回 null**（不是错误）。
+   */
+  mergeDocument: () => Promise<MergeReport | null>
   /** 打开「最近打开」里的第 index 项（路径由 Rust 解析） */
   openRecentFile: (index: number) => Promise<void>
   /** 清空「最近打开」列表 */
@@ -555,6 +563,36 @@ export function useDocumentSession(): DocumentSession {
 
     return selected.toLowerCase().endsWith('.mgd') ? selected : `${selected}.mgd`
   }, [])
+
+  const mergeDocumentFromFile = useCallback(async (): Promise<MergeReport | null> => {
+    const selectedPath = await pickOpenPath()
+
+    if (!selectedPath) {
+      return null
+    }
+
+    setState((current) => ({
+      ...current,
+      status: current.summary ? 'ready' : 'loading',
+      error: null,
+      recentAction: '正在合并文件',
+    }))
+
+    try {
+      const outcome = await mergeDocumentFileCommand(selectedPath)
+      applySnapshot(
+        fromSnapshot(outcome.snapshot, `已合并 ${outcome.summary.sheets} 张画布`),
+      )
+      return {
+        ...outcome.summary,
+        // 只留文件名：完整路径又长又没信息量，提示里放不下
+        fileName: selectedPath.split(/[\\/]/).pop() ?? selectedPath,
+      }
+    } catch (error) {
+      handleError(error)
+      return null
+    }
+  }, [applySnapshot, handleError, pickOpenPath])
 
   const openCurrentDocument = useCallback(async () => {
     if (
@@ -1722,6 +1760,7 @@ export function useDocumentSession(): DocumentSession {
       createNewDocument,
       createFromTemplate,
       openDocument: openCurrentDocument,
+      mergeDocument: mergeDocumentFromFile,
       openRecentFile: openRecentDocument,
       clearRecentFiles: clearRecentDocumentList,
       repairLastFailedOpen,
@@ -1811,6 +1850,7 @@ export function useDocumentSession(): DocumentSession {
       deleteActiveTopic,
       deleteMultipleTopics,
       openCurrentDocument,
+      mergeDocumentFromFile,
       repairLastFailedOpen,
       dismissRepairReport,
       toggleCollapsedTopic,

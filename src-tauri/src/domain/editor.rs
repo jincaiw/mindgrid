@@ -1210,6 +1210,16 @@ impl<'a> DocumentEditor<'a> {
         });
     }
 
+    /// 把一张画布追加到末尾（合并文件用）。
+    ///
+    /// 走已有的 `insert_sheet`：撤销通道、`Operation::InsertSheet` 的记录方式
+    /// 与"用户新建画布"完全一致，不新增逆操作分支。
+    pub(crate) fn append_sheet(&mut self, sheet: SheetSnapshot) -> usize {
+        let index = self.document.sheets.len();
+        self.insert_sheet(index, sheet);
+        index
+    }
+
     fn insert_sheet(&mut self, index: usize, sheet: SheetSnapshot) {
         let op_sheet = sheet.clone();
         do_insert_sheet(self.document, index, sheet);
@@ -2529,24 +2539,32 @@ impl<'a> DocumentEditor<'a> {
         to_topic_id: &str,
         label: Option<String>,
     ) -> Result<String, String> {
-        if from_topic_id == to_topic_id {
-            return Err("关系线的两端不能是同一个主题".into());
-        }
-        if !self.document_contains_topic(from_topic_id) {
-            return Err("找不到关系线的起始主题".into());
-        }
-        if !self.document_contains_topic(to_topic_id) {
-            return Err("找不到关系线的目标主题".into());
-        }
-
-        let relationship = Relationship {
+        self.insert_relationship(Relationship {
             id: create_id("rel"),
             from_topic_id: from_topic_id.to_string(),
             to_topic_id: to_topic_id.to_string(),
             label,
             style_ref: None,
             control_points: Vec::new(),
-        };
+        })
+    }
+
+    /// 插入一条**已经存在**的关系线（合并文件时把对方的关系线搬过来）。
+    ///
+    /// 与 `create_relationship` 的差别：那个是"用户新建一条"，只带两端与标签；
+    /// 这个是"搬一条既有的"，`style_ref` / `control_points` 必须原样留住——
+    /// 用前者代替的话，合并过来的关系线会**静默降级**成默认样式（用户只会觉得"样式没了"）。
+    pub fn insert_relationship(&mut self, relationship: Relationship) -> Result<String, String> {
+        if relationship.from_topic_id == relationship.to_topic_id {
+            return Err("关系线的两端不能是同一个主题".into());
+        }
+        if !self.document_contains_topic(&relationship.from_topic_id) {
+            return Err("找不到关系线的起始主题".into());
+        }
+        if !self.document_contains_topic(&relationship.to_topic_id) {
+            return Err("找不到关系线的目标主题".into());
+        }
+
         let rel_id = relationship.id.clone();
         let op = Operation::InsertRelationship { relationship };
         apply_operation(self.document, &op);
@@ -2686,11 +2704,18 @@ impl<'a> DocumentEditor<'a> {
     }
 
     /// 检查文档任意画布中是否存在指定主题。
+    ///
+    /// ⚠️ **浮动主题也算**（曾经漏过）：它们在 `rootTopic` 树之外，
+    /// 漏掉的话"给浮动主题和普通主题拉一条联系线"会被判成"找不到起始主题"——
+    /// 用户看得见两个主题、却被拒绝，且提示词完全指错方向。
     fn document_contains_topic(&self, topic_id: &str) -> bool {
-        self.document
-            .sheets
-            .iter()
-            .any(|sheet| find_topic(&sheet.root_topic, topic_id).is_some())
+        self.document.sheets.iter().any(|sheet| {
+            find_topic(&sheet.root_topic, topic_id).is_some()
+                || sheet
+                    .floating_topics
+                    .iter()
+                    .any(|topic| find_topic(topic, topic_id).is_some())
+        })
     }
 }
 
@@ -4101,5 +4126,57 @@ mod tests {
             .map(|i| sample_illustration(&format!("ill_{i}"), i as f64, 0.0, 64.0))
             .collect();
         assert!(editor.set_sheet_illustrations(&sheet_id, too_many).is_err());
+    }
+
+    #[test]
+    fn create_relationship_accepts_floating_topic() {
+        // 浮动主题不在 rootTopic 树里。不认它的话，用户选中"浮动主题 + 普通主题"
+        // 建联系会被拒，提示还说"找不到起始主题"——指向完全错误的方向
+        let mut document = DocumentSnapshot::new_default();
+        let root_id = document.sheets[0].root_topic.id.clone();
+        let mut floating = TopicSnapshot::new("浮动");
+        floating.id = "float_1".into();
+        document.sheets[0].floating_topics = vec![floating];
+
+        let mut editor = DocumentEditor::new(&mut document);
+        let rel_id = editor
+            .create_relationship(&root_id, "float_1", None)
+            .expect("连到浮动主题应当被接受");
+
+        assert_eq!(editor.into_ops().len(), 1);
+        assert!(document.relationships.iter().any(|r| r.id == rel_id));
+    }
+
+    #[test]
+    fn insert_relationship_keeps_style_ref_and_control_points() {
+        // 搬运既有关系线（合并文件）时必须保留完整字段；
+        // 用 create_relationship 代替会让合并过来的关系线静默降级成默认样式
+        let mut document = DocumentSnapshot::new_default();
+        let from = document.sheets[0].root_topic.children[0].id.clone();
+        let to = document.sheets[0].root_topic.children[1].id.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor
+            .insert_relationship(Relationship {
+                id: "rel_carried".into(),
+                from_topic_id: from,
+                to_topic_id: to,
+                label: Some("搬运".into()),
+                style_ref: Some("style_x".into()),
+                control_points: vec![crate::domain::document::RelationshipControlPoint {
+                    x: 12.0,
+                    y: 34.0,
+                }],
+            })
+            .expect("应能插入完整关系线");
+
+        let carried = document
+            .relationships
+            .iter()
+            .find(|r| r.id == "rel_carried")
+            .expect("关系线应已插入");
+        assert_eq!(carried.style_ref.as_deref(), Some("style_x"));
+        assert_eq!(carried.control_points.len(), 1);
+        assert_eq!(carried.control_points[0].x, 12.0);
     }
 }

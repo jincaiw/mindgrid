@@ -82,6 +82,7 @@ export type MenuActionId =
   | 'insert.new-sheet-from-topic'
   // 工具
   | 'tools.map-shot'
+  | 'tools.merge-document'
   | 'tools.check-update'
   | 'tools.shortcuts'
   | 'tools.cycle-theme'
@@ -173,6 +174,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'insert.new-sheet-from-topic',
   // 工具
   'tools.map-shot',
+  'tools.merge-document',
   'tools.check-update',
   'tools.shortcuts',
   'tools.cycle-theme',

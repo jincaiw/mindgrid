@@ -824,3 +824,74 @@ describe('编辑 → 自由主题对齐', () => {
     }
   })
 })
+
+
+/**
+ * 工具 → 合并文件（对齐 XMind 的「合并 Xmind 文件」）。
+ *
+ * 合并本身（ID 重映射、跨文件资源导入）在 Rust 侧有单测；这一层只管
+ * "把摘要讲清楚"——只说"合并完成"的话，用户分不清"对方是空文件"与"命令没生效"。
+ */
+describe('工具 → 合并文件', () => {
+  function harnessWithMerge(result: unknown) {
+    const mergeDocument = vi.fn().mockResolvedValue(result)
+    const harness = makeHarness({ session: { mergeDocument } })
+    return { ...harness, mergeDocument }
+  }
+
+  const summary = {
+    sheets: 2,
+    topics: 37,
+    relationships: 3,
+    assets: 4,
+    missingAssets: 0,
+    fileName: '季度规划.mgd',
+  }
+
+  it('把摘要拼成一句能读懂的提示（含文件名与可撤销提示）', async () => {
+    const { ctx, mergeDocument, notify } = harnessWithMerge(summary)
+
+    runMenuCommand('tools.merge-document', ctx)
+
+    expect(mergeDocument).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(notify).toHaveBeenCalled())
+    const message = notify.mock.calls[0][0] as string
+    expect(message).toContain('季度规划.mgd')
+    expect(message).toContain('2 张画布')
+    expect(message).toContain('37 个主题')
+    expect(message).toContain('4 个资源')
+    // 合并是可整次撤销的，得让用户知道，否则合并错了会以为要手动删画布
+    expect(message).toContain('⌘Z')
+  })
+
+  it('用户取消选择文件时不提示（取消不是错误）', async () => {
+    const { ctx, notify } = harnessWithMerge(null)
+
+    runMenuCommand('tools.merge-document', ctx)
+
+    await Promise.resolve()
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('源文件里有缺失资源时明确告警（否则用户只会发现"图没了"）', async () => {
+    const { ctx, notify } = harnessWithMerge({ ...summary, missingAssets: 2 })
+
+    runMenuCommand('tools.merge-document', ctx)
+
+    await vi.waitFor(() => expect(notify).toHaveBeenCalled())
+    expect(notify.mock.calls[0][0]).toContain('2 个资源在源文件里已缺失')
+  })
+
+  it('非桌面端被文件对话框门禁挡下（浏览器读不到文件）', () => {
+    const mergeDocument = vi.fn()
+    const { ctx, notify } = makeHarness({
+      desktopFileActionsEnabled: false,
+      session: { mergeDocument },
+    })
+
+    runMenuCommand('tools.merge-document', ctx)
+
+    expect(mergeDocument).not.toHaveBeenCalled()
+    expect(notify).toHaveBeenCalledWith('该操作需要文件对话框，仅在桌面端可用')
+  })
+})

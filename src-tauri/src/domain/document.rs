@@ -623,10 +623,16 @@ impl DocumentSnapshot {
         }
     }
 
-    /// 重新生成所有 ID（document / sheet / topic / boundary / summary / relationship），
-    /// 并更新所有引用（active_sheet_id / boundary.topic_ids / summary.topic_ids /
-    /// relationship.from_topic_id / relationship.to_topic_id）。
-    /// 用于从模板创建新文档，确保每个文档有唯一 ID。
+    /// 重新生成所有 ID（document / sheet / topic / boundary / summary / relationship /
+    /// floating_topic / illustration），并更新所有引用（active_sheet_id /
+    /// boundary.topic_ids / summary.topic_ids / relationship 两端 / illustration 无引用）。
+    /// 用于从模板创建新文档、以及合并另一个文件时消除 ID 冲突。
+    ///
+    /// ⚠️ **浮动主题与插画必须一起重映射**（曾经漏过）：
+    /// - 浮动主题漏了 → 同一份内容被重映射两次（模板用两次 / 合并同一个文件两次）会撞 ID；
+    ///   而且它们不在 `topic_id_map` 里，指向浮动主题的关系线会保留**旧 ID**，
+    ///   在目标文档里指向一个不存在的主题（关系线静默消失）。
+    /// - 插画漏了 → 同一个文件的插画 ID 会在合并后重复，拖动命中会打错对象。
     pub fn regenerate_ids(self) -> Self {
         let new_document_id = create_id("doc");
         let mut topic_id_map: HashMap<String, String> = HashMap::new();
@@ -678,10 +684,21 @@ impl DocumentSnapshot {
                     layout_config: sheet.layout_config,
                     branch_style: sheet.branch_style.clone(),
                     numbering: sheet.numbering.clone(),
-                    floating_topics: sheet.floating_topics.clone(),
+                    floating_topics: sheet
+                        .floating_topics
+                        .iter()
+                        .map(|topic| clone_topic_branch_with_map(topic, &mut topic_id_map))
+                        .collect(),
                     boundaries,
                     summaries,
-                    illustrations: sheet.illustrations.clone(),
+                    illustrations: sheet
+                        .illustrations
+                        .iter()
+                        .map(|item| CanvasIllustration {
+                            id: create_id("ill"),
+                            ..item.clone()
+                        })
+                        .collect(),
                     extensions: sheet.extensions,
                     extra: sheet.extra.clone(),
                 }
@@ -937,6 +954,31 @@ impl DocumentSession {
     ) -> Result<DocumentSessionSnapshot, String> {
         self.apply_change_set("设置分支样式", |editor| {
             editor.set_sheet_branch_style(sheet_id, branch_style)
+        })
+    }
+
+    /// 追加"合并进来的内容"：每张画布 + 带过来的关系线。
+    ///
+    /// **一次 ⌘Z 回退整次合并**：所有操作提交在同一个 ChangeSet 里；
+    /// `apply_inverse` 按逆序回滚，所以中间失败也不会留下半份内容
+    /// （`apply_change_set` 在 action 返回 Err 时会把已记录的操作逆序回滚）。
+    pub fn append_merged_content(
+        &mut self,
+        sheets: Vec<SheetSnapshot>,
+        relationships: Vec<Relationship>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        if sheets.is_empty() && relationships.is_empty() {
+            return Err("这个文件里没有可合并的内容".to_string());
+        }
+
+        self.apply_change_set("合并文件", move |editor| {
+            for sheet in sheets {
+                editor.append_sheet(sheet);
+            }
+            for relationship in relationships {
+                editor.insert_relationship(relationship)?;
+            }
+            Ok(editor.root_topic_id())
         })
     }
 
@@ -1884,8 +1926,9 @@ pub fn create_id(prefix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        Boundary, DocumentRepairReport, DocumentSession, DocumentSnapshot, Relationship,
-        SummaryNode, TopicAttachment, TopicCallout, TopicSnapshot, TopicSticker,
+        apply_inverse, Boundary, CanvasIllustration, DocumentRepairReport, DocumentSession,
+        DocumentSnapshot, Relationship, SummaryNode, TopicAttachment, TopicCallout, TopicSnapshot,
+        TopicSticker,
     };
 
     #[test]
@@ -3293,5 +3336,141 @@ mod tests {
         let back = serde_json::to_value(&both).unwrap();
         assert_eq!(back["chartType"], "org");
         assert_eq!(back["direction"], "left");
+    }
+
+    /// 收集文档里所有实体 ID（画布 / 主题 / 浮动主题 / 边界 / 概要 / 关系线 / 插画）。
+    fn collect_all_ids(document: &DocumentSnapshot) -> std::collections::HashSet<String> {
+        use std::collections::HashSet;
+        fn walk(topic: &TopicSnapshot, ids: &mut HashSet<String>) {
+            ids.insert(topic.id.clone());
+            for child in &topic.children {
+                walk(child, ids);
+            }
+        }
+        let mut ids = HashSet::new();
+        ids.insert(document.document_id.clone());
+        for sheet in &document.sheets {
+            ids.insert(sheet.id.clone());
+            walk(&sheet.root_topic, &mut ids);
+            for topic in &sheet.floating_topics {
+                walk(topic, &mut ids);
+            }
+            for item in &sheet.illustrations {
+                ids.insert(item.id.clone());
+            }
+            for boundary in &sheet.boundaries {
+                ids.insert(boundary.id.clone());
+            }
+            for summary in &sheet.summaries {
+                ids.insert(summary.id.clone());
+            }
+        }
+        for relationship in &document.relationships {
+            ids.insert(relationship.id.clone());
+        }
+        ids
+    }
+
+    #[test]
+    fn regenerate_ids_covers_floating_topics_and_illustrations() {
+        // 曾经漏掉这两类：浮动主题不进 topic_id_map（指向它的关系线会保留旧 ID，
+        // 在目标文档里悬空），插画 ID 不重生（合并同一个文件两次就会撞 ID）。
+        let mut document = DocumentSnapshot::new_default();
+        let root_id = document.sheets[0].root_topic.id.clone();
+        let mut floating = TopicSnapshot::new("浮动");
+        floating.id = "float_old".into();
+        document.sheets[0].floating_topics = vec![floating];
+        document.sheets[0].illustrations = vec![CanvasIllustration {
+            id: "ill_old".into(),
+            illustration_id: "rocket".into(),
+            x: 1.0,
+            y: 2.0,
+            size: 96.0,
+        }];
+        document.relationships = vec![Relationship {
+            id: "rel_old".into(),
+            from_topic_id: root_id,
+            to_topic_id: "float_old".into(),
+            label: None,
+            style_ref: None,
+            control_points: Vec::new(),
+        }];
+
+        let remapped = document.clone().regenerate_ids();
+
+        let new_float_id = remapped.sheets[0].floating_topics[0].id.clone();
+        assert_ne!(new_float_id, "float_old", "浮动主题 ID 必须重生成");
+        assert_ne!(remapped.sheets[0].illustrations[0].id, "ill_old", "插画 ID 必须重生成");
+        assert_eq!(
+            remapped.relationships[0].to_topic_id, new_float_id,
+            "指向浮动主题的关系线必须跟着重映射，否则合并后悬空"
+        );
+        // 坐标/尺寸是用户摆好的，重映射不碰
+        assert_eq!(remapped.sheets[0].illustrations[0].x, 1.0);
+        assert_eq!(remapped.sheets[0].illustrations[0].size, 96.0);
+
+        // 再重映射一次：两份 ID 集合必须**完全不相交**（合并同一文件两次的前提）
+        let again = remapped.clone().regenerate_ids();
+        let first = collect_all_ids(&remapped);
+        let second = collect_all_ids(&again);
+        let overlap: Vec<&String> = first.intersection(&second).collect();
+        assert!(overlap.is_empty(), "两次重映射出现重复 ID：{overlap:?}");
+    }
+
+    #[test]
+    fn append_merged_content_is_one_undo_record() {
+        // 合并 2 张画布 + 1 条关系线之后，按一次撤销应当**整次回退**
+        let mut session = DocumentSession::create_default();
+        let original_sheet_count = session.document.as_ref().unwrap().sheets.len();
+
+        let mut second = session.document.as_ref().unwrap().sheets[0].clone();
+        second.id = "sheet_merged_a".into();
+        second.title = "合并 A".into();
+        let mut third = session.document.as_ref().unwrap().sheets[0].clone();
+        third.id = "sheet_merged_b".into();
+        third.title = "合并 B".into();
+
+        session
+            .append_merged_content(vec![second, third], vec![])
+            .expect("画布应能追加");
+        let document = session.document.clone().unwrap();
+        assert_eq!(document.sheets.len(), original_sheet_count + 2);
+        assert_eq!(session.history.len(), 1, "整次合并只应留一条撤销记录");
+
+        let ops = session.history.last().unwrap().ops.clone();
+        let mut rolled_back = session.document.clone().unwrap();
+        apply_inverse(&mut rolled_back, &ops);
+        assert_eq!(
+            rolled_back.sheets.len(),
+            original_sheet_count,
+            "撤销后应回到合并前的画布数"
+        );
+
+        // 关系线单独验证一次：两端不能是同一个主题，这里用一个真实存在的子主题
+        let mut session2 = DocumentSession::create_default();
+        let document2 = session2.document.clone().unwrap();
+        let from = document2.root_topic().children[0].id.clone();
+        let to = document2.root_topic().children[1].id.clone();
+        session2
+            .append_merged_content(
+                vec![],
+                vec![Relationship {
+                    id: "rel_two".into(),
+                    from_topic_id: from,
+                    to_topic_id: to,
+                    label: Some("依赖".into()),
+                    style_ref: None,
+                    control_points: Vec::new(),
+                }],
+            )
+            .expect("关系线应能追加");
+        assert_eq!(session2.document.as_ref().unwrap().relationships.len(), 1);
+    }
+
+    #[test]
+    fn append_merged_content_rejects_empty_payload() {
+        let mut session = DocumentSession::create_default();
+        assert!(session.append_merged_content(vec![], vec![]).is_err());
+        assert_eq!(session.history.len(), 0, "空合并不应留下撤销记录");
     }
 }

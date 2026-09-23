@@ -1,6 +1,7 @@
 import type {
   CanvasIllustration,
   DocumentSessionSnapshot,
+  MergeSummary,
   DocumentSnapshot,
   SheetBranchStyle,
   SheetNumbering,
@@ -41,6 +42,19 @@ export function openDocumentFile(path: string) {
 
 export function saveDocumentFile(path: string) {
   return invokeCommand<DocumentSessionSnapshot>('save_document_file', { path })
+}
+
+/**
+ * 合并另一个 .mgd 文件：把它的每张画布追加到当前文档末尾。
+ *
+ * 与其它命令不同，它同时返回**摘要**（合并了几张画布/几个主题）与快照——
+ * 调用方要拿摘要给用户一句交代。
+ */
+export function mergeDocumentFile(path: string) {
+  return invokeCommand<{ summary: MergeSummary; snapshot: DocumentSessionSnapshot }>(
+    'merge_document_file',
+    { path },
+  )
 }
 
 export function saveDocumentToCurrentFile() {

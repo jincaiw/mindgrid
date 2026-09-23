@@ -513,6 +513,51 @@ pub fn select_sheet(
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
 
+/// 合并另一个 .mgd 文件：把它的每张画布追加到当前文档末尾。
+///
+/// 为什么返回 `MergeOutcome` 而不是 `DocumentSessionSnapshot`：用户需要知道
+/// "到底合并了什么"（几张画布、几个主题、有没有资源缺失），否则界面一变、
+/// 却说不清发生了什么。
+///
+/// ⚠️ **锁顺序必须是 session → assets**（与 `open_document_file` 一致）：
+/// 反过来会在并发时与打开文件互相等待。
+#[tauri::command]
+pub fn merge_document_file(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<crate::app::merge::MergeOutcome, String> {
+    // 源文件先整个读出来（不持任何锁）：读盘 + 解压不该阻塞其它命令
+    let (incoming, incoming_assets) =
+        crate::app::persistence::open_document_file_with_assets(std::path::Path::new(&path))?;
+
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    if guard.document.is_none() {
+        return Err("当前没有打开的文档，无法合并".to_string());
+    }
+
+    // 资源导入要先于文档追加，且**单独一个作用域**把 assets 锁放掉：
+    // 追加内容走会话层（会自己记一条撤销记录），不该在持 assets 锁时做
+    let merged = {
+        let mut store = state
+            .asset_store
+            .lock()
+            .map_err(|_| "unable to acquire asset store".to_string())?;
+        crate::app::merge::prepare_merge(incoming, &mut store, &incoming_assets)
+    };
+
+    let summary = merged.summary.clone();
+    guard.append_merged_content(merged.sheets, merged.relationships)?;
+
+    let snapshot = persist_recovery_and_snapshot(&app, &state, &mut guard)?;
+
+    Ok(crate::app::merge::MergeOutcome { summary, snapshot })
+}
+
 #[tauri::command]
 pub fn create_sheet(
     app: AppHandle,

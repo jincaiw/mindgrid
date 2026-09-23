@@ -117,10 +117,17 @@ impl AssetIndex {
 
     /// 扫描文档树，收集所有被引用的 asset_id（来自 topic.image / topic.attachment）。
     /// 用于 GC 与引用计数验证。
+    ///
+    /// ⚠️ **浮动主题也要扫**（曾经漏过）：它们在 `rootTopic` 树之外，
+    /// 漏掉的话"给浮动主题配了图"的用户在**保存**时会被 GC 把图当垃圾删掉，
+    /// 而且要等下次打开文件才发现（与附件那轮踩的是同一类坑）。
     pub fn collect_referenced_asset_ids(document: &DocumentSnapshot) -> HashSet<String> {
         let mut ids = HashSet::new();
         for sheet in &document.sheets {
             collect_topic_asset_ids(&sheet.root_topic, &mut ids);
+            for topic in &sheet.floating_topics {
+                collect_topic_asset_ids(topic, &mut ids);
+            }
         }
         ids
     }
@@ -662,5 +669,23 @@ mod tests {
         let restored: AssetIndex =
             serde_json::from_str(&json).expect("should deserialize");
         assert_eq!(restored, index);
+    }
+
+    #[test]
+    fn collect_referenced_asset_ids_includes_floating_topics() {
+        // 浮动主题在 rootTopic 树之外。漏掉的话，给浮动主题配了图的用户在
+        // **保存**时会被 GC 把图当垃圾删掉，而且要等下次打开文件才发现
+        let mut document = DocumentSnapshot::new_default();
+        let mut floating = TopicSnapshot::new("浮动主题");
+        floating.image = Some(TopicImage {
+            asset_id: "asset_float_image".into(),
+            width: None,
+            height: None,
+        });
+        document.sheets[0].floating_topics = vec![floating];
+
+        let ids = AssetIndex::collect_referenced_asset_ids(&document);
+
+        assert!(ids.contains("asset_float_image"));
     }
 }
