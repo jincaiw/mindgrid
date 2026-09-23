@@ -154,6 +154,11 @@ export async function buildExportScene(
             restrictToTopicIds as ReadonlySet<string>,
           )
         : sheet.summaries,
+    // 画布级插画**整体参与或整体排除**：它不属于任何分支，没有"裁一部分"的说法。
+    // 一旦有可见集限制（导出选中主题 / 仅显示该分支）就排除——
+    // 否则一张摆在远处的插画会把导出尺寸撑大（导出宽高取所有节点的紧包围盒），
+    // 甚至把与选中主题无关的图形带进图里。
+    illustrations: shouldRestrict ? [] : sheet.illustrations,
     themeId: document.theme?.id,
     branchStyle: sheet.branchStyle,
     // 编号必须与屏幕同源：导出少了这一项，PDF/PNG 就没有编号

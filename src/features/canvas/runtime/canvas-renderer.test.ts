@@ -577,3 +577,96 @@ describe('renderScene — 富内容（task / markers / notes / link / labels）'
     expect(lastBaseline?.args[0]).toBe('top')
   })
 })
+
+/**
+ * 画布级插画（PNG 端）。
+ *
+ * jsdom 没有 Path2D，用替身接住 `d` 字符串——这样断言的是
+ * "画的是哪条路径、缩放多少"，而不是"有没有调用某个方法"。
+ */
+class FakePath2D {
+  readonly d: string
+
+  constructor(d: string) {
+    this.d = d
+  }
+}
+
+describe('画布级插画绘制', () => {
+  function withFakePath2D<T>(run: () => T): T {
+    const globalWithPath = globalThis as unknown as { Path2D?: unknown }
+    const original = globalWithPath.Path2D
+    globalWithPath.Path2D = FakePath2D
+    try {
+      return run()
+    } finally {
+      globalWithPath.Path2D = original
+    }
+  }
+
+  it('按中心平移 + size/viewBox 缩放，并用素材自己的 path', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 40, y: 20, size: 128 }],
+      enableCulling: false,
+    })
+
+    const { ctx, calls } = createMockCtx()
+    withFakePath2D(() => renderScene(ctx, scene, defaultViewport, defaultCamera, 1))
+
+    const cx = 40 + layout.offsetX
+    const cy = 20 + layout.offsetY
+    const translates = calls.filter((c) => c.method === 'translate').map((c) => c.args)
+    expect(translates).toContainEqual([cx, cy])
+    // 末尾再平移半个 viewBox，把中心对到 (cx, cy)
+    expect(translates).toContainEqual([-32, -32])
+    expect(calls.filter((c) => c.method === 'scale').map((c) => c.args)).toContainEqual([2, 2])
+    // 至少画了一次（火箭有多个图元）
+    expect(calls.filter((c) => c.method === 'fill').length).toBeGreaterThan(0)
+  })
+
+  it('drawIllustrations=false 时不画插画（其余层不受影响）', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 40, y: 20, size: 128 }],
+      enableCulling: false,
+    })
+
+    const { ctx, calls } = createMockCtx()
+    withFakePath2D(() =>
+      renderScene(ctx, scene, defaultViewport, defaultCamera, 1, { drawIllustrations: false }),
+    )
+
+    expect(calls.some((c) => c.method === 'translate' && c.args[0] === 40 + layout.offsetX)).toBe(
+      false,
+    )
+  })
+
+  it('未知素材 id 静默跳过（不抛错、不中断导出）', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      illustrations: [{ id: 'ill_x', illustrationId: 'not-a-real-id', x: 0, y: 0, size: 96 }],
+      enableCulling: false,
+    })
+
+    const { ctx } = createMockCtx()
+    expect(() =>
+      withFakePath2D(() => renderScene(ctx, scene, defaultViewport, defaultCamera, 1)),
+    ).not.toThrow()
+  })
+})

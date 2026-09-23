@@ -40,6 +40,11 @@ import {
 } from './topic-callout-constants'
 import { computeTopicStickerPlacement } from './topic-sticker-constants'
 import { STICKER_VIEWBOX, findStickerDefinition } from '../sticker-definitions'
+import {
+  ILLUSTRATION_VIEWBOX,
+  illustrationScale,
+} from './canvas-illustration-constants'
+import { findIllustrationDefinition } from '../illustration-definitions'
 import { resolveThemeBackground } from './style-resolver'
 import { applyTextTransform } from './text-transform'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
@@ -63,6 +68,7 @@ import {
 import {
   type BoundaryRenderNode,
   type EdgeRenderNode,
+  type IllustrationRenderNode,
   type RelationshipRenderNode,
   type Scene,
   type SummaryRenderNode,
@@ -166,6 +172,14 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     layers.push(relationshipToSvg(node, fontFamily))
   }
 
+  // 画布级插画（与 Canvas 端同一个 z-order：在地图内容之上）
+  const illustrations = exportableNodes.filter(
+    (n): n is IllustrationRenderNode => n.type === 'illustration',
+  )
+  for (const node of illustrations) {
+    layers.push(illustrationToSvg(node))
+  }
+
   const viewBox = `${fmt(bounds.x)} ${fmt(bounds.y)} ${fmt(bounds.width)} ${fmt(bounds.height)}`
 
   return [
@@ -178,6 +192,29 @@ export function renderSceneToSvg(scene: Scene, options: SvgRenderOptions = {}): 
     ...layers,
     `</svg>`,
   ].join('\n')
+}
+
+/**
+ * 插画 → SVG 片段。
+ *
+ * 与 Canvas 端共用 `illustrationScale` 与同一份图元数据，
+ * 所以"画多大、画在哪"两端由同一套数算出。
+ */
+function illustrationToSvg(node: IllustrationRenderNode): string {
+  const definition = findIllustrationDefinition(node.illustrationId)
+  if (!definition) {
+    return ''
+  }
+
+  const scale = illustrationScale(node.size)
+  const shapes = definition.shapes
+    .map(
+      (shape) =>
+        `<path d="${shape.d}" fill="${shape.fill ?? 'none'}" stroke="${shape.stroke ?? 'none'}" stroke-width="${fmt(shape.strokeWidth ?? 0)}" stroke-linecap="round" stroke-linejoin="round"/>`,
+    )
+    .join('')
+
+  return `  <g transform="translate(${fmt(node.cx)} ${fmt(node.cy)}) scale(${fmt(scale)}) translate(${-ILLUSTRATION_VIEWBOX / 2} ${-ILLUSTRATION_VIEWBOX / 2})">${shapes}</g>`
 }
 
 // ---- defs：滤镜定义（节点阴影 / 切换按钮阴影） ----

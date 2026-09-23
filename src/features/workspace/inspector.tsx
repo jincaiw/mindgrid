@@ -22,6 +22,7 @@ import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
 import {
   BRANCH_CHART_TYPES,
   type Boundary,
+  type CanvasIllustration,
   type ChartType,
   type DocumentSnapshot,
   type EdgeEndpoint,
@@ -61,6 +62,19 @@ import {
   TOPIC_STICKER_ROTATION_STEP,
   createStickerInstanceId,
 } from '../canvas/runtime/topic-sticker-constants'
+import { IllustrationIcon } from '../canvas/illustrations'
+import {
+  ILLUSTRATION_DEFINITIONS,
+  findIllustrationDefinition,
+} from '../canvas/illustration-definitions'
+import {
+  ILLUSTRATION_DEFAULT_SIZE,
+  ILLUSTRATION_MAX_PER_SHEET,
+  ILLUSTRATION_SIZE_LABELS,
+  ILLUSTRATION_SIZE_STEPS,
+  computeIllustrationInsertPosition,
+  createIllustrationInstanceId,
+} from '../canvas/runtime/canvas-illustration-constants'
 import { nextTextTransform } from '../canvas/runtime/text-transform'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../canvas/mindmap-layout'
 import {
@@ -167,6 +181,7 @@ function PresentationPreview({
   relationships,
   boundaries,
   summaries,
+  illustrations,
 }: {
   rootTopic: TopicSnapshot
   chartType: ChartType
@@ -174,6 +189,7 @@ function PresentationPreview({
   relationships: Relationship[]
   boundaries: Boundary[]
   summaries: SummaryNode[]
+  illustrations: CanvasIllustration[]
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
@@ -205,6 +221,7 @@ function PresentationPreview({
       relationships,
       boundaries,
       summaries,
+      illustrations,
       themeId,
       enableCulling: false,
     })
@@ -220,7 +237,7 @@ function PresentationPreview({
       drawOverlays: false,
       themeId,
     })
-  }, [rootTopic, chartType, themeId, relationships, boundaries, summaries])
+  }, [rootTopic, chartType, themeId, relationships, boundaries, summaries, illustrations])
 
   return (
     <canvas
@@ -1104,6 +1121,54 @@ export function Inspector({
 
   const handleRemoveSticker = (stickerId: string) => {
     void commitStickers(currentStickers.filter((sticker) => sticker.id !== stickerId))
+  }
+
+  // —— 画布级插画（不依附任何主题）——
+  const currentIllustrations = activeSheet?.illustrations ?? []
+
+  const commitIllustrations = async (next: CanvasIllustration[]) => {
+    if (!activeSheet) {
+      return
+    }
+    await session.setSheetIllustrations(activeSheet.id, next)
+  }
+
+  const handleAddIllustration = (illustrationId: string) => {
+    if (!activeSheet) {
+      return
+    }
+    if (currentIllustrations.length >= ILLUSTRATION_MAX_PER_SHEET) {
+      onNotify?.(`一张画布最多放 ${ILLUSTRATION_MAX_PER_SHEET} 张插画`)
+      return
+    }
+    // 落点与菜单路径用**同一个纯函数**算：两边各写一份，必然有一处先腐坏。
+    // 用布局包围盒（而不是视口中心）：结果与滚动位置无关，可断言。
+    const layout = computeLayout(activeSheet.rootTopic, activeSheet.chartType)
+    const position = computeIllustrationInsertPosition(layout, currentIllustrations.length)
+    void commitIllustrations([
+      ...currentIllustrations,
+      {
+        id: createIllustrationInstanceId(),
+        illustrationId,
+        x: position.x,
+        y: position.y,
+        size: ILLUSTRATION_DEFAULT_SIZE,
+      },
+    ])
+  }
+
+  const handleResizeIllustration = (illustrationId: string, size: number) => {
+    void commitIllustrations(
+      currentIllustrations.map((item) =>
+        item.id === illustrationId ? { ...item, size } : item,
+      ),
+    )
+  }
+
+  const handleRemoveIllustration = (illustrationId: string) => {
+    void commitIllustrations(
+      currentIllustrations.filter((item) => item.id !== illustrationId),
+    )
   }
 
   // —— 主题附件：与图片同一套双通道（桌面原生对话框 / 浏览器隐藏 file input）——
@@ -2619,6 +2684,7 @@ export function Inspector({
                 relationships={session.document?.relationships ?? []}
                 boundaries={activeSheet?.boundaries ?? []}
                 summaries={activeSheet?.summaries ?? []}
+                illustrations={activeSheet?.illustrations ?? []}
               />
             </PanelSection>
 
@@ -3388,6 +3454,79 @@ export function Inspector({
                   : '请先选中至少 2 个主题'}
               </button>
             </PanelSection>
+
+              <PanelSection title="插画">
+                <p className="panel__muted">
+                  插画是画布级装饰，不依附任何主题：加进来之后可以直接在画布上拖动换位置，
+                  也可以在这里换大小。它画在地图内容之下，所以摆在主题旁边或空白处最合适。
+                </p>
+
+                <div className="panel__field">
+                  <span>添加</span>
+                  <div className="illustration-grid">
+                    {ILLUSTRATION_DEFINITIONS.map((definition) => {
+                      const full = currentIllustrations.length >= ILLUSTRATION_MAX_PER_SHEET
+                      return (
+                        <button
+                          key={definition.id}
+                          type="button"
+                          className="illustration-grid__item"
+                          title={
+                            full
+                              ? `最多放 ${ILLUSTRATION_MAX_PER_SHEET} 张`
+                              : `添加${definition.label}`
+                          }
+                          aria-label={`添加${definition.label}`}
+                          disabled={full}
+                          onClick={() => handleAddIllustration(definition.id)}
+                        >
+                          <IllustrationIcon illustrationId={definition.id} size={32} />
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {currentIllustrations.length > 0 ? (
+                  <div className="panel__field">
+                    <span>已添加</span>
+                    <div className="illustration-list">
+                      {currentIllustrations.map((item) => (
+                        <div key={item.id} className="illustration-list__row">
+                          <IllustrationIcon illustrationId={item.illustrationId} size={20} />
+                          <span className="illustration-list__label">
+                            {findIllustrationDefinition(item.illustrationId)?.label ??
+                              item.illustrationId}
+                          </span>
+                          <div className="panel__segmented" role="group" aria-label="插画大小">
+                            {ILLUSTRATION_SIZE_STEPS.map((size) => (
+                              <button
+                                key={size}
+                                type="button"
+                                className={`panel__seg${item.size === size ? ' panel__seg--active' : ''}`}
+                                aria-pressed={item.size === size}
+                                onClick={() => handleResizeIllustration(item.id, size)}
+                              >
+                                {ILLUSTRATION_SIZE_LABELS[size]}
+                              </button>
+                            ))}
+                          </div>
+                          <button
+                            className="panel__action panel__action--ghost"
+                            type="button"
+                            onClick={() => handleRemoveIllustration(item.id)}
+                          >
+                            移除
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="panel__muted">当前画布还没有插画。</p>
+                )}
+              </PanelSection>
+
           </div>
         ) : null}
       </div>

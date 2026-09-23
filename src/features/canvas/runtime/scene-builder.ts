@@ -10,7 +10,15 @@
  */
 
 import type { MindMapEdgeLayout, MindMapLayoutResult, MindMapNodeLayout } from '../mindmap-layout'
-import type { Boundary, EdgeEndpoint, Relationship, SheetBranchStyle, SummaryNode, TopicStyleOverrides } from '../../../lib/document/types'
+import type {
+  Boundary,
+  CanvasIllustration,
+  EdgeEndpoint,
+  Relationship,
+  SheetBranchStyle,
+  SummaryNode,
+  TopicStyleOverrides,
+} from '../../../lib/document/types'
 import { resolveTopicStyle } from './style-resolver'
 import { getTheme } from '../../../lib/document/themes'
 import {
@@ -27,6 +35,7 @@ import {
   type DragPreviewRenderNode,
   type DropIndicatorRenderNode,
   type EdgeRenderNode,
+  type IllustrationRenderNode,
   type RelationshipRenderNode,
   type RenderNode,
   type Scene,
@@ -85,6 +94,13 @@ export interface BuildSceneOptions {
   boundaries?: Boundary[]
   /** 当前工作表的概要（可选）。 */
   summaries?: SummaryNode[]
+  /**
+   * 画布级插画（不依附主题的浮动装饰）。
+   *
+   * 位置是**布局坐标系**，本模块统一加 `layout.offset`——与 `layoutNodeToBounds`
+   * / `offsetEdge` 同一套约定；不这么干的话画布一平移，插画就会和内容分离。
+   */
+  illustrations?: readonly CanvasIllustration[]
   /** 文档主题 ID（用于样式解析）。缺省使用 classic-blue。 */
   themeId?: string
   /** 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。 */
@@ -288,6 +304,19 @@ export function buildScene(options: BuildSceneOptions): Scene {
     }
   }
 
+  // 插画（画布级装饰：z-order 高于主题与关系线，低于交互覆盖层）
+  if (options.illustrations) {
+    for (const illustration of options.illustrations) {
+      const renderNode = illustrationToRenderNode(
+        illustration,
+        layout.offsetX,
+        layout.offsetY,
+      )
+      if (cullRect && !rectsIntersect(renderNode.bounds, cullRect)) continue
+      nodes.push(renderNode)
+    }
+  }
+
   // 覆盖层
   if (overlays.selectionBox) {
     nodes.push(selectionBoxToRenderNode(overlays.selectionBox))
@@ -357,6 +386,37 @@ function computeEdgeBounds(edge: MindMapEdgeLayout): WorldRect {
     y: minY,
     width: maxX - minX,
     height: maxY - minY,
+  }
+}
+
+/**
+ * 画布级插画 → 渲染节点。
+ *
+ * 中心点 = 存储的布局坐标 + `layout.offset`。**必须与节点/连线一起平移**
+ * （铁律：连线几何必须随 layout.offset 平移），否则画布一平移插画就掉队。
+ */
+function illustrationToRenderNode(
+  illustration: CanvasIllustration,
+  offsetX: number,
+  offsetY: number,
+): IllustrationRenderNode {
+  const cx = illustration.x + offsetX
+  const cy = illustration.y + offsetY
+  const half = illustration.size / 2
+  return {
+    type: 'illustration',
+    id: illustration.id,
+    layer: 'illustration',
+    bounds: {
+      x: cx - half,
+      y: cy - half,
+      width: illustration.size,
+      height: illustration.size,
+    },
+    cx,
+    cy,
+    size: illustration.size,
+    illustrationId: illustration.illustrationId,
   }
 }
 

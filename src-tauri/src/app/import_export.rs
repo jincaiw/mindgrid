@@ -197,6 +197,7 @@ fn build_sheet_from_markdown(title: String, topics: &[(usize, String)]) -> Sheet
             floating_topics: Vec::new(),
             boundaries: Vec::new(),
             summaries: Vec::new(),
+            illustrations: Vec::new(),
             extensions: None,
             extra: serde_json::Map::new(),
         };
@@ -256,6 +257,7 @@ fn build_sheet_from_markdown(title: String, topics: &[(usize, String)]) -> Sheet
         floating_topics: Vec::new(),
         boundaries: Vec::new(),
         summaries: Vec::new(),
+        illustrations: Vec::new(),
         extensions: None,
         extra: serde_json::Map::new(),
     }
@@ -761,6 +763,7 @@ fn build_sheet_from_wrapper(outline: OutlineElement) -> SheetSnapshot {
         floating_topics: Vec::new(),
         boundaries: Vec::new(),
         summaries: Vec::new(),
+        illustrations: Vec::new(),
         extensions: None,
         extra: serde_json::Map::new(),
     }
@@ -790,6 +793,7 @@ fn build_sheet_from_plain_outline(
         floating_topics: Vec::new(),
         boundaries: Vec::new(),
         summaries: Vec::new(),
+        illustrations: Vec::new(),
         extensions: None,
         extra: serde_json::Map::new(),
     }
@@ -893,6 +897,7 @@ mod tests {
             floating_topics: Vec::new(),
             boundaries: Vec::new(),
             summaries: Vec::new(),
+            illustrations: Vec::new(),
             extensions: None,
             extra: serde_json::Map::new(),
         };

@@ -1,7 +1,8 @@
 use crate::app::assets::AssetStore;
 use crate::domain::document::find_topic;
 use crate::domain::document::{
-    DocumentRepairReport, DocumentSession, DocumentSessionSnapshot, DocumentSnapshot,
+    CanvasIllustration, DocumentRepairReport, DocumentSession, DocumentSessionSnapshot,
+    DocumentSnapshot,
     SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker,
     TopicCallout, TopicSticker, TopicStructure, TopicStyleOverrides,
     TopicTask,
@@ -607,6 +608,23 @@ pub fn set_sheet_branch_style(
         .map_err(|_| "unable to acquire document state".to_string())?;
 
     guard.set_sheet_branch_style(&sheet_id, branch_style)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+#[tauri::command]
+pub fn set_sheet_illustrations(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    sheet_id: String,
+    illustrations: Vec<CanvasIllustration>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_sheet_illustrations(&sheet_id, illustrations)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }

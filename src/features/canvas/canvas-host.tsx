@@ -46,6 +46,7 @@ import { resolveZoomShortcut } from './zoom-shortcut'
 import { getActiveSheet } from '../../lib/document/sheets'
 import type {
   Boundary,
+  CanvasIllustration,
   ChartType,
   Relationship,
   SheetBranchStyle,
@@ -85,6 +86,7 @@ import { Minimap } from './minimap'
 import type { CanvasCommand, ZoomCommand } from '../menu/menu-actions'
 import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
 import { computeLayout, resolveLayoutOptions, restrictLayoutToTopicIds } from './layouts'
+import { hitTestIllustrationAtViewportPoint } from './hit-test'
 import { renderScene } from './runtime/canvas-renderer'
 import { resolveThemeBackground, resolveTopicStyle } from './runtime/style-resolver'
 import {
@@ -313,6 +315,8 @@ function MindMapScene({
   onPlaceTopicFreely,
   onStickerMove,
   onCalloutMove,
+  illustrations,
+  onIllustrationMove,
   onCreateChildTopic,
   onCreateSiblingTopic,
   onDeleteTopics,
@@ -388,6 +392,10 @@ function MindMapScene({
   /** 松手时提交贴纸新偏移（世界单位，相对节点中心）。一次拖动只调一次。 */
   onStickerMove: (topicId: string, stickerId: string, offsetX: number, offsetY: number) => void
   onCalloutMove: (topicId: string, offsetX: number, offsetY: number) => void
+  /** 画布级插画（不依附主题的浮动装饰）。 */
+  illustrations: CanvasIllustration[]
+  /** 拖动插画结束（松手）时提交新位置；一次拖动 = 一条撤销记录。 */
+  onIllustrationMove: (illustrationId: string, x: number, y: number) => void
   // 右键上下文菜单动作（由 TreeWorkspace 注入）
   onCreateChildTopic: (topicId: string) => Promise<void>
   onCreateSiblingTopic: (topicId: string) => Promise<void>
@@ -453,6 +461,38 @@ function MindMapScene({
         : summaries,
     [summaries, focusVisibleTopicIds],
   )
+  // 插画是**画布级**对象、不属于任何分支：一旦有可见集限制（仅显示该分支）
+  // 就整体排除。与导出端（export-scene）用同一条规则，否则会出现
+  // "屏幕上没有、导出的图里却有一张"这种两端不一致。
+  const visibleIllustrations = focusVisibleTopicIds ? EMPTY_ILLUSTRATIONS : illustrations
+
+  const [draggingIllustration, setDraggingIllustration] = useState<{
+    id: string
+    x: number
+    y: number
+  } | null>(null)
+  const illustrationDragRef = useRef<{
+    id: string
+    startClientX: number
+    startClientY: number
+    baseX: number
+    baseY: number
+  } | null>(null)
+
+  // 拖动期间把被拖的那张换成预览坐标：场景从这一份列表构建，
+  // 所以"预览"与"提交后"走的是同一条渲染路径，松手时不会跳一下。
+  const sceneIllustrations = useMemo(() => {
+    if (!draggingIllustration) {
+      return visibleIllustrations
+    }
+    return visibleIllustrations.map((item) =>
+      item.id === draggingIllustration.id
+        ? { ...item, x: draggingIllustration.x, y: draggingIllustration.y }
+        : item,
+    )
+  }, [visibleIllustrations, draggingIllustration])
+
+
   // 主题编号：从画布 numbering 配置派生的展示层前缀，不写入主题文本。
   // 屏幕与导出必须算同一份映射，否则编号会一端有一端没有。
   const numberMap = useMemo(
@@ -611,6 +651,7 @@ function MindMapScene({
         relationships: visibleRelationships,
         boundaries: visibleBoundaries,
         summaries: visibleSummaries,
+        illustrations: sceneIllustrations,
         themeId,
         branchStyle,
         numberMap,
@@ -625,12 +666,89 @@ function MindMapScene({
       visibleRelationships,
       visibleBoundaries,
       visibleSummaries,
+      sceneIllustrations,
       themeId,
       branchStyle,
       numberMap,
       canvasSettings,
     ],
   )
+
+
+  // —— 画布级插画：拖动 ——
+  //
+  // 与贴纸/标注同一套做法：拖动只改本地预览、松手才提交（一次拖动 = 一条撤销记录），
+  // 没挪动不写文档（否则"点一下看看"也会往撤销栈里塞一条空记录）。
+  /**
+   * 插画命中放在**捕获阶段**。
+   *
+   * 插画画在 Canvas 2D 层、不是 DOM 元素，拿不到自己的 pointer 事件；
+   * 而它在 z-order 上压住主题。若等冒泡阶段再判断，主题节点已经先开始拖拽了
+   * （用户看到的是"点在插画上却把下面的主题拖走了"）。捕获阶段先手命中即可。
+   */
+  const handleIllustrationPointerDownCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || illustrations.length === 0) {
+      return
+    }
+    const rect = viewportRef.current?.getBoundingClientRect()
+    if (!rect) {
+      return
+    }
+    const hit = hitTestIllustrationAtViewportPoint(
+      illustrations,
+      layout.offsetX,
+      layout.offsetY,
+      camera,
+      { x: event.clientX - rect.left, y: event.clientY - rect.top },
+    )
+    if (!hit) {
+      return
+    }
+
+    event.stopPropagation()
+    illustrationDragRef.current = {
+      id: hit.id,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      baseX: hit.x,
+      baseY: hit.y,
+    }
+    setDraggingIllustration({ id: hit.id, x: hit.x, y: hit.y })
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const handleIllustrationPointerMoveCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = illustrationDragRef.current
+    if (!drag) {
+      return
+    }
+    event.stopPropagation()
+    const safeZoom = camera.zoom > 0 ? camera.zoom : 1
+    setDraggingIllustration({
+      id: drag.id,
+      x: drag.baseX + (event.clientX - drag.startClientX) / safeZoom,
+      y: drag.baseY + (event.clientY - drag.startClientY) / safeZoom,
+    })
+  }
+
+  const handleIllustrationPointerEndCapture = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = illustrationDragRef.current
+    if (!drag) {
+      return
+    }
+    event.stopPropagation()
+    illustrationDragRef.current = null
+    const safeZoom = camera.zoom > 0 ? camera.zoom : 1
+    const deltaX = (event.clientX - drag.startClientX) / safeZoom
+    const deltaY = (event.clientY - drag.startClientY) / safeZoom
+    setDraggingIllustration(null)
+
+    // 没挪动就是一次点击，不写文档、不产生撤销记录
+    if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) {
+      return
+    }
+    onIllustrationMove(drag.id, drag.baseX + deltaX, drag.baseY + deltaY)
+  }
 
   // 分支序号：一级主题在其父下的序号，缤纷主题的分支配色按此取色。
   // 与导出链路共用 buildBranchIndexMap，确保屏幕 DOM 和 PNG/SVG 取到同一颜色。
@@ -1663,6 +1781,10 @@ function MindMapScene({
       <div
         ref={viewportRef}
         className="mindmap-scene"
+        onPointerDownCapture={handleIllustrationPointerDownCapture}
+        onPointerMoveCapture={handleIllustrationPointerMoveCapture}
+        onPointerUpCapture={handleIllustrationPointerEndCapture}
+        onPointerCancelCapture={handleIllustrationPointerEndCapture}
         onPointerDown={handleViewportPointerDown}
         onPointerMove={handleViewportPointerMove}
         onPointerUp={handleViewportPointerEnd}
@@ -1831,6 +1953,10 @@ function stickerOffsetExpression(offset: number): string {
 
 /** 标注在装饰拖动状态里用的 id（与贴纸实例 id 区分开）。 */
 export const CALLOUT_DECOR_ID = '__callout__'
+
+/** 被过滤时的空插画列表：复用模块级常量，写成 `[]` 每次渲染都是新引用，
+ *  会让依赖它的 useMemo（场景构建）每渲染重算一次。 */
+const EMPTY_ILLUSTRATIONS: CanvasIllustration[] = []
 
 /** 透明边框回退到文字色，与 underline 形状的既有约定一致。 */
 function calloutStrokeColor(style: { borderColor: string; textColor: string }): string {
@@ -3328,6 +3454,7 @@ function TreeWorkspace({
           relationships={session.document!.relationships ?? []}
           boundaries={activeSheet.boundaries ?? []}
           summaries={activeSheet.summaries ?? []}
+          illustrations={activeSheet.illustrations ?? []}
           themeId={session.document!.theme?.id}
           branchStyle={activeSheet.branchStyle}
           numbering={activeSheet.numbering}
@@ -3376,6 +3503,13 @@ function TreeWorkspace({
               return
             }
             void session.setTopicCallout(topicId, { ...topic.callout, offsetX, offsetY })
+          }}
+          onIllustrationMove={(illustrationId, x, y) => {
+            // 画布级插画是**整表替换**：改一张也整批提交（与贴纸同一条通道）
+            const next = (activeSheet.illustrations ?? []).map((item) =>
+              item.id === illustrationId ? { ...item, x, y } : item,
+            )
+            void session.setSheetIllustrations(activeSheet.id, next)
           }}
           onStickerMove={(topicId, stickerId, offsetX, offsetY) => {
           // 贴纸是**列表型富字段**：改一张也要整批提交（一次拖动 = 一条撤销记录）。

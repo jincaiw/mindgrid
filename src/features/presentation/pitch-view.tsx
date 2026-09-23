@@ -17,6 +17,7 @@ import { renderScene } from '../canvas/runtime/canvas-renderer'
 import { buildScene } from '../canvas/runtime/scene-builder'
 import type {
   Boundary,
+  CanvasIllustration,
   ChartType,
   DocumentSnapshot,
   Relationship,
@@ -59,6 +60,7 @@ interface PitchViewProps {
 const EMPTY_RELATIONSHIPS: Relationship[] = []
 const EMPTY_BOUNDARIES: Boundary[] = []
 const EMPTY_SUMMARIES: SummaryNode[] = []
+const EMPTY_ILLUSTRATIONS: CanvasIllustration[] = []
 
 const THEME_STYLE_OPTIONS: ReadonlyArray<{ id: PitchThemeStyle; label: string }> = [
   { id: 'document', label: '跟随文档' },
@@ -81,6 +83,9 @@ export function PitchView({
   const documentThemeId = document.theme?.id
   const relationships: Relationship[] = document.relationships ?? EMPTY_RELATIONSHIPS
   const boundaries: Boundary[] = activeSheet.boundaries ?? EMPTY_BOUNDARIES
+  // 画布级插画：放映时同样显示（与画布同一份数据、同一条渲染路径）
+  const illustrations: CanvasIllustration[] =
+    activeSheet.illustrations ?? EMPTY_ILLUSTRATIONS
   const summaries: SummaryNode[] = activeSheet.summaries ?? EMPTY_SUMMARIES
 
   const layout = useMemo(() => computeLayout(rootTopic, chartType), [rootTopic, chartType])
@@ -137,6 +142,7 @@ export function PitchView({
       relationships,
       boundaries,
       summaries,
+      illustrations,
       themeId,
       enableCulling: false,
     })
@@ -150,7 +156,7 @@ export function PitchView({
       drawOverlays: false,
       themeId,
     })
-  }, [viewport, currentAct, layout, relationships, boundaries, summaries, themeId])
+  }, [viewport, currentAct, layout, relationships, boundaries, summaries, illustrations, themeId])
 
   const stopAnimation = useCallback(() => {
     if (animationRef.current != null) {

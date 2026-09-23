@@ -195,6 +195,12 @@ export function WorkspaceScreen({
     setInspectorTabRequest((current) => ({ tab: 'style', nonce: (current?.nonce ?? 0) + 1 }))
   }, [])
 
+  // 同上：引用必须稳定，否则 handleMenuAction 会跟着每渲染重建一次
+  const focusInspectorCanvasTab = useCallback(() => {
+    setInspectorVisible(true)
+    setInspectorTabRequest((current) => ({ tab: 'canvas', nonce: (current?.nonce ?? 0) + 1 }))
+  }, [])
+
   // 只把 effect 里真正用到的原始值放进依赖：activeSheet 是每次渲染派生的对象，
   // 直接依赖它会让本 effect 每渲染重跑一次；取 id 则与文档变更同频
   const activeSheetId = activeSheet?.id
@@ -331,6 +337,7 @@ export function WorkspaceScreen({
         startPitch: () => setIsPitching(true),
         openSearch: () => setSearchOpen(true),
         focusInspectorTopicTab,
+        focusInspectorCanvasTab,
         openShortcutsHelp: () => setIsShortcutsHelpOpen(true),
         checkForUpdates: () => onCheckForUpdates?.(),
         cycleTheme: () => onCycleTheme?.(),
@@ -350,6 +357,7 @@ export function WorkspaceScreen({
       activeSheet,
       desktopFileActionsEnabled,
       focusInspectorTopicTab,
+      focusInspectorCanvasTab,
       focusState,
       handleFocusTopicIdChange,
       handlePrint,

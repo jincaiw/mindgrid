@@ -349,6 +349,25 @@ export interface SheetBranchStyle {
   endpoint?: EdgeEndpoint
 }
 
+/**
+ * 画布级插画：不依附任何主题、直接摆在画布上的装饰对象。
+ *
+ * 与贴纸 / 标注的关键差别：那两个挂在 `TopicSnapshot` 上、跟着主题走；
+ * 插画没有宿主主题，所以存在画布（Sheet）上。
+ *
+ * `x` / `y` 是插画**中心**在**布局坐标系**里的位置——渲染时统一加 `layout.offset`，
+ * 与节点/连线同一套约定（否则画布一平移，插画就会和内容分离）。
+ */
+export interface CanvasIllustration {
+  id: string
+  /** 素材 id（目录见 `features/canvas/illustration-definitions.ts`）。 */
+  illustrationId: string
+  x: number
+  y: number
+  /** 绘制边长（世界单位，正方形）。 */
+  size: number
+}
+
 export interface SheetSnapshot {
   id: string
   title: string
@@ -369,6 +388,8 @@ export interface SheetSnapshot {
   floatingTopics?: TopicSnapshot[]
   boundaries?: Boundary[]
   summaries?: SummaryNode[]
+  /** 画布级插画（不依附主题的浮动装饰），缺省为空。 */
+  illustrations?: CanvasIllustration[]
   extensions?: Record<string, unknown>
 }
 

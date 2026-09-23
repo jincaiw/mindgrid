@@ -17,6 +17,7 @@ import {
   type DragPreviewRenderNode,
   type DropIndicatorRenderNode,
   type EdgeRenderNode,
+  type IllustrationRenderNode,
   type RelationshipRenderNode,
   type ResolvedTopicStyle,
   type SelectionBoxRenderNode,
@@ -52,6 +53,11 @@ import {
 } from './topic-callout-constants'
 import { computeTopicStickerPlacement } from './topic-sticker-constants'
 import { STICKER_VIEWBOX, findStickerDefinition } from '../sticker-definitions'
+import {
+  ILLUSTRATION_VIEWBOX,
+  illustrationScale,
+} from './canvas-illustration-constants'
+import { findIllustrationDefinition } from '../illustration-definitions'
 import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
 import {
   LINK_ICON_SVG_INNER,
@@ -90,6 +96,14 @@ export interface RenderOptions {
   drawOverlays?: boolean
   /** 是否绘制装饰元素（关系线/边界/概要）。默认 true。 */
   drawDecorations?: boolean
+  /**
+   * 是否绘制画布级插画。默认 true。
+   *
+   * 单独一个开关而不是并进 `drawDecorations`：屏幕画布用
+   * `drawTopics: false`（主题走 DOM），但插画只能在 Canvas 2D 层出，
+   * 并进 decorations 会让"以后某个调用方关掉装饰"顺手关掉插画。
+   */
+  drawIllustrations?: boolean
   /** 文档主题 ID（用于背景色与连线色解析）。缺省使用 classic-blue。 */
   themeId?: string
   /** 画布级背景色覆盖（`canvas.background` 设置）。空值 = 跟随主题。 */
@@ -129,6 +143,7 @@ export function renderScene(
     drawTopics = true,
     drawOverlays = true,
     drawDecorations = true,
+    drawIllustrations = true,
   } = options
   const fontFamily = options.fontFamily ?? FONT_FAMILY
 
@@ -189,6 +204,15 @@ export function renderScene(
     )
     for (const relationship of relationships) {
       drawRelationship(ctx, relationship, fontFamily)
+    }
+  }
+
+  if (drawIllustrations) {
+    const illustrations = scene.nodes.filter(
+      (n): n is IllustrationRenderNode => n.type === 'illustration',
+    )
+    for (const illustration of illustrations) {
+      drawIllustration(ctx, illustration)
     }
   }
 
@@ -518,6 +542,44 @@ function drawNodeStickers(ctx: CanvasRenderingContext2D, node: TopicRenderNode):
 
     ctx.restore()
   }
+}
+
+/**
+ * 绘制画布级插画。
+ *
+ * 几何取自 `IllustrationRenderNode`（中心 + 边长），图形取自
+ * `ILLUSTRATION_DEFINITIONS` —— 与 SVG 端同一份数据、同一套换算，
+ * `Path2D` 直接吃 SVG 的 `d` 字符串，因此这里没有任何路径转换代码。
+ */
+function drawIllustration(ctx: CanvasRenderingContext2D, node: IllustrationRenderNode): void {
+  const definition = findIllustrationDefinition(node.illustrationId)
+  if (!definition) {
+    return
+  }
+
+  const scale = illustrationScale(node.size)
+
+  ctx.save()
+  ctx.translate(node.cx, node.cy)
+  ctx.scale(scale, scale)
+  ctx.translate(-ILLUSTRATION_VIEWBOX / 2, -ILLUSTRATION_VIEWBOX / 2)
+
+  for (const shape of definition.shapes) {
+    const path = new Path2D(shape.d)
+    if (shape.fill) {
+      ctx.fillStyle = shape.fill
+      ctx.fill(path)
+    }
+    if (shape.stroke) {
+      ctx.strokeStyle = shape.stroke
+      ctx.lineWidth = shape.strokeWidth ?? 1
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.stroke(path)
+    }
+  }
+
+  ctx.restore()
 }
 
 /**

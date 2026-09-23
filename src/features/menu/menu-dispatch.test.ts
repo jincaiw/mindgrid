@@ -101,6 +101,7 @@ function makeHarness(options: HarnessOptions = {}) {
     startPitch: vi.fn(),
     openSearch: vi.fn(),
     focusInspectorTopicTab: vi.fn(),
+    focusInspectorCanvasTab: vi.fn(),
     openShortcutsHelp: vi.fn(),
     checkForUpdates: vi.fn(),
     cycleTheme: vi.fn(),

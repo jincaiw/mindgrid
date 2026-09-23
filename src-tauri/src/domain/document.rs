@@ -408,6 +408,35 @@ impl Default for SheetBranchStyle {
     }
 }
 
+/// 画布级插画：不依附任何主题、直接摆在画布上的装饰对象。
+///
+/// 与贴纸 / 标注的区别：那两个挂在 `TopicSnapshot` 上、跟着主题走；
+/// 插画没有宿主主题，所以存在 `SheetSnapshot` 上。
+///
+/// `x` / `y` 是插画**中心**在**布局坐标系**里的位置。渲染时统一加
+/// `layout.offset`——必须与节点/连线走同一套约定，否则画布一平移，
+/// 插画就会和内容分离（屏幕、PNG、SVG 三端会一起错位）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CanvasIllustration {
+    pub id: String,
+    /// 素材 id（目录见 TS 侧 `illustration-definitions.ts`）。
+    pub illustration_id: String,
+    /// 中心点 X（布局坐标系）。
+    pub x: f64,
+    /// 中心点 Y（布局坐标系）。
+    pub y: f64,
+    /// 绘制边长（世界单位，正方形）。
+    pub size: f64,
+}
+
+/// 单张画布内插画数量上限。列表按整体替换写入，理论上不会太大，
+/// 但上限能挡住"脚本一次性灌上千张"导致每次渲染都做无谓工作。
+pub const MAX_SHEET_ILLUSTRATIONS: usize = 20;
+/// 单张插画的边长范围（世界单位）。
+pub const MIN_ILLUSTRATION_SIZE: f64 = 24.0;
+pub const MAX_ILLUSTRATION_SIZE: f64 = 480.0;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RelationshipControlPoint {
@@ -478,6 +507,9 @@ pub struct SheetSnapshot {
     pub boundaries: Vec<Boundary>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub summaries: Vec<SummaryNode>,
+    /// 画布级插画（不依附主题的浮动装饰），缺省为空。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub illustrations: Vec<CanvasIllustration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Extensions>,
     /// 未知字段原样保留（spec 16：不静默删除未知字段）。
@@ -649,6 +681,7 @@ impl DocumentSnapshot {
                     floating_topics: sheet.floating_topics.clone(),
                     boundaries,
                     summaries,
+                    illustrations: sheet.illustrations.clone(),
                     extensions: sheet.extensions,
                     extra: sheet.extra.clone(),
                 }
@@ -904,6 +937,16 @@ impl DocumentSession {
     ) -> Result<DocumentSessionSnapshot, String> {
         self.apply_change_set("设置分支样式", |editor| {
             editor.set_sheet_branch_style(sheet_id, branch_style)
+        })
+    }
+
+    pub fn set_sheet_illustrations(
+        &mut self,
+        sheet_id: &str,
+        illustrations: Vec<CanvasIllustration>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("调整插画", |editor| {
+            editor.set_sheet_illustrations(sheet_id, illustrations)
         })
     }
 
@@ -1626,6 +1669,7 @@ impl SheetSnapshot {
             floating_topics: Vec::new(),
             boundaries: Vec::new(),
             summaries: Vec::new(),
+            illustrations: Vec::new(),
             extensions: None,
             extra: serde_json::Map::new(),
         }

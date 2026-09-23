@@ -106,3 +106,52 @@ export function canDropTopicOnTarget(
 ) {
   return canReparentTopic(rootTopic, topicId, targetParentId)
 }
+
+/**
+ * 画布级对象（插画）命中测试需要的最小字段子集。
+ *
+ * 刻意不收 `IllustrationRenderNode`：这层只做几何，纯函数才好单测。
+ */
+export interface CanvasObjectHitCandidate {
+  id: string
+  /** 中心点（布局坐标系，未加 layout.offset）。 */
+  x: number
+  y: number
+  /** 边长（正方形）。 */
+  size: number
+}
+
+/**
+ * 命中画布上的某张插画，返回**最上面**那张（未命中返回 null）。
+ *
+ * 与主题命中测试的关键差别：插画是画布级对象、有明确 z-order
+ * （数组顺序即绘制顺序，后画的盖在上面），所以从**末尾往前**找，
+ * 而不是像主题那样按 depth 排序。
+ */
+export function hitTestIllustrationAtViewportPoint(
+  illustrations: readonly CanvasObjectHitCandidate[],
+  offsetX: number,
+  offsetY: number,
+  camera: CameraState,
+  point: ViewportPoint,
+): CanvasObjectHitCandidate | null {
+  const worldPoint = viewportPointToWorld(point, camera)
+
+  for (let index = illustrations.length - 1; index >= 0; index -= 1) {
+    const item = illustrations[index]
+    const cx = item.x + offsetX
+    const cy = item.y + offsetY
+    const half = item.size / 2
+
+    if (
+      worldPoint.x >= cx - half &&
+      worldPoint.x <= cx + half &&
+      worldPoint.y >= cy - half &&
+      worldPoint.y <= cy + half
+    ) {
+      return item
+    }
+  }
+
+  return null
+}

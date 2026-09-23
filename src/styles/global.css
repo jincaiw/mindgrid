@@ -3511,6 +3511,55 @@ button {
   font-size: 12px;
 }
 
+/* 插画选择网格：画布级对象（不依附主题），所以这一节在「画布」子页 */
+.illustration-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.illustration-grid__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.illustration-grid__item:hover:not(:disabled) {
+  border-color: var(--color-border-subtle);
+  background: var(--color-surface-hover);
+}
+
+.illustration-grid__item:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.illustration-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.illustration-list__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.illustration-list__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
 /* 标注（callout）：挂在节点外侧的说明框。
    文本行由 wrapText 切好并逐行渲染，这里**不靠 CSS 换行**，以免与导出端行数不一致导致框高不同。 */
 .mindmap-node__callout {

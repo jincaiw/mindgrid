@@ -391,3 +391,42 @@ describe('贴纸导出', () => {
     expect(() => renderSceneToSvg(scene, {})).not.toThrow()
   })
 })
+
+describe('画布级插画导出', () => {
+  it('把插画画成 <g transform>：平移用中心坐标、缩放用 size/viewBox', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: { width: 800, height: 600 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: emptyVisualStates,
+      overlays: emptyOverlays,
+      illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 120, y: -80, size: 128 }],
+      enableCulling: false,
+    })
+
+    const svg = renderSceneToSvg(scene)
+
+    const cx = 120 + layout.offsetX
+    const cy = -80 + layout.offsetY
+    // scale(128/64) = 2；再 translate(-32,-32) 把 viewBox 中心对到 (cx,cy)
+    expect(svg).toContain(
+      `translate(${cx} ${cy}) scale(2) translate(-32 -32)`,
+    )
+  })
+
+  it('没有插画时不产生插画分组', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: { width: 800, height: 600 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: emptyVisualStates,
+      overlays: emptyOverlays,
+      enableCulling: false,
+    })
+
+    // 标题文字里不会出现 scale(2) translate(-32 -32) 这种组合
+    expect(renderSceneToSvg(scene)).not.toContain('translate(-32 -32)')
+  })
+})

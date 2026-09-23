@@ -2,6 +2,7 @@ import { CURRENT_SCHEMA_VERSION, createDefaultDocument, createId, createSheet, c
 import { getActiveRootTopic, getActiveSheet, getSheetById } from '../document/sheets'
 import { countTopics, findParentTopicByChildId, findTopicById } from '../document/tree'
 import type {
+  CanvasIllustration,
   ChartType,
   DocumentSessionSnapshot,
   DocumentSnapshot,
@@ -125,6 +126,12 @@ function removeRecoveryStorageItem() {
     // Ignore storage errors in the browser fallback test/runtime shim.
   }
 }
+
+/** 单张画布内插画数量上限（与 Rust MAX_SHEET_ILLUSTRATIONS 保持一致）。 */
+const MAX_SHEET_ILLUSTRATIONS = 20
+/** 单张插画边长范围（与 Rust MIN/MAX_ILLUSTRATION_SIZE 保持一致）。 */
+const MIN_ILLUSTRATION_SIZE = 24
+const MAX_ILLUSTRATION_SIZE = 480
 
 function cloneDocument(document: DocumentSnapshot) {
   return structuredClone(document)
@@ -727,6 +734,69 @@ export async function invokeBrowserCommand<TResult>(
         }
 
         sheet.branchStyle = nextBranchStyle
+
+        return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
+          ? activeTopicId
+          : getActiveSheet(draft).rootTopic.id
+      }) as TResult
+    }
+    case 'set_sheet_illustrations': {
+      return applyMutation('调整插画', (draft) => {
+        const sheetId = String(payload.sheet_id)
+        const sheet = getSheetById(draft, sheetId)
+        if (!sheet) {
+          throw new Error('找不到需要设置插画的画布')
+        }
+
+        const rawList = payload.illustrations
+        if (!Array.isArray(rawList)) {
+          throw new Error('插画列表必须是数组')
+        }
+        if (rawList.length > MAX_SHEET_ILLUSTRATIONS) {
+          throw new Error(
+            `画布上的插画最多 ${MAX_SHEET_ILLUSTRATIONS} 张（当前 ${rawList.length}）`,
+          )
+        }
+
+        // 校验与 Rust 侧 set_sheet_illustrations 逐条对齐：
+        // 浏览器降级链路上要是校验更松，同一份操作在两端就会一个成功一个失败。
+        const seen = new Set<string>()
+        const next: CanvasIllustration[] = rawList.map((entry) => {
+          const item = entry as Record<string, unknown>
+          const id = String(item.id ?? '').trim()
+          const illustrationId = String(item.illustrationId ?? '').trim()
+          if (!id) throw new Error('插画 id 不能为空')
+          if (!illustrationId) throw new Error('插画素材 id 不能为空')
+          if (seen.has(id)) throw new Error(`插画 id 重复：${id}`)
+          seen.add(id)
+
+          const x = Number(item.x)
+          const y = Number(item.y)
+          if (!Number.isFinite(x) || !Number.isFinite(y)) {
+            throw new Error('插画坐标必须是有限数值')
+          }
+          const size = Number(item.size)
+          if (
+            !Number.isFinite(size) ||
+            size < MIN_ILLUSTRATION_SIZE ||
+            size > MAX_ILLUSTRATION_SIZE
+          ) {
+            throw new Error(
+              `插画尺寸 ${size} 超出范围（${MIN_ILLUSTRATION_SIZE}–${MAX_ILLUSTRATION_SIZE}）`,
+            )
+          }
+
+          return { id, illustrationId, x, y, size }
+        })
+
+        // 与 Rust 侧一致：列表不变就不入历史栈
+        if (JSON.stringify(sheet.illustrations ?? []) === JSON.stringify(next)) {
+          return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
+            ? activeTopicId
+            : getActiveSheet(draft).rootTopic.id
+        }
+
+        sheet.illustrations = next
 
         return activeTopicId && findTopicById(getActiveSheet(draft).rootTopic, activeTopicId)
           ? activeTopicId

@@ -84,6 +84,8 @@ export interface MenuCommandContext {
   startPitch: () => void
   openSearch: () => void
   focusInspectorTopicTab: () => void
+  /** 打开检查器并切到「画布」子页（画布级设置的入口）。 */
+  focusInspectorCanvasTab: () => void
   openShortcutsHelp: () => void
   checkForUpdates: () => void
   cycleTheme: () => void
@@ -390,6 +392,11 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       void session.createFloatingTopic('新建浮动主题', 0, bottom + 80)
       return
     }
+    // 插画：**画布级**对象（不依附主题），所以入口在检查器的「画布」子页，
+    // 而不是像贴纸/标注那样放在「样式」子页——那一页整页都是"选中主题"的属性。
+    case 'insert.illustration':
+      ctx.focusInspectorCanvasTab()
+      return
     // 从主题新建画布：该主题的整棵子树成为新画布的根。
     // 画布标题取主题文本（Rust 侧为空时回落「新画布」）。
     case 'insert.new-sheet-from-topic': {

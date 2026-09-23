@@ -65,6 +65,30 @@ example.mgd
 }
 ```
 
+### 4.1 画布（Sheet）上的对象
+
+除 `rootTopic` 外，一张画布还携带几类**画布级**对象：
+
+- `layoutConfig` / `branchStyle` / `numbering`：布局与渲染配置
+- `boundaries` / `summaries`：**引用一组主题** 的装饰
+- `floatingTopics`：树结构之外的自由节点
+- `illustrations`：**不依附任何主题**的插画（`CanvasIllustration`）
+
+```json
+{
+  "id": "ill_...",
+  "illustrationId": "rocket",
+  "x": 120,
+  "y": -80,
+  "size": 96
+}
+```
+
+`x` / `y` 是插画**中心**在**布局坐标系**里的位置——渲染时统一加 `layout.offset`
+（与主题节点、连线同一套约定）。这一点必须一致：否则画布一平移，插画就会与内容分离，
+而且屏幕 / PNG / SVG 三端会**一起**错位。约束：`size` 落在 24–480，
+单张画布最多 20 张（超出由服务端拒绝）。
+
 ## 5. Tree Only
 
 必须保证：

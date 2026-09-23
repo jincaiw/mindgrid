@@ -10,7 +10,8 @@
 use crate::domain::document::{
     clone_topic_branch, contains_topic, create_id, find_parent_id_and_index, find_topic,
     find_topic_mut, normalize_topic_ids_for_batch, normalize_topic_ids_for_delete, Boundary,
-    ChartType, DocumentSnapshot, LayoutDirection, LayoutConfig, Relationship, SheetBranchStyle,
+    CanvasIllustration, ChartType, DocumentSnapshot, LayoutDirection, LayoutConfig, Relationship,
+    SheetBranchStyle, MAX_ILLUSTRATION_SIZE, MAX_SHEET_ILLUSTRATIONS, MIN_ILLUSTRATION_SIZE,
     SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicAttachment, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
     TopicCallout,
@@ -134,6 +135,17 @@ pub enum Operation {
         sheet_id: String,
         old_branch_style: Option<SheetBranchStyle>,
         new_branch_style: Option<SheetBranchStyle>,
+    },
+    /// 画布级插画列表变更。逆操作交换 old/new。
+    ///
+    /// **为什么是整体替换而不是逐项增删**：插画列表很短（上限 20），
+    /// 而"新增 / 移动 / 缩放 / 删除"在语义上都只是"这一份新的列表"。
+    /// 一次整体替换就能覆盖四种操作，撤销栈里也只留一条记录，
+    /// 不必再为移动和缩放各写一个变体与各自的逆操作（少写两处就少两处出错的机会）。
+    SetSheetIllustrations {
+        sheet_id: String,
+        old_illustrations: Vec<CanvasIllustration>,
+        new_illustrations: Vec<CanvasIllustration>,
     },
     /// 主题位置变更（分支自由布局：把一级分支摆到指定位置）。逆操作交换 old/new。
     SetTopicPosition {
@@ -333,6 +345,15 @@ pub fn invert_operation(op: &Operation) -> Operation {
             sheet_id: sheet_id.clone(),
             old_branch_style: new_branch_style.clone(),
             new_branch_style: old_branch_style.clone(),
+        },
+        Operation::SetSheetIllustrations {
+            sheet_id,
+            old_illustrations,
+            new_illustrations,
+        } => Operation::SetSheetIllustrations {
+            sheet_id: sheet_id.clone(),
+            old_illustrations: new_illustrations.clone(),
+            new_illustrations: old_illustrations.clone(),
         },
         Operation::SetTopicPosition {
             sheet_id,
@@ -544,6 +565,16 @@ fn do_set_sheet_branch_style(
     }
 }
 
+fn do_set_sheet_illustrations(
+    document: &mut DocumentSnapshot,
+    sheet_id: &str,
+    illustrations: Vec<CanvasIllustration>,
+) {
+    if let Some(sheet) = document.find_sheet_mut(sheet_id) {
+        sheet.illustrations = illustrations;
+    }
+}
+
 /// 写入主题的位置提示（分支自由布局用），None 表示清除。
 fn do_set_topic_position(
     document: &mut DocumentSnapshot,
@@ -641,6 +672,9 @@ pub fn apply_operation(document: &mut DocumentSnapshot, op: &Operation) {
         }
         Operation::SetSheetBranchStyle { sheet_id, new_branch_style, .. } => {
             do_set_sheet_branch_style(document, sheet_id, new_branch_style.clone())
+        }
+        Operation::SetSheetIllustrations { sheet_id, new_illustrations, .. } => {
+            do_set_sheet_illustrations(document, sheet_id, new_illustrations.clone())
         }
         Operation::SetTopicPosition {
             sheet_id,
@@ -1155,6 +1189,27 @@ impl<'a> DocumentEditor<'a> {
         });
     }
 
+    fn set_sheet_illustrations_raw(
+        &mut self,
+        sheet_id: &str,
+        new_illustrations: Vec<CanvasIllustration>,
+    ) {
+        let old = self
+            .document
+            .find_sheet(sheet_id)
+            .map(|sheet| sheet.illustrations.clone());
+        let Some(old_illustrations) = old else { return };
+        if old_illustrations == new_illustrations {
+            return;
+        }
+        do_set_sheet_illustrations(self.document, sheet_id, new_illustrations.clone());
+        self.record(Operation::SetSheetIllustrations {
+            sheet_id: sheet_id.to_string(),
+            old_illustrations,
+            new_illustrations,
+        });
+    }
+
     fn insert_sheet(&mut self, index: usize, sheet: SheetSnapshot) {
         let op_sheet = sheet.clone();
         do_insert_sheet(self.document, index, sheet);
@@ -1264,6 +1319,62 @@ impl<'a> DocumentEditor<'a> {
 
         let active_root_topic_id = self.document.root_topic().id.clone();
         self.set_sheet_branch_style_raw(sheet_id, branch_style);
+
+        Ok(active_root_topic_id)
+    }
+
+    /// 整体替换画布上的插画列表（新增 / 移动 / 缩放 / 删除都走这一条）。
+    ///
+    /// 校验规则与理由：
+    /// - 数量上限 `MAX_SHEET_ILLUSTRATIONS`：挡住脚本一次性灌入；
+    /// - `size` 必须落在 `MIN/MAX_ILLUSTRATION_SIZE`：否则会画出不可用的尺寸；
+    /// - `x` / `y` 必须有限：NaN 会让包围盒与导出尺寸一起变成 NaN，
+    ///   而导出的失败方式是"输出一张 0×0 的图"，不报错、不好查；
+    /// - id 与 illustrationId 非空、id 不重复：重复 id 会让拖动命中错对象。
+    pub fn set_sheet_illustrations(
+        &mut self,
+        sheet_id: &str,
+        illustrations: Vec<CanvasIllustration>,
+    ) -> Result<String, String> {
+        if illustrations.len() > MAX_SHEET_ILLUSTRATIONS {
+            return Err(format!(
+                "画布上的插画最多 {} 张（当前 {}）",
+                MAX_SHEET_ILLUSTRATIONS,
+                illustrations.len()
+            ));
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        for item in &illustrations {
+            if item.id.trim().is_empty() {
+                return Err("插画 id 不能为空".to_string());
+            }
+            if item.illustration_id.trim().is_empty() {
+                return Err("插画素材 id 不能为空".to_string());
+            }
+            if !seen.insert(item.id.as_str()) {
+                return Err(format!("插画 id 重复：{}", item.id));
+            }
+            if !item.x.is_finite() || !item.y.is_finite() {
+                return Err("插画坐标必须是有限数值".to_string());
+            }
+            if !item.size.is_finite()
+                || item.size < MIN_ILLUSTRATION_SIZE
+                || item.size > MAX_ILLUSTRATION_SIZE
+            {
+                return Err(format!(
+                    "插画尺寸 {} 超出范围（{}–{}）",
+                    item.size, MIN_ILLUSTRATION_SIZE, MAX_ILLUSTRATION_SIZE
+                ));
+            }
+        }
+
+        if self.document.find_sheet(sheet_id).is_none() {
+            return Err("找不到需要设置插画的画布".to_string());
+        }
+
+        let active_root_topic_id = self.document.root_topic().id.clone();
+        self.set_sheet_illustrations_raw(sheet_id, illustrations);
 
         Ok(active_root_topic_id)
     }
@@ -3857,5 +3968,138 @@ mod tests {
                 .len(),
             0
         );
+    }
+
+    // ---- 画布级插画 ----
+
+    fn sample_illustration(id: &str, x: f64, y: f64, size: f64) -> CanvasIllustration {
+        CanvasIllustration {
+            id: id.to_string(),
+            illustration_id: "rocket".to_string(),
+            x,
+            y,
+            size,
+        }
+    }
+
+    #[test]
+    fn set_sheet_illustrations_round_trips_and_inverts() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+
+        let next = vec![
+            sample_illustration("ill_1", 120.0, -60.0, 96.0),
+            sample_illustration("ill_2", -200.0, 40.0, 160.0),
+        ];
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_sheet_illustrations(&sheet_id, next.clone()).unwrap();
+        let ops = editor.into_ops();
+
+        assert_eq!(ops.len(), 1);
+        match &ops[0] {
+            Operation::SetSheetIllustrations { new_illustrations, .. } => {
+                assert_eq!(*new_illustrations, next);
+            }
+            other => panic!("expected SetSheetIllustrations, got {:?}", other),
+        }
+
+        assert_eq!(document.find_sheet(&sheet_id).unwrap().illustrations, next);
+
+        // 逆操作回到空列表
+        apply_inverse(&mut document, &ops);
+        assert!(document
+            .find_sheet(&sheet_id)
+            .unwrap()
+            .illustrations
+            .is_empty());
+    }
+
+    #[test]
+    fn set_sheet_illustrations_noop_when_same() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let same = vec![sample_illustration("ill_1", 10.0, 20.0, 64.0)];
+        document.find_sheet_mut(&sheet_id).unwrap().illustrations = same.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        editor.set_sheet_illustrations(&sheet_id, same).unwrap();
+
+        // 相同列表不该往撤销栈里塞记录
+        assert!(editor.into_ops().is_empty());
+    }
+
+    #[test]
+    fn set_sheet_illustrations_moves_and_resizes_as_one_record() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let first = vec![sample_illustration("ill_1", 10.0, 20.0, 64.0)];
+        document.find_sheet_mut(&sheet_id).unwrap().illustrations = first.clone();
+
+        let mut editor = DocumentEditor::new(&mut document);
+        // 拖动 = 改坐标；缩放 = 改 size。两者是同一条通道，各留一条记录。
+        editor
+            .set_sheet_illustrations(&sheet_id, vec![sample_illustration("ill_1", 300.0, 200.0, 64.0)])
+            .unwrap();
+        editor
+            .set_sheet_illustrations(&sheet_id, vec![sample_illustration("ill_1", 300.0, 200.0, 192.0)])
+            .unwrap();
+        let ops = editor.into_ops();
+        assert_eq!(ops.len(), 2);
+
+        // 连撤两次回到原位原尺寸
+        apply_inverse(&mut document, &ops);
+        assert_eq!(document.find_sheet(&sheet_id).unwrap().illustrations, first);
+    }
+
+    #[test]
+    fn set_sheet_illustrations_rejects_out_of_range_size() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+
+        assert!(editor
+            .set_sheet_illustrations(&sheet_id, vec![sample_illustration("ill_1", 0.0, 0.0, 1.0)])
+            .is_err());
+        assert!(editor
+            .set_sheet_illustrations(&sheet_id, vec![sample_illustration("ill_1", 0.0, 0.0, 5000.0)])
+            .is_err());
+    }
+
+    #[test]
+    fn set_sheet_illustrations_rejects_non_finite_coordinates() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+
+        // NaN 会让导出包围盒一起变成 NaN —— 导出变成 0×0 且不报错，必须挡在门外
+        assert!(editor
+            .set_sheet_illustrations(&sheet_id, vec![sample_illustration("ill_1", f64::NAN, 0.0, 64.0)])
+            .is_err());
+    }
+
+    #[test]
+    fn set_sheet_illustrations_rejects_duplicate_ids() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+
+        let dup = vec![
+            sample_illustration("same", 0.0, 0.0, 64.0),
+            sample_illustration("same", 100.0, 0.0, 64.0),
+        ];
+        assert!(editor.set_sheet_illustrations(&sheet_id, dup).is_err());
+    }
+
+    #[test]
+    fn set_sheet_illustrations_rejects_over_capacity() {
+        let mut document = DocumentSnapshot::new_default();
+        let sheet_id = document.active_sheet_id.clone();
+        let mut editor = DocumentEditor::new(&mut document);
+
+        let too_many: Vec<CanvasIllustration> = (0..=MAX_SHEET_ILLUSTRATIONS)
+            .map(|i| sample_illustration(&format!("ill_{i}"), i as f64, 0.0, 64.0))
+            .collect();
+        assert!(editor.set_sheet_illustrations(&sheet_id, too_many).is_err());
     }
 }

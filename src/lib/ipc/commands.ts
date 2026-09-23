@@ -1,4 +1,5 @@
 import type {
+  CanvasIllustration,
   DocumentSessionSnapshot,
   DocumentSnapshot,
   SheetBranchStyle,
@@ -144,6 +145,16 @@ export function setSheetNumbering(
   return invokeCommand<DocumentSessionSnapshot>('set_sheet_numbering', {
     sheet_id: sheetId,
     numbering,
+  })
+}
+
+export function setSheetIllustrations(
+  sheetId: string,
+  illustrations: CanvasIllustration[],
+) {
+  return invokeCommand<DocumentSessionSnapshot>('set_sheet_illustrations', {
+    sheet_id: sheetId,
+    illustrations,
   })
 }
 

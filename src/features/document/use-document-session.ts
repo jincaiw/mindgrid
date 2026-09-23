@@ -60,6 +60,7 @@ import {
   setSheetChartType,
   setSheetBranchStyle,
   setSheetLayoutDirection,
+  setSheetIllustrations as setSheetIllustrationsCommand,
   setSheetNumbering,
   setTopicImage,
   setTopicLabels,
@@ -81,6 +82,7 @@ import {
 } from '../../lib/ipc/commands'
 import { hasTauriRuntime } from '../../lib/ipc/transport'
 import type {
+  CanvasIllustration,
   ChartType,
   DocumentSnapshot,
   SheetBranchStyle,
@@ -208,6 +210,13 @@ export interface DocumentSession extends DocumentSessionState {
   /** 设置 / 移除主题标注（画布上的说明框）。 */
   setTopicCallout: (topicId: string, callout: TopicCallout | null) => Promise<void>
   setTopicLabels: (topicId: string, labels: string[]) => Promise<void>
+  /**
+   * 整体替换画布上的插画列表（新增 / 移动 / 缩放 / 删除都走这一条）。
+   *
+   * 插画是**画布级**对象（不依附主题），所以只有一个列表参数、没有 topicId。
+   * 一次调用 = 一条撤销记录。
+   */
+  setSheetIllustrations: (sheetId: string, illustrations: CanvasIllustration[]) => Promise<void>
   setTopicTask: (topicId: string, task: TopicTask | null) => Promise<void>
   setTopicStyleRef: (topicId: string, styleRef: string | null) => Promise<void>
   applyTopicStyleToSiblings: (topicId: string) => Promise<void>
@@ -1431,6 +1440,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateSheetIllustrations = useCallback(
+    async (sheetId: string, illustrations: CanvasIllustration[]) => {
+      await runCommand('调整插画', () => setSheetIllustrationsCommand(sheetId, illustrations))
+    },
+    [runCommand],
+  )
+
   const updateTopicLabels = useCallback(
     async (topicId: string, labels: string[]) => {
       await runCommand('编辑标签', () => setTopicLabels(topicId, labels))
@@ -1757,6 +1773,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicMarkers: updateTopicMarkers,
       setTopicStickers: updateTopicStickers,
       setTopicCallout: updateTopicCallout,
+      setSheetIllustrations: updateSheetIllustrations,
       setTopicLabels: updateTopicLabels,
       setTopicTask: updateTopicTask,
       setTopicStyleRef: updateTopicStyleRef,
@@ -1807,6 +1824,7 @@ export function useDocumentSession(): DocumentSession {
       updateTopicMarkers,
       updateTopicStickers,
       updateTopicCallout,
+      updateSheetIllustrations,
       updateTopicLabels,
       updateTopicTask,
       updateTopicStyleRef,

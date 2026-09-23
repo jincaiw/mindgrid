@@ -16,6 +16,7 @@ import { renderScene } from '../canvas/runtime/canvas-renderer'
 import { buildScene } from '../canvas/runtime/scene-builder'
 import type {
   Boundary,
+  CanvasIllustration,
   ChartType,
   DocumentSnapshot,
   Relationship,
@@ -35,6 +36,10 @@ import { EMPTY_OVERLAYS, EMPTY_VISUAL_STATES } from './empty-scene-state'
 
 const ANIMATION_DURATION_MS = 480
 
+// 空集合复用模块级常量：写成 `?? []` 每次渲染都是新引用，
+// 会让依赖它的 draw useCallback 反复重建、绘制 effect 反复触发。
+const EMPTY_ILLUSTRATIONS: CanvasIllustration[] = []
+
 interface PresentationViewProps {
   document: DocumentSnapshot
   onExit: () => void
@@ -48,6 +53,9 @@ export function PresentationView({ document, onExit }: PresentationViewProps) {
   const themeId = document.theme?.id
   const relationships: Relationship[] = document.relationships ?? []
   const boundaries: Boundary[] = activeSheet.boundaries ?? []
+  // 画布级插画：放映时同样显示（与画布同一份数据、同一条渲染路径）
+  const illustrations: CanvasIllustration[] =
+    activeSheet.illustrations ?? EMPTY_ILLUSTRATIONS
   const summaries: SummaryNode[] = activeSheet.summaries ?? []
 
   const layout = useMemo(() => computeLayout(rootTopic, chartType), [rootTopic, chartType])
@@ -82,6 +90,7 @@ export function PresentationView({ document, onExit }: PresentationViewProps) {
       relationships,
       boundaries,
       summaries,
+      illustrations,
       themeId,
       enableCulling: false,
     })
@@ -95,7 +104,7 @@ export function PresentationView({ document, onExit }: PresentationViewProps) {
       drawOverlays: false,
       themeId,
     })
-  }, [viewport, currentSlide, layout, relationships, boundaries, summaries, themeId])
+  }, [viewport, currentSlide, layout, relationships, boundaries, summaries, illustrations, themeId])
 
   const stopAnimation = useCallback(() => {
     if (animationRef.current != null) {

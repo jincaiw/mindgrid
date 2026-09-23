@@ -814,3 +814,69 @@ describe('贴纸进入富内容投影', () => {
   })
 
 })
+
+  // ---- 画布级插画 ----
+
+  it('把插画转成节点：中心 = 存储坐标 + layout.offset，包围盒是正方形', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 120, y: -80, size: 96 }],
+      enableCulling: false,
+    })
+
+    const node = scene.nodes.find((n) => n.type === 'illustration')
+    expect(node).toBeDefined()
+    if (node?.type === 'illustration') {
+      expect(node.id).toBe('ill_1')
+      expect(node.illustrationId).toBe('rocket')
+      expect(node.size).toBe(96)
+      // ⚠️ 必须随 layout.offset 平移：不平移的话画布一移动插画就与内容分离
+      expect(node.cx).toBe(120 + layout.offsetX)
+      expect(node.cy).toBe(-80 + layout.offsetY)
+      expect(node.bounds).toEqual({
+        x: node.cx - 48,
+        y: node.cy - 48,
+        width: 96,
+        height: 96,
+      })
+    }
+  })
+
+  it('没传插画时不产生插画节点', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const scene = buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      enableCulling: false,
+    })
+
+    expect(scene.nodes.some((n) => n.type === 'illustration')).toBe(false)
+  })
+
+  it('视口外的插画会被剔除（开启剔除时）', () => {
+    const layout = computeMindMapLayout(makeRoot())
+    const base = {
+      layout,
+      // 视口贴着原点；插画放到很远的地方
+      viewport: { width: 200, height: 200 },
+      camera: { x: 0, y: 0, zoom: 1 },
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      illustrations: [{ id: 'ill_far', illustrationId: 'bulb', x: 100000, y: 100000, size: 96 }],
+    }
+
+    const culled = buildScene({ ...base, enableCulling: true })
+    expect(culled.nodes.some((n) => n.type === 'illustration')).toBe(false)
+
+    // 关掉剔除时仍然在（导出走的就是这条）
+    const full = buildScene({ ...base, enableCulling: false })
+    expect(full.nodes.some((n) => n.type === 'illustration')).toBe(true)
+  })

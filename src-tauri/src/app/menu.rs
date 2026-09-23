@@ -284,6 +284,7 @@ pub fn build_menu<R: Runtime>(
         // XMind 把「附件」放在 链接 与 标记 之间；贴纸紧跟在附件之后
         .item(&item(handle, "insert.attachment", "附件…")?)
         .item(&item(handle, "insert.sticker", "贴纸")?)
+        .item(&item(handle, "insert.illustration", "插画")?)
         .item(&item(handle, "insert.callout", "标注")?)
         .item(&item(handle, "insert.marker", "标记")?)
         .item(&item(handle, "insert.image", "本地图片…")?)

@@ -36,6 +36,9 @@ function makeDocument(): DocumentSnapshot {
           topic('b', '分支 B'),
         ]),
         boundaries: [{ id: 'bd1', topicIds: ['a', 'b'], label: '一组' }],
+        illustrations: [
+          { id: 'ill_1', illustrationId: 'rocket', x: 500, y: 300, size: 120 },
+        ],
       },
     ],
     relationships: [{ id: 'r1', fromTopicId: 'a1', toTopicId: 'b' }],
@@ -88,5 +91,21 @@ describe('buildExportScene · 裁剪', () => {
     const scene = await buildExportScene(makeDocument(), new Set())
 
     expect(topicIdsOf(scene)).toEqual(['a', 'a1', 'b', 'root'])
+  })
+})
+
+describe('buildExportScene · 画布级插画', () => {
+  it('导出整幅图时带上插画', async () => {
+    const scene = await buildExportScene(makeDocument())
+
+    expect(scene.nodes.filter((node) => node.type === 'illustration')).toHaveLength(1)
+  })
+
+  it('有可见集限制时插画整体排除（不裁一半、也不撑大导出尺寸）', async () => {
+    // 插画不属于任何分支，没有"裁一部分"的说法；留着它会让导出宽高
+    // （取所有节点的紧包围盒）被一张远处的图形撑开。
+    const scene = await buildExportScene(makeDocument(), VISIBLE_A)
+
+    expect(scene.nodes.some((node) => node.type === 'illustration')).toBe(false)
   })
 })

@@ -3,8 +3,11 @@ import { useState } from 'react'
 import { afterEach, vi } from 'vitest'
 import { renderWithApp } from '../../test/render'
 import { CanvasHost } from './canvas-host'
+import { computeLayout, resolveLayoutOptions } from './layouts'
+import { resolveCanvasSettings } from '../../lib/document/canvas-settings'
 import type { DocumentSession } from '../document/use-document-session'
 import { serializeTopicsForClipboard } from './topic-system-clipboard'
+import type { TopicSnapshot } from '../../lib/document/types'
 
 function createSessionStub(overrides: Partial<DocumentSession> = {}): DocumentSession {
   return {
@@ -107,6 +110,7 @@ importDocxOutline: async () => {},
     setSheetChartType: async () => {},
     setSheetBranchStyle: async () => {},
     setSheetNumbering: async () => {},
+    setSheetIllustrations: async () => {},
     applyTopicStyleToSiblings: async () => {},
     moveTopicFreely: async () => {},
     setTopicsPosition: async () => {},
@@ -1484,5 +1488,101 @@ describe('主题标注', () => {
     fireEvent.pointerUp(callout, { button: 0, clientX: 200, clientY: 200, pointerId: 10 })
 
     expect(setTopicCallout).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * 画布级插画：拖动（捕获阶段命中）与提交语义。
+ *
+ * 插画没有 DOM 元素（画在 Canvas 2D 层），所以命中只能靠几何：
+ * 这里用与画布**同一个** computeLayout 算出布局偏移，把插画摆在
+ * 视口 (100,100) 处，再用指针事件走完整条链路。
+ */
+describe('画布级插画', () => {
+  const rootTopic: TopicSnapshot = {
+    id: 'topic_root',
+    text: '中心主题',
+    collapsed: false,
+    children: [{ id: 'topic_child', text: '分支', collapsed: false, children: [] }],
+  }
+
+  function makeSessionWithIllustration() {
+    const setSheetIllustrations = vi.fn(async () => {})
+    const session = createSessionStub({
+      setSheetIllustrations,
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic,
+            illustrations: [
+              { id: 'ill_1', illustrationId: 'rocket', x: -layoutOffset().x + 100, y: -layoutOffset().y + 100, size: 120 },
+            ],
+          },
+        ],
+      },
+    })
+    return { session, setSheetIllustrations }
+  }
+
+  /** 画布内部用的布局偏移：测试据此把插画摆到指定视口坐标上。 */
+  function layoutOffset() {
+    const layout = computeLayout(
+      rootTopic,
+      undefined,
+      undefined,
+      resolveLayoutOptions(resolveCanvasSettings(undefined), undefined),
+    )
+    return { x: layout.offsetX, y: layout.offsetY }
+  }
+
+  it('拖动后按整表替换提交一次，坐标带上位移', () => {
+    const { session, setSheetIllustrations } = makeSessionWithIllustration()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const viewport = document.querySelector('.mindmap-scene') as HTMLElement
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 100, clientY: 100, pointerId: 11 })
+    fireEvent.pointerMove(viewport, { button: 0, clientX: 180, clientY: 140, pointerId: 11 })
+    fireEvent.pointerUp(viewport, { button: 0, clientX: 180, clientY: 140, pointerId: 11 })
+
+    // 一次拖动 = 一条撤销记录：只提交一次
+    expect(setSheetIllustrations).toHaveBeenCalledTimes(1)
+    const [sheetId, next] = setSheetIllustrations.mock.calls[0] as unknown as [
+      string,
+      { id: string; x: number; y: number }[],
+    ]
+    expect(sheetId).toBe('sheet_1')
+    expect(next).toHaveLength(1)
+    // 位移 80/40 世界单位（默认缩放 1）
+    expect(next[0].x).toBeCloseTo(-layoutOffset().x + 100 + 80, 6)
+    expect(next[0].y).toBeCloseTo(-layoutOffset().y + 100 + 40, 6)
+  })
+
+  it('没挪动就不写文档（否则点一下也会塞一条空撤销记录）', () => {
+    const { session, setSheetIllustrations } = makeSessionWithIllustration()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const viewport = document.querySelector('.mindmap-scene') as HTMLElement
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 100, clientY: 100, pointerId: 12 })
+    fireEvent.pointerUp(viewport, { button: 0, clientX: 100, clientY: 100, pointerId: 12 })
+
+    expect(setSheetIllustrations).not.toHaveBeenCalled()
+  })
+
+  it('在插画之外按下不会走插画的拖拽（不该误伤空白处拖拽）', () => {
+    const { session, setSheetIllustrations } = makeSessionWithIllustration()
+    renderWithApp(<CanvasHost session={session} />)
+
+    const viewport = document.querySelector('.mindmap-scene') as HTMLElement
+    fireEvent.pointerDown(viewport, { button: 0, clientX: 600, clientY: 500, pointerId: 13 })
+    fireEvent.pointerMove(viewport, { button: 0, clientX: 700, clientY: 560, pointerId: 13 })
+    fireEvent.pointerUp(viewport, { button: 0, clientX: 700, clientY: 560, pointerId: 13 })
+
+    expect(setSheetIllustrations).not.toHaveBeenCalled()
   })
 })

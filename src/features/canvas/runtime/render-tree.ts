@@ -24,6 +24,7 @@ export const RENDER_LAYERS = [
   'summary',
   'topic',
   'relationship',
+  'illustration',
   'overlay',
 ] as const
 
@@ -36,7 +37,9 @@ export const LAYER_Z_ORDER: Record<RenderLayer, number> = {
   summary: 3,
   topic: 4,
   relationship: 5,
-  overlay: 6,
+  // 插画是用户亲手摆的画布级对象，压在地图内容之上（只有交互覆盖层比它更高）
+  illustration: 6,
+  overlay: 7,
 }
 
 // ---- 基础类型 ----
@@ -236,6 +239,26 @@ export interface SummaryRenderNode {
   anchor: WorldPoint
 }
 
+/**
+ * 插画渲染节点：画布级装饰对象，不依附任何主题。
+ *
+ * `cx` / `cy` 是**世界坐标**（已含 `layout.offset`）——与主题节点、边同源，
+ * 三端都直接吃这份几何，不再各自减 offset。
+ */
+export interface IllustrationRenderNode {
+  type: 'illustration'
+  id: string
+  layer: RenderLayer
+  /** 正方形包围盒（视口剔除 + 导出紧包围盒都读它）。 */
+  bounds: WorldRect
+  cx: number
+  cy: number
+  /** 绘制边长（世界单位）。 */
+  size: number
+  /** 素材 id。 */
+  illustrationId: string
+}
+
 export type RenderNode =
   | TopicRenderNode
   | EdgeRenderNode
@@ -245,6 +268,7 @@ export type RenderNode =
   | RelationshipRenderNode
   | BoundaryRenderNode
   | SummaryRenderNode
+  | IllustrationRenderNode
 
 /** Render Tree 场景：一组按层分组的渲染节点 + 世界包围盒。 */
 export interface Scene {
