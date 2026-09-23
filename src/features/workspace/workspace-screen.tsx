@@ -41,6 +41,13 @@ import { SheetTabBar } from './sheet-tab-bar'
 import { documentTitleFromPath, useDocumentWindowTitle } from './use-document-window-title'
 import { NavPanel } from './nav-panel'
 import { Toolbar } from './toolbar'
+import { StyleEditor } from './style-editor'
+import type { CustomTheme } from '../../lib/document/themes'
+import {
+  deleteCustomTheme,
+  upsertCustomTheme,
+  useCustomThemes,
+} from '../theme/custom-theme-store'
 
 /** 文档未加载时 searchResults 复用同一个空数组，避免每次渲染产生新引用触发下游 effect */
 const EMPTY_SEARCH_RESULTS: readonly TopicSearchEntry[] = []
@@ -183,6 +190,48 @@ export function WorkspaceScreen({
     tab: InspectorTab
     nonce: number
   } | null>(null)
+  // —— 自定义风格 ——
+  // 只存"在编辑哪一条"（null = 新建）：风格库本身由注册表持有，
+  // 这里再存一份就变成两份真相（删除/改名后两边不同步）。
+  const [styleEditor, setStyleEditor] = useState<{ themeId: string | null } | null>(null)
+  const customThemeRecords = useCustomThemes()
+  const editingCustomTheme = styleEditor?.themeId
+    ? (customThemeRecords.find((item) => item.id === styleEditor.themeId) ?? null)
+    : null
+
+  /** 菜单「工具 → 创建自定义风格」与检查器「新建自定义风格…」共用这一个入口。 */
+  const openCustomStyleEditor = useCallback((themeId?: string) => {
+    setStyleEditor({ themeId: themeId ?? null })
+  }, [])
+
+  const handleSaveCustomTheme = useCallback(
+    (theme: CustomTheme) => {
+      upsertCustomTheme(theme)
+      setStyleEditor(null)
+      // 保存后立即应用到当前文档：点「创建自定义风格」的意图就是"让这份图长这样"，
+      // 若只是存进库、当前画布没变，用户会以为没保存成功。
+      void session.setDocumentTheme(theme.id)
+      onNotify?.(`已保存风格「${theme.name}」并应用到当前文档`)
+    },
+    [session, onNotify],
+  )
+
+  const handleDeleteCustomTheme = useCallback(
+    (themeId: string) => {
+      deleteCustomTheme(themeId)
+      setStyleEditor(null)
+      // 文档正用着这条风格时必须落回默认主题：否则文档里留着一个本机解析不出来的 id，
+      // 画布按默认配色画、而选择器里没有任何选中项——用户既看不出原因，也点不回来。
+      if (session.document?.theme?.id === themeId) {
+        void session.setDocumentTheme(null)
+        onNotify?.('已删除该风格，当前文档回落到默认主题')
+      } else {
+        onNotify?.('已删除该风格')
+      }
+    },
+    [session, onNotify],
+  )
+
   const clearMultiSelection = () => {
     setSelectedTopicIds([
       session.activeTopicId ?? activeSheet?.rootTopic.id ?? selectedTopicIds[0] ?? '',
@@ -339,6 +388,7 @@ export function WorkspaceScreen({
         focusInspectorTopicTab,
         focusInspectorCanvasTab,
         openShortcutsHelp: () => setIsShortcutsHelpOpen(true),
+        openCustomStyleEditor,
         checkForUpdates: () => onCheckForUpdates?.(),
         cycleTheme: () => onCycleTheme?.(),
         printDocument: handlePrint,
@@ -366,6 +416,7 @@ export function WorkspaceScreen({
       onNotify,
       selectedTopicIds,
       session,
+      openCustomStyleEditor,
     ],
   )
 
@@ -495,6 +546,12 @@ export function WorkspaceScreen({
         e.preventDefault()
         setInspectorVisible((v) => !v)
       } else if (e.key === 'Escape') {
+        if (styleEditor) {
+          // 风格编辑器是最上面一层：一次 Esc 只关它（编辑器自身也监听 Esc，
+          // 两边结果一致——都是关闭，所以不存在双触发的问题）
+          setStyleEditor(null)
+          return
+        }
         if (isOutlinerMode) {
           // 大纲视图自身已处理 Esc 退出；此处仅作兜底，避免与画布交互冲突
           setIsOutlinerMode(false)
@@ -524,6 +581,7 @@ export function WorkspaceScreen({
     // ⇧⌘E 导出选中主题：要读当前选区的长度与提示回调
     selectedTopicIds,
     onNotify,
+    styleEditor,
   ])
 
   return (
@@ -679,6 +737,8 @@ export function WorkspaceScreen({
                 pitchThemeStyle={pitchThemeStyle}
                 onPitchThemeStyleChange={setPitchThemeStyle}
                 onNotify={onNotify}
+                onOpenStyleEditor={openCustomStyleEditor}
+                onDeleteCustomTheme={handleDeleteCustomTheme}
               />
             ) : null}
           </>
@@ -715,6 +775,16 @@ export function WorkspaceScreen({
         />
       ) : null}
       <ShortcutsHelp open={isShortcutsHelpOpen} onClose={() => setIsShortcutsHelpOpen(false)} />
+      {styleEditor ? (
+        <StyleEditor
+          theme={editingCustomTheme}
+          baseThemeId={session.document?.theme?.id}
+          existing={customThemeRecords}
+          onCancel={() => setStyleEditor(null)}
+          onSave={handleSaveCustomTheme}
+          onDelete={handleDeleteCustomTheme}
+        />
+      ) : null}
       {/* 打印页：屏幕上看不见，只有打印样式才显示（见 .print-sheet 的样式） */}
       <PrintSheet sheet={printSheet} />
     </div>

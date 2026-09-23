@@ -2271,6 +2271,192 @@ button {
   white-space: nowrap;
 }
 
+/* ---- 自定义风格编辑器（工具 → 创建自定义风格）---- */
+
+/* 主题网格里的分组标题（占满整行；与自定义风格选择器同处一个 grid） */
+.panel__grid-divider {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.style-editor__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.style-editor {
+  width: min(760px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-large, 16px);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.18);
+  padding: 24px 28px 20px;
+}
+
+.style-editor__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.style-editor__title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.style-editor__close {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-small, 8px);
+  transition: background 0.15s;
+}
+
+.style-editor__close:hover {
+  background: rgba(15, 23, 42, 0.06);
+  color: var(--color-text-primary);
+}
+
+.style-editor__hint {
+  margin: 10px 0 18px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* 左字段 / 右预览：预览 sticky，滚长列表时始终看得到改动的效果 */
+.style-editor__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  gap: 20px;
+  align-items: start;
+}
+
+.style-editor__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.style-editor__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.style-editor__group-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+}
+
+.style-editor__color {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.style-editor__color input[type='color'],
+.style-editor__palette-row input[type='color'] {
+  width: 34px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.style-editor__hex {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  min-width: 62px;
+}
+
+.style-editor__palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.style-editor__palette-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.style-editor__remove {
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.style-editor__remove:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* 用户没预料到的结果（例如"改分支配色顺手清空了色板"）必须显式说出来 */
+.style-editor__notice {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 6px;
+  background: var(--color-accent-tint);
+  color: var(--color-text-primary);
+}
+
+.style-editor__preview {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.style-editor__thumb {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border-default);
+  border-radius: 8px;
+}
+
+.style-editor__footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
 /* ---- 分支色板预设（画布 Tab）---- */
 /*
  * 面板内的勾选行：XMind 是「紧凑的一行复选框 + 文字」，没有圆角卡片外壳。
@@ -2837,7 +3023,13 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--color-background-canvas);
+  /*
+   * ⚠️ 同样**不要**在这里设底色（与 .mindmap-scene 同一条理由，见那里的注释）。
+   * 这里曾是不透明的 `--color-background-canvas`，它把 `.canvas-host` 上的主题背景
+   * 整个挡在外面：主题背景设了、算出来也对，屏幕上却一直见不到。
+   * 必须显式写 transparent —— 留着会继承 `.editor-card` 的 `--color-surface-glass`。
+   */
+  background: transparent;
   overflow: hidden;
 }
 
@@ -3106,7 +3298,19 @@ button {
   flex: 1;
   min-height: 0;
   user-select: none;
-  background: var(--color-background-canvas);
+  /*
+   * ⚠️ **不要在这里设背景色**。
+   *
+   * 画布背景由 `.canvas-host` 的内联 `background`（= resolveThemeBackground：
+   * 主题背景 + 画布级覆盖）提供，与 PNG / SVG 导出同源。
+   * 这里曾有一条 `background: var(--color-background-canvas)`（不透明的 UI 令牌），
+   * 它**盖在** `.canvas-host` 的主题背景之上，于是：
+   * 选「暗夜」主题时 `.canvas-host` 算出来是 rgb(26,26,46)、屏幕却仍是浅色，
+   * 而导出的 PNG 是深色 —— 「屏幕浅、导出深」这个老问题其实一直没被修掉，
+   * 只是因为浅色主题的背景（251,251,253）与令牌色（247,247,248）只差几阶，
+   * 肉眼看不出、parity 脚本也没往这一层看。
+   * 已由 `dev/capture-custom-style.mjs` 加断言守住（量的是本元素的计算背景色）。
+   */
   cursor: grab;
 }
 

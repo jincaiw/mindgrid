@@ -18,7 +18,13 @@ import {
   filterLayoutByRevealed,
 } from '../presentation/presentation-controller'
 import { getActiveSheet, getSheetById } from '../../lib/document/sheets'
-import { DEFAULT_THEME_ID, listThemes } from '../../lib/document/themes'
+import {
+  DEFAULT_THEME_ID,
+  isThemeResolvable,
+  listThemesByFamily,
+  type ThemePalette,
+} from '../../lib/document/themes'
+import { useCustomThemes } from '../theme/custom-theme-store'
 import {
   BRANCH_CHART_TYPES,
   type Boundary,
@@ -688,6 +694,13 @@ interface InspectorProps {
    * 只能变成一条无人处理的 reject——用户看到的是"点了没反应"。
    */
   onNotify?: (message: string) => void
+  /** 打开自定义风格编辑器：传 id 表示编辑既有风格，不传表示新建。 */
+  onOpenStyleEditor?: (themeId?: string) => void
+  /**
+   * 删除一条自定义风格。删除后若当前文档正用它，**由上层负责回落到默认主题**——
+   * 否则文档会留着一个解析不出来的 id（配色静默变默认，用户不知道为什么）。
+   */
+  onDeleteCustomTheme?: (themeId: string) => void
 }
 
 export function Inspector({
@@ -701,6 +714,8 @@ export function Inspector({
   pitchThemeStyle: controlledPitchThemeStyle,
   onPitchThemeStyleChange,
   onNotify,
+  onOpenStyleEditor,
+  onDeleteCustomTheme,
 }: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const canvasSettings = resolveCanvasSettings(session.document?.settings)
@@ -776,9 +791,46 @@ export function Inspector({
   const sheetBoundaries = activeSheet?.boundaries ?? []
   const sheetSummaries = activeSheet?.summaries ?? []
 
-  // —— 文档主题：列出内置主题，标记当前主题 ——
-  const themes = useMemo(() => listThemes(), [])
+  // —— 文档主题：内置风格 + 本机自定义风格（后者按"风格库版本"重算）——
+  // useCustomThemes 的返回值在库不变时是稳定引用，可直接当 useMemo 依赖。
+  const customThemeRecords = useCustomThemes()
+  const builtInThemes = useMemo(
+    () => [...listThemesByFamily('classic'), ...listThemesByFamily('vivid')],
+    [],
+  )
+  // 不用 useMemo：这里刻意让它在每次渲染时重算——库一变就必须跟着变，
+  // 而"用 useMemo + 把库当依赖"会被 lint 判成"依赖没被用到"，反倒要靠 void 糊过去
+  const customThemes = listThemesByFamily('custom')
   const currentThemeId = session.document?.theme?.id ?? DEFAULT_THEME_ID
+  const activeCustomTheme = customThemeRecords.find((item) => item.id === currentThemeId) ?? null
+  /**
+   * 文档里记的主题 id 在本机解析不出来（多半是作者在别的机器上建的自定义风格）。
+   * **必须显式提示**：否则用户只看到"配色不对"，完全不知道是缺了一份风格。
+   */
+  const currentThemeMissing = !isThemeResolvable(currentThemeId)
+
+  // 内置与自定义共用同一套缩略样式；自定义带色板时用色板首色（更贴近实际观感）
+  const renderThemeSwatch = (theme: ThemePalette) => {
+    const selected = theme.id === currentThemeId
+    return (
+      <button
+        key={theme.id}
+        type="button"
+        role="radio"
+        aria-checked={selected}
+        className={`panel__theme-swatch${selected ? ' panel__theme-swatch--active' : ''}`}
+        title={theme.name}
+        onClick={() => void session.setDocumentTheme(theme.id)}
+      >
+        <span className="panel__theme-swatch-color" style={{ background: theme.root.fill }} />
+        <span
+          className="panel__theme-swatch-color panel__theme-swatch-color--branch"
+          style={{ background: theme.branchPalette?.[0] ?? theme.branch.fill }}
+        />
+        <span className="panel__theme-swatch-name">{theme.name}</span>
+      </button>
+    )
+  }
 
   // —— Tab 状态：默认样式子页，选中节点时直接编辑富内容 ——
   const [activeTab, setActiveTab] = useState<InspectorTab>('canvas')
@@ -3231,31 +3283,51 @@ export function Inspector({
                 一键切换整篇文档的配色方案。节点级颜色覆盖会优先生效。
               </p>
               <div className="panel__theme-grid" role="radiogroup" aria-label="文档主题">
-                {themes.map((theme) => {
-                  const selected = theme.id === currentThemeId
-                  return (
-                    <button
-                      key={theme.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={selected}
-                      className={`panel__theme-swatch${selected ? ' panel__theme-swatch--active' : ''}`}
-                      title={theme.name}
-                      onClick={() => void session.setDocumentTheme(theme.id)}
-                    >
-                      <span
-                        className="panel__theme-swatch-color"
-                        style={{ background: theme.root.fill }}
-                      />
-                      <span
-                        className="panel__theme-swatch-color panel__theme-swatch-color--branch"
-                        style={{ background: theme.branch.fill }}
-                      />
-                      <span className="panel__theme-swatch-name">{theme.name}</span>
-                    </button>
-                  )
-                })}
+                {builtInThemes.map(renderThemeSwatch)}
+                {customThemes.length > 0 ? (
+                  // 分隔标题占满整行（同一个网格里排，避免两套 grid 的间距对不齐）
+                  <p className="panel__grid-divider" style={{ gridColumn: '1 / -1' }}>
+                    自定义风格
+                  </p>
+                ) : null}
+                {customThemes.map(renderThemeSwatch)}
               </div>
+
+              <div className="panel__field-row">
+                <button
+                  type="button"
+                  className="panel__action panel__action--ghost"
+                  onClick={() => onOpenStyleEditor?.()}
+                >
+                  新建自定义风格…
+                </button>
+                {activeCustomTheme ? (
+                  <>
+                    <button
+                      type="button"
+                      className="panel__action panel__action--ghost"
+                      onClick={() => onOpenStyleEditor?.(activeCustomTheme.id)}
+                    >
+                      编辑风格
+                    </button>
+                    <button
+                      type="button"
+                      className="panel__action panel__action--ghost"
+                      onClick={() => onDeleteCustomTheme?.(activeCustomTheme.id)}
+                    >
+                      删除风格
+                    </button>
+                  </>
+                ) : null}
+              </div>
+
+              {currentThemeMissing ? (
+                <p className="panel__muted">
+                  这篇文档用的自定义风格在本机没有（id：{currentThemeId}），已按默认配色显示。
+                  可以新建一份风格来重建，或让作者把风格主题发给你。
+                </p>
+              ) : null}
+
               {currentThemeId !== DEFAULT_THEME_ID ? (
                 <button
                   className="panel__action panel__action--ghost"

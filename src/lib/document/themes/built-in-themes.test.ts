@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   BUILT_IN_THEMES,
   DEFAULT_THEME_ID,
-  getTheme,
-  listThemes,
-  listThemesByFamily,
+  getBuiltInTheme,
+  listBuiltInThemes,
+  listBuiltInThemesByFamily,
 } from './built-in-themes'
+
+// 这个文件只测**内置数据与内置查表**；「内置 + 自定义一起查」的公开行为在 registry.test.ts。
+// 两个文件的导入名刻意不同：`getTheme` 是公开入口，直接测它会掩盖"漏查自定义风格"这类错误。
 
 describe('built-in themes', () => {
   it('provides 5 classic plus 12 vivid built-in themes', () => {
@@ -46,24 +49,24 @@ describe('built-in themes', () => {
     expect(DEFAULT_THEME_ID).toBe('classic-blue')
   })
 
-  it('getTheme returns the matching theme by ID', () => {
-    const dark = getTheme('dark')
+  it('getBuiltInTheme returns the matching theme by ID', () => {
+    const dark = getBuiltInTheme('dark')
     expect(dark.id).toBe('dark')
     expect(dark.root.fill).toBe('#2d3748')
   })
 
-  it('getTheme falls back to default for undefined ID', () => {
-    const fallback = getTheme(undefined)
+  it('getBuiltInTheme falls back to default for undefined ID', () => {
+    const fallback = getBuiltInTheme(undefined)
     expect(fallback.id).toBe(DEFAULT_THEME_ID)
   })
 
-  it('getTheme falls back to default for unknown ID', () => {
-    const fallback = getTheme('nonexistent-theme')
+  it('getBuiltInTheme falls back to default for unknown ID', () => {
+    const fallback = getBuiltInTheme('nonexistent-theme')
     expect(fallback.id).toBe(DEFAULT_THEME_ID)
   })
 
-  it('listThemes returns all built-in themes', () => {
-    const themes = listThemes()
+  it('listBuiltInThemes returns all built-in themes', () => {
+    const themes = listBuiltInThemes()
     expect(themes).toHaveLength(17)
     expect(themes.map((t) => t.id)).toEqual(BUILT_IN_THEMES.map((t) => t.id))
   })
@@ -92,8 +95,8 @@ describe('built-in themes', () => {
   })
 
   it('listThemesByFamily splits classic and vivid without overlap', () => {
-    const classic = listThemesByFamily('classic')
-    const vivid = listThemesByFamily('vivid')
+    const classic = listBuiltInThemesByFamily('classic')
+    const vivid = listBuiltInThemesByFamily('vivid')
     expect(classic).toHaveLength(5)
     expect(vivid).toHaveLength(12)
     const classicIds = new Set(classic.map((t) => t.id))
@@ -114,7 +117,7 @@ describe('built-in themes', () => {
 
   it('vivid branch palettes are long enough to wrap without repeating immediately', () => {
     // 分支多于色板长度时会循环取色，至少 5 色才能在常见导图里不撞色。
-    for (const theme of listThemesByFamily('vivid')) {
+    for (const theme of listBuiltInThemesByFamily('vivid')) {
       expect(theme.branchPalette!.length).toBeGreaterThanOrEqual(5)
       expect(new Set(theme.branchPalette!).size).toBe(theme.branchPalette!.length)
     }
@@ -122,8 +125,8 @@ describe('built-in themes', () => {
 
   it('classic theme colors are unchanged by the vivid extension', () => {
     // 经典主题色值是用户既有 .mgd 文档的外观契约，改了会静默变样。
-    expect(getTheme('classic-blue').root.fill).toBe('rgba(91, 140, 255, 0.96)')
-    expect(getTheme('dark').root.fill).toBe('#2d3748')
-    expect(getTheme('dark').background).toBe('#1a1a2e')
+    expect(getBuiltInTheme('classic-blue').root.fill).toBe('rgba(91, 140, 255, 0.96)')
+    expect(getBuiltInTheme('dark').root.fill).toBe('#2d3748')
+    expect(getBuiltInTheme('dark').background).toBe('#1a1a2e')
   })
 })

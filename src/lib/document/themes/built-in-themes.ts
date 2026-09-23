@@ -19,13 +19,30 @@ export interface ThemeLevelColors {
   borderColor: string
 }
 
-/** 主题归属的分组，对应 XMind 配色浮层的「缤纷 / 经典」两个 Tab。 */
-export type ThemeFamily = 'classic' | 'vivid'
+/**
+ * 主题归属的分组。
+ *
+ * `classic` / `vivid` 对应 XMind 配色浮层的两个 Tab；
+ * `custom` 是**用户自建风格**（存在本机风格库里，见 `custom-themes.ts`），
+ * 不是内置数据 —— 但它必须走同一套 `ThemePalette` 结构与同一条解析链路，
+ * 否则"自定义风格"会变成渲染器里的一条特殊分支。
+ */
+export type ThemeFamily = 'classic' | 'vivid' | 'custom'
+
+/**
+ * 主题 id。
+ *
+ * 内置 id 仍是字面量联合（保留补全与穷尽检查），
+ * 但**必须允许任意字符串**：用户自建风格的 id 是运行时生成的（`custom-theme-xxx`），
+ * 且文档里记录的 id 可能是**别的机器上创建、本机没有**的自定义风格
+ * （打开别人发来的 .mgd 就会遇到），解析时统一回落到默认主题。
+ */
+export type ThemeId = BuiltinThemeId | (string & {})
 
 /** 主题完整配色板。 */
 export interface ThemePalette {
   /** 主题唯一标识，存入 DocumentSnapshot.theme.id。 */
-  id: BuiltinThemeId
+  id: ThemeId
   /** 显示名称。 */
   name: string
   /** 分组：经典=MindGrid 原有 5 套；缤纷=XMind 风格的多色分支主题。 */
@@ -577,20 +594,26 @@ const THEME_MAP = new Map<string, ThemePalette>(
   BUILT_IN_THEMES.map((theme) => [theme.id, theme]),
 )
 
-/** 按 ID 获取主题，未知 ID 或 undefined 回退到默认主题。 */
-export function getTheme(id: string | undefined): ThemePalette {
+/**
+ * 按 ID 取**内置**主题，未知 ID 回退到默认主题。
+ *
+ * ⚠️ 渲染链路**不要直接调它**——用户的 自定义风格 不在内置表里，
+ * 直接调会静默回落到默认主题（表现是"选了自定义风格但不生效"）。
+ * 对外请用 `registry.ts` 的 `getTheme`（内置 + 自定义一起查）。
+ */
+export function getBuiltInTheme(id: string | undefined): ThemePalette {
   if (id && THEME_MAP.has(id)) {
     return THEME_MAP.get(id)!
   }
   return THEME_MAP.get(DEFAULT_THEME_ID)!
 }
 
-/** 列出所有内置主题。 */
-export function listThemes(): ThemePalette[] {
+/** 列出所有**内置**主题（对外请用 `registry.ts` 的 `listThemes`）。 */
+export function listBuiltInThemes(): ThemePalette[] {
   return BUILT_IN_THEMES
 }
 
-/** 按分组列出主题（对应配色浮层的「缤纷 / 经典」两个 Tab）。 */
-export function listThemesByFamily(family: ThemeFamily): ThemePalette[] {
+/** 按分组列出**内置**主题（`custom` 分组不属于这里，由风格库提供）。 */
+export function listBuiltInThemesByFamily(family: ThemeFamily): ThemePalette[] {
   return BUILT_IN_THEMES.filter((theme) => theme.family === family)
 }

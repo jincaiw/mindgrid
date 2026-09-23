@@ -83,6 +83,7 @@ export type MenuActionId =
   // 工具
   | 'tools.map-shot'
   | 'tools.merge-document'
+  | 'tools.create-custom-style'
   | 'tools.check-update'
   | 'tools.shortcuts'
   | 'tools.cycle-theme'
@@ -175,6 +176,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   // 工具
   'tools.map-shot',
   'tools.merge-document',
+  'tools.create-custom-style',
   'tools.check-update',
   'tools.shortcuts',
   'tools.cycle-theme',

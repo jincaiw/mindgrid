@@ -25,6 +25,7 @@ import {
   TOPIC_IMAGE_TITLE_OFFSET,
 } from '../features/canvas/runtime/topic-image-constants'
 import globalCssSource from './global.css?raw'
+import canvasHostSource from '../features/canvas/canvas-host.tsx?raw'
 import tokensCssSource from './tokens.css?raw'
 
 /** 硬编码 accent：rgb / rgba / hex 三种写法一网打尽 */
@@ -340,5 +341,49 @@ describe('主题图片的版面与槽位几何', () => {
   it('槽位高 + 间距 = 布局预留（否则不是溢出节点就是留空）', () => {
     expect(TOPIC_IMAGE_MAX_HEIGHT + TOPIC_IMAGE_GAP).toBe(TOPIC_IMAGE_BLOCK)
     expect(TOPIC_IMAGE_TITLE_OFFSET).toBe(TOPIC_IMAGE_BLOCK)
+  })
+})
+
+/**
+ * 画布各层不得自带不透明底色。
+ *
+ * 画布背景由 `.canvas-host` 的内联 `background`
+ * （`resolveThemeBackground(主题背景, 画布级覆盖)`，与 PNG / SVG 导出同源）提供。
+ * 任何中间层写死底色都会把它**整片挡掉**，而且后果极隐蔽：
+ * 「屏幕是浅的、导出是深的」这个老问题其实一直没被修掉 —— 只因浅色主题的背景
+ * （251,251,253）与令牌色（247,247,248）只差几阶，肉眼与对照脚本都看不出来；
+ * **选「暗夜」主题才暴露**（`.canvas-host` 算出 rgb(26,26,46)，屏幕却仍是浅灰）。
+ *
+ * 这条静态守卫能抓的是"又有人加了一层底色"。它抓不到"用别的方式盖住"
+ * （伪元素、渐变、更上层的浮层）—— 那类靠真引擎量：
+ * `dev/capture-custom-style.mjs` 从 `.mindmap-scene` 往上找第一个不透明背景，
+ * 量的是"用户实际看到的颜色"。
+ */
+describe('画布各层不得遮挡主题背景', () => {
+  const css = stripComments(globalCssSource)
+
+  /** 取某条规则的声明体。与文件里另一个同名小工具分开：那个被包在别的 describe 里。 */
+  function body(selector: string): string {
+    const index = css.indexOf(selector)
+    expect(index, `global.css 中未找到选择器 ${selector}`).toBeGreaterThanOrEqual(0)
+    const open = css.indexOf('{', index)
+    return css.slice(open + 1, css.indexOf('}', open))
+  }
+
+  // 这两个是画布区域里"节点之下的所有层"。漏掉任何一层，主题背景就会被挡在它后面。
+  for (const selector of ['.mindmap-scene', '.editor-card--scene']) {
+    it(`${selector} 不写不透明底色`, () => {
+      const declarations = body(selector).match(/background(?:-color)?\s*:\s*[^;]+/g) ?? []
+      for (const declaration of declarations) {
+        expect(declaration, `${selector} 的底色会盖住 .canvas-host 上的主题背景`).toContain(
+          'transparent',
+        )
+      }
+    })
+  }
+
+  it('主题背景确实被设在了 .canvas-host 上（不然上一组断言只是在守空）', () => {
+    // 没有这一条，把 .canvas-host 的内联样式删掉后上面全绿 —— 背景会彻底没有
+    expect(canvasHostSource).toMatch(/style=\{\{ background: canvasBackground \}\}/)
   })
 })

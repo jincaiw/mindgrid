@@ -311,6 +311,11 @@ pub fn build_menu<R: Runtime>(
             "tools.merge-document",
             "合并 MindGrid 文件…",
         )?)
+        .item(&item(
+            handle,
+            "tools.create-custom-style",
+            "创建自定义风格…",
+        )?)
         .separator()
         .item(&item(handle, "tools.check-update", "检查更新…")?)
         .item(&item(handle, "tools.shortcuts", "快捷键…")?)

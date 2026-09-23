@@ -87,6 +87,13 @@ export interface MenuCommandContext {
   /** 打开检查器并切到「画布」子页（画布级设置的入口）。 */
   focusInspectorCanvasTab: () => void
   openShortcutsHelp: () => void
+  /**
+   * 打开自定义风格编辑器（工具 → 创建自定义风格）。
+   *
+   * 编辑器本身拿不到"当前文档主题/风格库"以外的状态，故这里只传一个"打开"信号；
+   * 真正由谁承载那份草稿由 WorkspaceScreen 决定。
+   */
+  openCustomStyleEditor: () => void
   checkForUpdates: () => void
   cycleTheme: () => void
   /** 文件 → 打印：渲染整幅导图并打开系统打印面板。 */
@@ -486,6 +493,12 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
       return
     case 'tools.cycle-theme':
       ctx.cycleTheme()
+      return
+    // 创建自定义风格：与检查器「新建自定义风格…」是**同一件事**，
+    // 两条路径共用 WorkspaceScreen 里那一个 openCustomStyleEditor
+    // （否则菜单能开、面板不能开，或反过来开的不是同一个编辑器）。
+    case 'tools.create-custom-style':
+      ctx.openCustomStyleEditor()
       return
 
     // —— 查看 ——

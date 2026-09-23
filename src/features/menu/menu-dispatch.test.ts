@@ -103,6 +103,7 @@ function makeHarness(options: HarnessOptions = {}) {
     focusInspectorTopicTab: vi.fn(),
     focusInspectorCanvasTab: vi.fn(),
     openShortcutsHelp: vi.fn(),
+    openCustomStyleEditor: vi.fn(),
     checkForUpdates: vi.fn(),
     cycleTheme: vi.fn(),
     printDocument: vi.fn(),
@@ -893,5 +894,25 @@ describe('工具 → 合并文件', () => {
 
     expect(mergeDocument).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalledWith('该操作需要文件对话框，仅在桌面端可用')
+  })
+})
+
+describe('工具 → 创建自定义风格', () => {
+  it('菜单项与检查器入口走同一个打开动作', () => {
+    // 两条路径必须是**同一件事**：各写一份就会出现"菜单能开、面板不能开"
+    // 或"开的不是同一个编辑器"。
+    const { ctx, openCustomStyleEditor } = makeHarness({})
+    runMenuCommand('tools.create-custom-style', ctx)
+    expect(openCustomStyleEditor).toHaveBeenCalledTimes(1)
+  })
+
+  it('不需要选中主题、也不依赖桌面端（浏览器同样可用）', () => {
+    const { ctx, openCustomStyleEditor, notify } = makeHarness({
+      desktopFileActionsEnabled: false,
+      selectedTopicIds: [],
+    })
+    runMenuCommand('tools.create-custom-style', ctx)
+    expect(openCustomStyleEditor).toHaveBeenCalledTimes(1)
+    expect(notify).not.toHaveBeenCalled()
   })
 })

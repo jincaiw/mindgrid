@@ -36,11 +36,28 @@ export type { ResolvedTopicStyle } from './render-tree'
 export function resolveTopicStyle(
   themeId: string | undefined,
   depth: number,
+  side: NodeSide,
+  overrides: TopicStyleOverrides | undefined,
+  branchIndex: number | null = null,
+): ResolvedTopicStyle {
+  return resolveTopicStyleFrom(getTheme(themeId), depth, side, overrides, branchIndex)
+}
+
+/**
+ * 同上，但**主题由调用方直接给**。
+ *
+ * 存在的唯一理由是风格编辑器的实时预览：要渲染的是"用户正在改、还没保存的草稿"，
+ * 它不在注册表里。若预览另写一套取色逻辑，预览就会**撒谎**
+ * （预览里好看、保存后画布上不是那样——正是这个项目反复吃亏的一类问题）。
+ * 所以取色实现只有下面这一份，两个入口共用。
+ */
+export function resolveTopicStyleFrom(
+  theme: ThemePalette,
+  depth: number,
   _side: NodeSide,
   overrides: TopicStyleOverrides | undefined,
   branchIndex: number | null = null,
 ): ResolvedTopicStyle {
-  const theme = getTheme(themeId)
   const base = depth === 0 ? theme.root : theme.branch
 
   // 缤纷主题：分支节点按分支序号取色，填充/文字/边框同源。
