@@ -15,6 +15,10 @@ import { restrictToVisibleTopics } from '../../lib/document/focus'
 import { getActiveSheet } from '../../lib/document/sheets'
 import type { DocumentSnapshot, TopicSnapshot } from '../../lib/document/types'
 import { readAssetDataUrl } from '../../lib/ipc/commands'
+import {
+  collectTopicEquations,
+  resolveTopicEquations,
+} from '../canvas/runtime/topic-equation-store'
 import { computeLayout, restrictLayoutToTopicIds } from '../canvas/layouts'
 import { buildTopicNumbers } from '../canvas/numbering'
 import type { Scene } from '../canvas/runtime/render-tree'
@@ -122,6 +126,13 @@ export async function buildExportScene(
     ? restrictLayoutToTopicIds(fullLayout, restrictToTopicIds as ReadonlySet<string>)
     : fullLayout
   const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
+  // 方程同样要在这一步（**渲染前**）解析：`renderScene` / `renderSceneToSvg` 都是同步的，
+  // 绘制过程中无法等待引擎加载。与图片那条"先预解码"是同一个道理。
+  const topicEquations = await resolveTopicEquations([
+    ...collectTopicEquations(sheet.rootTopic),
+    // 浮动主题也要预热：它们同样会出现在画布与导出里（漏掉会让浮动主题上的公式空白）
+    ...(sheet.floatingTopics ?? []).flatMap((topic) => collectTopicEquations(topic)),
+  ])
   // 生效主题：画布级分支色板叠加进主题。屏幕与导出走**同一条解析**，
   // 否则会出现"屏幕是一条颜色、导出是另一条"（见 effective-theme.ts 文件头）。
   const theme = resolveEffectiveTheme({
@@ -131,6 +142,7 @@ export async function buildExportScene(
   })
 
   return buildScene({
+    topicEquations,
     layout,
     viewport: { width: layout.width, height: layout.height },
     camera: { x: 0, y: 0, zoom: 1 },

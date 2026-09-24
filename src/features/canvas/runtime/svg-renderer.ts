@@ -24,6 +24,11 @@ import {
   wrapText,
 } from './style-constants'
 import {
+  TOPIC_EQUATION_TITLE_OFFSET,
+  computeTopicEquationRect,
+} from './topic-equation-constants'
+import { embedEquationSvg } from './topic-equation-store'
+import {
   TOPIC_IMAGE_RADIUS,
   TOPIC_IMAGE_TITLE_OFFSET,
   computeTopicImageFittedRect,
@@ -272,7 +277,11 @@ function topicToSvg(
   const padding = getNodePadding(depth)
   const rich = node.rich
   /** 有图时标题下移，给图片区让位。 */
-  const titleOffsetY = rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0
+  // 图片与方程各自让位（与 Canvas/PNG 端逐项一致；是否让位只看 rich 字段，
+  // 不看渲染/解码是否成功，否则两端版面会因为个别失败项错位）
+  const titleOffsetY =
+    (rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0) +
+    (rich?.equation ? TOPIC_EQUATION_TITLE_OFFSET : 0)
 
   const elements: string[] = []
 
@@ -347,6 +356,23 @@ function topicToSvg(
     elements.push(
       `  <image x="${fmt(rect.x)}" y="${fmt(rect.y)}" width="${fmt(rect.width)}" height="${fmt(rect.height)}" preserveAspectRatio="xMidYMid meet" href="${escapeXml(rich.image)}" xlink:href="${escapeXml(rich.image)}"${clip}/>`,
     )
+  }
+
+  // 主题方程：在图片之下、标题之上（与 DOM 的元素顺序一致）
+  const equation = rich?.equation
+  if (equation?.svg && equation.width && equation.height) {
+    const rect = computeTopicEquationRect(
+      bounds,
+      padding,
+      { width: equation.width, height: equation.height },
+      style.fontSize,
+    )
+    if (rect) {
+      // 用嵌套 <svg> + preserveAspectRatio：与 DOM 的 max-* 约束、Canvas 的 drawImage 三者等价
+      elements.push(
+        `  ${embedEquationSvg(equation.svg, rect, style.textColor)}`,
+      )
+    }
   }
 
   // 标注（callout）：挂在节点外侧的说明框 + 一条引线（几何与 PNG 端同一个函数）

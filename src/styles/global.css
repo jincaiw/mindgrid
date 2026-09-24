@@ -3967,10 +3967,11 @@ button {
    而三端几何常量、单测、jsdom 全都发现不了它——只有真引擎里量/看才知道。
    注意这里用 align-items: stretch：标题占满内容宽，节点的 textAlign 覆盖才有效；
    图片靠自身的 margin: 0 auto 居中（等价 computeTopicImageRect 的水平居中）。 */
-.mindmap-node--with-image {
+.mindmap-node--with-image,
+.mindmap-node--with-equation {
   flex-direction: column;
   align-items: stretch;
-  /* 内容自顶排布，与导出端「图片落在上内边距、标题下移 96」一致 */
+  /* 内容自顶排布，与导出端「图片/方程落在上内边距、标题下移对应块高」一致 */
   justify-content: flex-start;
 }
 
@@ -3985,6 +3986,46 @@ button {
   height: 88px;
   /* 槽位窄于节点内宽时水平居中（TOPIC_IMAGE_GAP = 8） */
   margin: 0 auto 8px;
+}
+
+/* 方程槽位：与图片同一套打法 —— **固定高度**才算数。
+   只给 max-height 的话，槽位会贴合公式自身比例，标题跟着上下跑；
+   而布局与导出端恒定按 TOPIC_EQUATION_TITLE_OFFSET = 48 下移标题。
+   固定槽位 + 内容居中，恰好等价于 computeTopicEquationRect 的「槽内居中」。
+   宽高数值与 runtime/topic-equation-constants.ts 对齐（styles.test.ts 有守卫）。 */
+.mindmap-node__equation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* TOPIC_EQUATION_MAX_HEIGHT = 40 */
+  height: 40px;
+  /* min(TOPIC_EQUATION_MAX_WIDTH, 100%)：窄节点不能被 220px 撑破 */
+  max-width: min(220px, 100%);
+  /* TOPIC_EQUATION_GAP = 8 */
+  margin: 0 auto 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 行内 SVG 的宽高由 naturalEquationSize() 写成内联样式（**不是** viewBox 单位，
+   那是上千的数值）。这里只做收紧：超过槽位才缩，永远不放大 —— 与
+   computeTopicEquationRect 的「只缩不放」一一对应。 */
+.mindmap-node__equation-svg {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.mindmap-node__equation-svg > svg {
+  display: block;
+}
+
+/* 公式渲染失败（LaTeX 语法错）时给一个可读的提示，而不是留一片空白 */
+.mindmap-node__equation-error {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--color-danger);
+  white-space: nowrap;
 }
 
 .mindmap-node__title {

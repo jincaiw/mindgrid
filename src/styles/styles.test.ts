@@ -17,6 +17,13 @@
 import { describe, expect, it } from 'vitest'
 import { COLORS } from '../features/canvas/runtime/style-constants'
 import {
+  TOPIC_EQUATION_BLOCK,
+  TOPIC_EQUATION_GAP,
+  TOPIC_EQUATION_MAX_HEIGHT,
+  TOPIC_EQUATION_MAX_WIDTH,
+  TOPIC_EQUATION_TITLE_OFFSET,
+} from '../features/canvas/runtime/topic-equation-constants'
+import {
   TOPIC_IMAGE_BLOCK,
   TOPIC_IMAGE_GAP,
   TOPIC_IMAGE_MAX_HEIGHT,
@@ -341,6 +348,32 @@ describe('主题图片的版面与槽位几何', () => {
   it('槽位高 + 间距 = 布局预留（否则不是溢出节点就是留空）', () => {
     expect(TOPIC_IMAGE_MAX_HEIGHT + TOPIC_IMAGE_GAP).toBe(TOPIC_IMAGE_BLOCK)
     expect(TOPIC_IMAGE_TITLE_OFFSET).toBe(TOPIC_IMAGE_BLOCK)
+  })
+
+  // ---- 主题方程（与图片同一套打法，数值来自 topic-equation-constants）----
+
+  it('方程节点同样纵排：方程在上、标题在下', () => {
+    const body = ruleBody('.mindmap-node--with-equation')
+    expect(body).toMatch(/flex-direction:\s*column/)
+    expect(body).toMatch(/justify-content:\s*flex-start/)
+  })
+
+  it('方程槽位固定高、宽度上限与间距都取自常量', () => {
+    const body = ruleBody('.mindmap-node__equation')
+    expect(body).toMatch(new RegExp(`height:\\s*${TOPIC_EQUATION_MAX_HEIGHT}px`))
+    expect(body).toMatch(`min(${TOPIC_EQUATION_MAX_WIDTH}px, 100%)`)
+    expect(body).toMatch(new RegExp(`margin:[^;]*${TOPIC_EQUATION_GAP}px`))
+  })
+
+  it('方程槽位高 + 间距 = 布局预留 = 标题下移量', () => {
+    expect(TOPIC_EQUATION_MAX_HEIGHT + TOPIC_EQUATION_GAP).toBe(TOPIC_EQUATION_BLOCK)
+    expect(TOPIC_EQUATION_TITLE_OFFSET).toBe(TOPIC_EQUATION_BLOCK)
+  })
+
+  it('行内 SVG 只做收紧（只缩不放）：没有放大类属性', () => {
+    const body = ruleBody('.mindmap-node__equation-svg')
+    expect(body).toMatch(/max-width:\s*100%/)
+    expect(body).toMatch(/max-height:\s*100%/)
   })
 })
 

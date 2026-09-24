@@ -98,6 +98,25 @@ export interface ResolvedTopicStyle {
   textTransform?: TopicTextTransform
 }
 
+/**
+ * 主题方程的渲染结果（三端共用）。
+ *
+ * `svg` 是**独立可用**的 SVG 标记（带 xmlns 与显式宽高，宽高与 viewBox 同量纲）。
+ * ⚠️ 标记里的颜色是 `currentColor`，**绘制端必须用 `colorizeEquationSvg(svg, color)`**
+ * 换成具体颜色再画 —— 否则 DOM 会继承节点色、而 Canvas 光栅化时 currentColor 退化成黑色，
+ * 三端颜色不一致（这是实测出来的坑，不是推测）。
+ */
+export interface TopicEquationRender {
+  /** 成功时的 SVG 标记；渲染失败时为空。 */
+  svg?: string
+  /** viewBox 宽度（MathJax 单位）。 */
+  width?: number
+  /** viewBox 高度（MathJax 单位）。 */
+  height?: number
+  /** 语法错误信息（成功时不设）。节点上显示一个可读的提示标记。 */
+  error?: string
+}
+
   /** 主题上的富内容投影（image / marker / sticker / label / note / link / task），全部可选。 */
 export interface TopicRichContent {
   /**
@@ -107,6 +126,14 @@ export interface TopicRichContent {
    * 由 buildScene 的 topicImageUrls 注入。为空表示无图或资源解析失败。
    */
   image?: string
+  /**
+   * 主题方程的渲染结果（SVG 标记 + viewBox 尺寸）。
+   *
+   * 与图片同理：渲染端要的是**渲染产物**而不是 LaTeX 源码，所以这里携带结果；
+   * 由 buildScene 的 `topicEquations` 注入（DOM 侧走 `useTopicEquations`）。
+   * 尺寸是 MathJax 的 viewBox 单位，三端都按 `computeTopicEquationRect` 摆放。
+   */
+  equation?: TopicEquationRender
   markers?: TopicMarker[]
   /**
    * 贴纸。与 marker 的区别：贴纸带**位置与旋转**，是贴在节点上的装饰；

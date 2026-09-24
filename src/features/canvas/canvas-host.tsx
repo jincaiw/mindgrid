@@ -104,6 +104,13 @@ import {
   type TopicVisualStates,
 } from './runtime/scene-builder'
 import { pickTopicImageUrl, useTopicImageUrls } from './runtime/topic-image-store'
+import {
+  colorizeEquationSvg,
+  pickTopicEquationPayload,
+  useTopicEquations,
+} from './runtime/topic-equation-store'
+import { naturalEquationSize } from './runtime/topic-equation-constants'
+import type { TopicEquationRender } from './runtime/render-tree'
 import { collectClipboardTopics } from './topic-clipboard'
 import { buildTopicNumbers } from './numbering'
 import { MarkerIcon } from './markers'
@@ -829,6 +836,12 @@ function MindMapScene({
   // 主题图片：按 assetId 去重拉取 data URL，缺图/加载中时节点不渲染图片元素
   const topicImageUrls = useTopicImageUrls(
     visibleLayoutNodes.map((node) => node.topic.image),
+  )
+
+  // 主题方程：先把公式渲染进缓存，节点再从缓存同步取用（渲染树/布局都是同步的）。
+  // 与图片同形 —— 但方程的"尺寸"来自渲染结果而不是资源表，所以要先把结果准备好。
+  const topicEquations = useTopicEquations(
+    visibleLayoutNodes.map((node) => node.topic.equation),
   )
 
   // 标记本画布内所有布局节点为"已知"（含视口外），首次出现的新节点加入动画集合。
@@ -1927,6 +1940,7 @@ function MindMapScene({
               onAppearEnd={handleNodeAppearEnd}
               onOpenLink={onOpenLink}
               imageUrl={pickTopicImageUrl(node.topic.image, topicImageUrls)}
+              equation={pickTopicEquationPayload(node.topic.equation, topicEquations)}
               fontFamily={buildFontStack(canvasSettings.fontFamily, canvasSettings.cjkFont)}
               numberText={numberMap.get(node.id) ?? null}
             />
@@ -2122,6 +2136,7 @@ function MindMapNode({
   onAppearEnd,
   onOpenLink,
   imageUrl,
+  equation,
   zoom,
   onStickerMove,
   onCalloutMove,
@@ -2172,6 +2187,8 @@ function MindMapNode({
   onOpenLink?: (url: string) => void
   /** 主题图片的 data URL，null 表示无图或尚未加载完成（此时不渲染图片元素）。 */
   imageUrl: string | null
+  /** 方程的渲染结果（空对象 = 文档里有、引擎还没渲染好）。null = 该主题没有方程。 */
+  equation: TopicEquationRender | null
   /** 当前相机缩放。贴纸拖动要把屏幕位移换算回世界单位。 */
   zoom: number
   /** 拖动贴纸结束（松手）时提交新偏移；一次拖动只提交一次，故只产生一条撤销记录。 */
@@ -2463,14 +2480,51 @@ function MindMapNode({
     />
   ) : null
 
+  // 主题方程元素：与图片同理，编辑态与非编辑态共用一份。
+  // `equation` 是空对象时（文档里有公式、引擎还没渲染好）**照样占住槽位** ——
+  // 否则公式一渲染出来、标题会跳一下。
+  const equationNatural =
+    equation?.svg && equation.width && equation.height
+      ? naturalEquationSize(
+          { width: equation.width, height: equation.height },
+          resolvedStyle.fontSize,
+        )
+      : null
+  const topicEquationElement =
+    equation === null ? null : (
+      <span className="mindmap-node__equation" aria-label="主题方程">
+        {equation.svg && equationNatural ? (
+          <span
+            className="mindmap-node__equation-svg"
+            data-equation-width={equationNatural.width}
+            data-equation-height={equationNatural.height}
+            style={{
+              width: `${equationNatural.width}px`,
+              height: `${equationNatural.height}px`,
+            }}
+            // MathJax 自己会转义输入（LaTeX 里的尖括号不会原样出现），
+            // 且颜色已按节点文字色落定 —— 三端（DOM/Canvas/SVG）必须用同一个颜色值。
+            dangerouslySetInnerHTML={{
+              __html: colorizeEquationSvg(equation.svg, resolvedStyle.textColor),
+            }}
+          />
+        ) : equation.error ? (
+          <span className="mindmap-node__equation-error" title={equation.error}>
+            公式有误
+          </span>
+        ) : null}
+      </span>
+    )
+
   if (isEditing) {
     return (
       <>
         <div
-          className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${imageUrl ? ' mindmap-node--with-image' : ''}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''} mindmap-node--editing`}
+          className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${imageUrl ? ' mindmap-node--with-image' : ''}${equation ? ' mindmap-node--with-equation' : ''}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''} mindmap-node--editing`}
           style={baseStyle}
         >
           {topicImageElement}
+          {topicEquationElement}
           {stickerElements}
           {calloutElement}
           <textarea
@@ -2552,7 +2606,7 @@ function MindMapNode({
   return (
     <>
       <button
-        className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${imageUrl ? ' mindmap-node--with-image' : ''}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''}${isDropTarget ? ' mindmap-node--drop-target' : ''}${dragOffset ? ' mindmap-node--dragging' : ''}${isAppearing ? ' mindmap-node--appear' : ''}`}
+        className={`mindmap-node mindmap-node--${node.side} mindmap-node--depth-${Math.min(node.depth, 3)}${imageUrl ? ' mindmap-node--with-image' : ''}${equation ? ' mindmap-node--with-equation' : ''}${isActive ? ' mindmap-node--active' : ''}${isSelected ? ' mindmap-node--selected' : ''}${isSearchMatch ? ' mindmap-node--search-match' : ''}${isActiveSearchResult ? ' mindmap-node--search-active' : ''}${isHistoryFocus ? ' mindmap-node--history-focus' : ''}${isDropTarget ? ' mindmap-node--drop-target' : ''}${dragOffset ? ' mindmap-node--dragging' : ''}${isAppearing ? ' mindmap-node--appear' : ''}`}
         style={baseStyle}
         type="button"
         data-topic-id={node.id}
@@ -2563,6 +2617,7 @@ function MindMapNode({
         onAnimationEnd={() => onAppearEnd(node.id)}
       >
         {topicImageElement}
+        {topicEquationElement}
         {stickerElements}
         {calloutElement}
         <span className="mindmap-node__title" style={titleStyle}>

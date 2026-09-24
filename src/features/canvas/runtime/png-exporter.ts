@@ -13,6 +13,7 @@
 
 import { renderScene, type RenderOptions } from './canvas-renderer'
 import { computeNodesBounds, type CameraProjection, type Scene, type Viewport } from './render-tree'
+import { colorizeEquationSvg } from './topic-equation-store'
 
 export interface PngExportOptions {
   /** 缩放倍数（2 = 2x 高 DPI，3 = 3x）。默认 2。 */
@@ -92,6 +93,7 @@ export async function renderSceneToPngBytes(
     zoom: 1,
   }
   const topicImages = await preloadTopicImages(scene)
+  const topicEquations = await preloadTopicEquations(scene)
 
   const renderOptions: RenderOptions = {
     drawBackground,
@@ -99,6 +101,7 @@ export async function renderSceneToPngBytes(
     drawOverlays: false,
     drawDecorations: true,
     topicImages,
+    topicEquations,
     themeId,
     background,
     fontFamily,
@@ -146,6 +149,51 @@ export async function preloadTopicImages(
     const topicId = node.id
     pending.push(
       decodeImage(dataUrl, timeoutMs).then((image) => {
+        if (image) {
+          decoded.set(topicId, image)
+        }
+      }),
+    )
+  }
+
+  await Promise.all(pending)
+  return decoded
+}
+
+/**
+ * 把方程 SVG 标记编成 data URL。
+ *
+ * 用 UTF-8 百分号编码而不是 base64：`btoa` 遇到非 Latin-1 字符（某些 LaTeX 会带）
+ * 会抛 `InvalidCharacterError`，而 `encodeURIComponent` 没有这个限制。
+ */
+export function equationSvgDataUrl(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+/**
+ * 预解码场景内所有方程：topicId → 已解码图像。
+ *
+ * ⚠️ **颜色在这一步落定**：MathJax 的标记用 `fill="currentColor"`，
+ * standalone SVG 光栅化时它退化成正黑色 —— 不按节点文字色替换的话，
+ * 屏幕上公式跟着主题变色、导出的 PNG 里永远黑，三端颜色不一致。
+ * 解码失败/超时的项不进表（该方程不画，但标题照样下移）。
+ */
+export async function preloadTopicEquations(
+  scene: Scene,
+  timeoutMs: number = IMAGE_DECODE_TIMEOUT_MS,
+): Promise<Map<string, HTMLImageElement>> {
+  const decoded = new Map<string, HTMLImageElement>()
+  const pending: Array<Promise<void>> = []
+
+  for (const node of scene.nodes) {
+    if (node.type !== 'topic') continue
+    const svg = node.rich?.equation?.svg
+    if (!svg) continue
+
+    const topicId = node.id
+    const colored = colorizeEquationSvg(svg, node.style.textColor)
+    pending.push(
+      decodeImage(equationSvgDataUrl(colored), timeoutMs).then((image) => {
         if (image) {
           decoded.set(topicId, image)
         }

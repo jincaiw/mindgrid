@@ -49,6 +49,9 @@ export const TOPIC_EQUATION_MIN_WIDTH = 120
  */
 export const TOPIC_EQUATION_BLOCK = TOPIC_EQUATION_MAX_HEIGHT + TOPIC_EQUATION_GAP
 
+/** 有方程时标题相对无方程位置需要下移的距离（槽位高度 + 间距），恰好等于 TOPIC_EQUATION_BLOCK。 */
+export const TOPIC_EQUATION_TITLE_OFFSET = TOPIC_EQUATION_BLOCK
+
 /** 方程在节点内的槽位（节点世界坐标系）。 */
 export interface TopicEquationSlot {
   x: number
@@ -75,6 +78,30 @@ export function computeTopicEquationSlot(bounds: WorldRect, padding: number): To
 }
 
 /**
+ * 方程在给定字号下的**自然尺寸**（px = world 单位）。
+ *
+ * DOM 与三端导出必须都走这一个公式：DOM 把它写成行内 SVG 的 width/height，
+ * 再由 CSS 的 `max-width/max-height` 约束收紧；导出端用
+ * `computeTopicEquationRect` 做同一件事（数学上等价）。
+ * 取不到渲染结果或字号非法时返回 null。
+ */
+export function naturalEquationSize(
+  intrinsic: TopicEquationIntrinsic,
+  fontSize: number,
+): { width: number; height: number } | null {
+  if (!(intrinsic.width > 0) || !(intrinsic.height > 0)) {
+    return null
+  }
+  if (!Number.isFinite(fontSize) || fontSize <= 0) {
+    return null
+  }
+  return {
+    width: (intrinsic.width / EQUATION_UNITS_PER_EM) * fontSize,
+    height: (intrinsic.height / EQUATION_UNITS_PER_EM) * fontSize,
+  }
+}
+
+/**
  * 方程的实际绘制矩形：按节点字号折算自然尺寸，再"contain + **只缩不放**"进槽位并居中。
  *
  * - `fontSize` 用调用方所在深度的节点字号（`nodeMetrics(depth).fontSize`，
@@ -87,16 +114,12 @@ export function computeTopicEquationRect(
   intrinsic: TopicEquationIntrinsic,
   fontSize: number,
 ): TopicEquationSlot | null {
-  if (!(intrinsic.width > 0) || !(intrinsic.height > 0)) {
-    return null
-  }
-  const safeFontSize = Number.isFinite(fontSize) && fontSize > 0 ? fontSize : 0
-  if (safeFontSize <= 0) {
+  const natural = naturalEquationSize(intrinsic, fontSize)
+  if (!natural) {
     return null
   }
 
-  const naturalWidth = (intrinsic.width / EQUATION_UNITS_PER_EM) * safeFontSize
-  const naturalHeight = (intrinsic.height / EQUATION_UNITS_PER_EM) * safeFontSize
+  const { width: naturalWidth, height: naturalHeight } = natural
   const slot = computeTopicEquationSlot(bounds, padding)
   const scale = Math.min(
     1,

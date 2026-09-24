@@ -40,6 +40,7 @@ import {
   type Scene,
   type SelectionBoxRenderNode,
   type SummaryRenderNode,
+  type TopicEquationRender,
   type TopicRenderNode,
   type TopicVisualState,
   type Viewport,
@@ -47,6 +48,8 @@ import {
   type WorldRect,
 } from './render-tree'
 import { computeViewportWorldRect } from './render-tree'
+import { hasTopicEquation } from '../../../lib/document/equation'
+import { topicEquationKey } from './topic-equation-store'
 
 /** 视口剔除的 Overscan 边距（世界坐标）。 */
 const VIEWPORT_OVERSCAN = 200
@@ -133,6 +136,14 @@ export interface BuildSceneOptions {
    * 不经过 Scene）。缺省时主题不携带 image 字段，渲染端行为与改动前完全一致。
    */
   topicImageUrls?: Record<string, string>
+  /**
+   * 方程渲染结果：缓存键（`inline:latex` / `display:latex`）→ 已渲染的 SVG 与尺寸。
+   *
+   * 与 `topicImageUrls` 同理，只在需要时携带；DOM 侧由 `useTopicEquations` 填充，
+   * 导出侧由 `resolveTopicEquations` 填充。**缺省时主题不携带 equation 字段**，
+   * 渲染端行为与改动前一致。
+   */
+  topicEquations?: Record<string, TopicEquationRender>
 }
 
 /**
@@ -269,6 +280,7 @@ export function buildScene(options: BuildSceneOptions): Scene {
         visualStates,
         theme,
         options.topicImageUrls,
+        options.topicEquations,
         branchIndexMap,
         options.numberMap,
       ),
@@ -412,6 +424,7 @@ function topicToRenderNode(
   states: TopicVisualStates,
   theme: ThemePalette,
   topicImageUrls: Record<string, string> | undefined,
+  topicEquations: Record<string, TopicEquationRender> | undefined,
   branchIndexMap: Map<string, number>,
   numberMap?: Map<string, string>,
 ): TopicRenderNode {
@@ -440,6 +453,12 @@ function topicToRenderNode(
   // 富内容投影：仅当存在任意 meta 字段时携带，避免空对象污染渲染端判断
   const topic = layoutNode.topic
   const imageUrl = topicImageUrls?.[id]
+  // 方程：只要**文档里有**就生成 rich 字段（哪怕是空对象"还没渲染好"）——
+  // 这样 DOM 会先把槽位摆好、标题不会在渲染到达后跳一下；导出端同理，
+  // 与图片"解码失败也照样下移标题"是同一个约定。
+  const equationRender = hasTopicEquation(topic.equation)
+    ? (topicEquations?.[topicEquationKey(topic.equation) ?? ''] ?? {})
+    : undefined
   const hasRichContent =
     (topic.markers && topic.markers.length > 0) ||
     // ⚠️ 贴纸必须算进来：这个布尔量决定 rich 是否生成，
@@ -451,6 +470,9 @@ function topicToRenderNode(
     (topic.notes && topic.notes.length > 0) ||
     topic.link ||
     topic.task ||
+    // ⚠️ 方程必须算进来：这个布尔量决定 rich 是否生成，漏掉它会让"只有方程的主题"
+    // 在导出里完全没有方程（屏幕上有、导出没有）—— 贴纸/标注都踩过同一条
+    equationRender ||
     !!imageUrl
   const rich = hasRichContent
     ? {
@@ -462,6 +484,7 @@ function topicToRenderNode(
         link: topic.link,
         task: topic.task,
         image: imageUrl,
+        equation: equationRender,
       }
     : undefined
 

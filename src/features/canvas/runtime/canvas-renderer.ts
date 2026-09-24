@@ -43,6 +43,10 @@ import {
   computeTopicImageFittedRect,
 } from './topic-image-constants'
 import {
+  TOPIC_EQUATION_TITLE_OFFSET,
+  computeTopicEquationRect,
+} from './topic-equation-constants'
+import {
   TOPIC_CALLOUT_FONT_SIZE,
   TOPIC_CALLOUT_LINE_HEIGHT,
   TOPIC_CALLOUT_PADDING,
@@ -118,6 +122,14 @@ export interface RenderOptions {
    * 不抛错、不中断导出。
    */
   topicImages?: Map<string, HTMLImageElement>
+  /**
+   * 已解码的方程 SVG：topicId → HTMLImageElement（由预加载把 SVG 标记转成图片）。
+   *
+   * 与 `topicImages` 同理：`renderScene` 是同步的，解码必须提前完成。
+   * 未提供或缺失某项时静默跳过该方程，但**标题照样下移**（见 drawNodeText），
+   * 保证它与 SVG 端版面一致 —— 与图片"解码失败也下移"是同一条约定。
+   */
+  topicEquations?: Map<string, HTMLImageElement>
 }
 
 /**
@@ -194,7 +206,7 @@ export function renderScene(
   if (drawTopics) {
     const topics = scene.nodes.filter((n): n is TopicRenderNode => n.type === 'topic')
     for (const topic of topics) {
-      drawTopic(ctx, topic, options.topicImages, fontFamily)
+      drawTopic(ctx, topic, options.topicImages, options.topicEquations, fontFamily)
     }
   }
 
@@ -319,6 +331,7 @@ function drawTopic(
   ctx: CanvasRenderingContext2D,
   node: TopicRenderNode,
   topicImages: Map<string, HTMLImageElement> | undefined,
+  topicEquations: Map<string, HTMLImageElement> | undefined,
   fontFamily: string,
 ): void {
   const { bounds, state } = node
@@ -342,6 +355,9 @@ function drawTopic(
 
   // 主题图片（位于标题上方）
   drawNodeImage(ctx, node, topicImages)
+
+  // 主题方程（在图片之下、标题之上；与 DOM 的 .mindmap-node__equation 同序）
+  drawNodeEquation(ctx, node, topicEquations)
 
   // 文字
   drawNodeText(ctx, node, fontFamily)
@@ -660,7 +676,11 @@ function drawNodeText(ctx: CanvasRenderingContext2D, node: TopicRenderNode, font
   const displayText = applyTextTransform(numberedText, style.textTransform)
   // 与 SVG 端保持一致：只要 rich.image 存在就下移标题，即使图片解码失败，
   // 这样 SVG 与 PNG 的版面不会因为个别坏图而错位。
-  const titleOffsetY = node.rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0
+  // 方程槽位同样要下移标题：与图片同理，是否下移只看 rich 字段而不看渲染是否成功，
+  // 否则 PNG 与 SVG 的版面会因为个别公式渲染失败而错位。
+  const titleOffsetY =
+    (node.rich?.image ? TOPIC_IMAGE_TITLE_OFFSET : 0) +
+    (node.rich?.equation ? TOPIC_EQUATION_TITLE_OFFSET : 0)
 
   // 字体族：节点级覆盖优先于画布全局字体（style.fontFamily 为「覆盖」而非最终值）；
   // 斜体写在 font 简写的 style 段，与 SVG 的 font-style / DOM 的 font-style 同义。
@@ -752,6 +772,35 @@ function drawNodeImage(
   ctx.clip()
   ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height)
   ctx.restore()
+}
+
+/**
+ * 绘制主题方程：把预解码好的 SVG 位图按 `computeTopicEquationRect` 的矩形贴上去。
+ *
+ * 几何与 SVG 端、DOM 端共用同一个函数（`只缩不放` + 槽内居中），三端才可能一致。
+ * 渲染结果缺失（引擎未就绪 / 语法错误）或未预解码时静默跳过；标题下移与否则由
+ * `rich.equation` 决定（见 drawNodeText），与这条无关。
+ */
+function drawNodeEquation(
+  ctx: CanvasRenderingContext2D,
+  node: TopicRenderNode,
+  topicEquations: Map<string, HTMLImageElement> | undefined,
+): void {
+  const payload = node.rich?.equation
+  if (!payload?.svg || !payload.width || !payload.height) return
+
+  const image = topicEquations?.get(node.id)
+  if (!image) return
+
+  const rect = computeTopicEquationRect(
+    node.bounds,
+    getNodePadding(node.depth),
+    { width: payload.width, height: payload.height },
+    node.style.fontSize,
+  )
+  if (!rect) return
+
+  ctx.drawImage(image, rect.x, rect.y, rect.width, rect.height)
 }
 
 /**
