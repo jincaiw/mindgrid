@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  与 Tauri 生成的 Info.plist 合并（Tauri 会自动读取与 tauri.conf.json 同目录的这个文件）。
+
+  为什么必须有这个文件：**AppKit 注入到「窗口」菜单里的那些项，语言取自 App 包声明的本地化**。
+  macOS 15 起系统会往任何带 `NSApp.windowsMenu` 角色的菜单里塞
+  填充 / 居中 / 移动与调整大小 / 全屏幕平铺 / 从组中移除窗口 / 前置全部窗口 / 合并所有窗口 等项
+  （我们通过 `WINDOW_SUBMENU_ID` 已拿到该角色）。这些字符串由系统提供、按**主包**的本地化解析：
+  主包只声明 English 时它们就是英文 —— 于是整个中文界面里会冒出一排英文菜单项。
+
+  实测（本机 macOS 27.0 / 系统语言 zh-Hans-US）：
+  - 无 `CFBundleLocalizations` → Fill / Center / Enter Full Screen / Move & Resize / Full Screen Tile …
+  - 声明 `zh-Hans`（或 `zh_CN`）→ 填充 / 居中 / 进入全屏幕 / 移动与调整大小 / 全屏幕平铺 …
+  唯一变量、结论明确；XMind 也是靠包内 `zh_CN.lproj` 拿到中文的那一套。
+
+  同时保留 `en`：英文系统下仍按英文显示（`CFBundleLocalizations` 是"支持哪些"，不是"强制哪一个"）。
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>zh-Hans</string>
+    <string>zh_CN</string>
+    <string>en</string>
+  </array>
+</dict>
+</plist>

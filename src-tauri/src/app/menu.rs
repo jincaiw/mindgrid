@@ -390,7 +390,18 @@ pub fn build_menu<R: Runtime>(
     // 不带就没有 macOS「窗口菜单」角色——**打开的窗口列表不会自动列在这里**
     // （XMind 的窗口菜单末尾就有「✓ 思维导图」这一项，正是该角色的产物）。
     //
-    // 顺序对齐 XMind：最小化 / 缩放 → 关闭窗口 → 全屏切换，随后由系统追加窗口列表。
+    // 顺序对齐 XMind：最小化 / 缩放 → 关闭窗口 → 全屏切换。
+    //
+    // ⚠️ **macOS 15+ 上这里声明的内容并不等于用户看到的菜单。**
+    // 系统会往带 windowsMenu 角色的菜单里**注入**一整组窗口平铺项，并在显示时重建内容
+    // （本机 macOS 27.0 实测：注入 填充/居中/进入全屏幕/移动与调整大小/全屏幕平铺/
+    //  从组中移除窗口/前置全部窗口/合并所有窗口 + 标签页若干项 + 窗口列表；
+    //  `NSMenu.update()` 看不到注入，只有真正弹出（或菜单栏展开）时才发生）。
+    // 因此**不要**照 XMind 的菜单去"补"这些项：系统已经给了，自己再加只会得到重复项。
+    // 也不要靠"枚举 items"来判断菜单内容——注入项不在 muda 的模型里。
+    //
+    // 这几项仍然保留，因为 **Windows / Linux 上没有这套注入**，那里的「窗口」菜单
+    // 就只有这里声明的内容；macOS 上的作用退化为 ⌘W 与全屏的快捷键来源。
     let window = SubmenuBuilder::with_id(handle, WINDOW_SUBMENU_ID, "窗口")
         .item(&PredefinedMenuItem::minimize(handle, Some("最小化"))?)
         .item(&PredefinedMenuItem::maximize(handle, Some("缩放"))?)

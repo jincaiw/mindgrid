@@ -8,6 +8,8 @@ import {
 // 用 Vite 的 ?raw 直接把 Rust 源码读成字符串，避免依赖 node:fs
 // （测试跑在 jsdom 环境，没有 node 类型与 import.meta.url 的 file: 语义）。
 import menuRsSource from '../../../src-tauri/src/app/menu.rs?raw'
+// 同上：App 包元数据也要静态守卫（「窗口」菜单的系统注入项靠它决定语言）
+import infoPlistSource from '../../../src-tauri/Info.plist?raw'
 
 it('has no duplicated action ids', () => {
   expect(new Set(MENU_ACTION_IDS).size).toBe(MENU_ACTION_IDS.length)
@@ -117,6 +119,30 @@ it('uses the macOS window / help submenu roles', () => {
   expect(menuRsSource).toContain('HELP_SUBMENU_ID')
   expect(menuRsSource).toMatch(/SubmenuBuilder::with_id\(handle,\s*WINDOW_SUBMENU_ID,\s*"窗口"\)/)
   expect(menuRsSource).toMatch(/SubmenuBuilder::with_id\(handle,\s*HELP_SUBMENU_ID,\s*"帮助"\)/)
+})
+
+/**
+ * 「窗口菜单的系统注入项要说中文」守卫。
+ *
+ * macOS 15 起，系统会往任何带 `NSApp.windowsMenu` 角色的菜单里**注入**一整组窗口平铺项：
+ * 填充 / 居中 / 进入全屏幕 / 移动与调整大小 / 全屏幕平铺 / 从组中移除窗口 /
+ * 前置全部窗口 / 合并所有窗口 / 窗口列表。我们靠 `WINDOW_SUBMENU_ID` 已拿到该角色
+ * （见上一条），**不需要也不应该自己实现这些项**——自己实现只会得到重复项与重复快捷键。
+ *
+ * 但它们的**字符串由系统提供，按 App 包声明的本地化解析**：主包只声明 English 时，
+ * 中文界面里就会冒出一排英文菜单项。修法是 `src-tauri/Info.plist` 声明中文
+ * （Tauri 会自动把它与生成的 Info.plist 合并，已在产物上实测）。
+ *
+ * 为什么必须静态守卫：删掉这个键**不会有任何编译期 / 运行时报错**，
+ * 界面其余部分照旧，只在用户展开「窗口」菜单时才看得出来。
+ */
+it('declares Simplified Chinese so system-injected window items are localized', () => {
+  expect(infoPlistSource).toContain('CFBundleLocalizations')
+  // 声明的两种写法都实测有效；保留两者以覆盖不同 macOS 版本对旧式名的解析。
+  expect(infoPlistSource).toMatch(/<string>zh-Hans<\/string>/)
+  expect(infoPlistSource).toMatch(/<string>zh_CN<\/string>/)
+  // `CFBundleLocalizations` 是"支持哪些"而非"强制哪一个"：去掉 en 会让英文系统也变成中文。
+  expect(infoPlistSource).toMatch(/<string>en<\/string>/)
 })
 
 /**
