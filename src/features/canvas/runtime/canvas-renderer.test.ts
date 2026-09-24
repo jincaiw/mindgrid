@@ -5,6 +5,15 @@ import { renderScene } from './canvas-renderer'
 import { COLORS } from './style-constants'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
 import type { CameraProjection, TopicRenderNode, Viewport } from './render-tree'
+import { resolveEffectiveTheme } from './effective-theme'
+
+/**
+ * `buildScene` 现在要求显式传"**生效主题**"（画布级分支色板已叠加）。
+ * 这些用例只关心场景结构与绘制调用，用内置默认主题即可 ——
+ * 与改动前不传 themeId 时的缺省行为一致。
+ */
+const TEST_THEME = resolveEffectiveTheme({ themeId: undefined })
+
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
@@ -88,6 +97,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -107,6 +117,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -126,6 +137,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -147,6 +159,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -166,6 +179,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -189,6 +203,7 @@ describe('renderScene', () => {
         ...defaultOverlays,
         selectionBox: { x: 50, y: 50, width: 200, height: 100 },
       },
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -214,6 +229,7 @@ describe('renderScene', () => {
           label: '释放后作为子主题',
         },
       },
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -234,6 +250,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -266,6 +283,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -283,7 +301,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
-      themeId: 'classic-blue',
+      theme: resolveEffectiveTheme({ themeId: 'classic-blue' }),
       enableCulling: false,
     })
 
@@ -315,7 +333,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
-      themeId: 'classic-blue',
+      theme: resolveEffectiveTheme({ themeId: 'classic-blue' }),
       enableCulling: false,
     })
 
@@ -351,7 +369,7 @@ describe('renderScene', () => {
         camera: defaultCamera,
         visualStates: defaultVisualStates,
         overlays: defaultOverlays,
-        themeId: 'classic-blue',
+        theme: resolveEffectiveTheme({ themeId: 'classic-blue' }),
         enableCulling: false,
       })
       const branch = scene.nodes.find(
@@ -377,6 +395,7 @@ describe('renderScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -405,6 +424,7 @@ describe('renderScene', () => {
       // root 同时为 active + selected
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -458,6 +478,7 @@ describe('renderScene — 富内容（task / markers / notes / link / labels）'
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
   }
@@ -554,6 +575,7 @@ describe('renderScene — 富内容（task / markers / notes / link / labels）'
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -613,6 +635,7 @@ describe('画布级插画绘制', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 40, y: 20, size: 128 }],
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -639,6 +662,7 @@ describe('画布级插画绘制', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 40, y: 20, size: 128 }],
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -661,6 +685,7 @@ describe('画布级插画绘制', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       illustrations: [{ id: 'ill_x', illustrationId: 'not-a-real-id', x: 0, y: 0, size: 96 }],
+      theme: TEST_THEME,
       enableCulling: false,
     })
 

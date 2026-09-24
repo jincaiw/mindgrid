@@ -25,6 +25,7 @@ import {
 } from '../canvas/runtime/scene-builder'
 import { collectTopicImageAssetIds, collectTopicImageRefs } from '../canvas/runtime/topic-image-store'
 import { buildFontStack } from '../../lib/document/canvas-settings'
+import { resolveEffectiveTheme } from '../canvas/runtime/effective-theme'
 
 /** 导出时没有任何交互态：选中/搜索/拖拽都不该出现在成品里。 */
 const EXPORT_VISUAL_STATES: TopicVisualStates = {
@@ -121,6 +122,13 @@ export async function buildExportScene(
     ? restrictLayoutToTopicIds(fullLayout, restrictToTopicIds as ReadonlySet<string>)
     : fullLayout
   const topicImageUrls = await resolveTopicImageUrls(sheet.rootTopic)
+  // 生效主题：画布级分支色板叠加进主题。屏幕与导出走**同一条解析**，
+  // 否则会出现"屏幕是一条颜色、导出是另一条"（见 effective-theme.ts 文件头）。
+  const theme = resolveEffectiveTheme({
+    themeId: document.theme?.id,
+    branchStyle: sheet.branchStyle,
+    canvasSettings,
+  })
 
   return buildScene({
     layout,
@@ -159,11 +167,11 @@ export async function buildExportScene(
     // 否则一张摆在远处的插画会把导出尺寸撑大（导出宽高取所有节点的紧包围盒），
     // 甚至把与选中主题无关的图形带进图里。
     illustrations: shouldRestrict ? [] : sheet.illustrations,
-    themeId: document.theme?.id,
+    theme,
     branchStyle: sheet.branchStyle,
     // 编号必须与屏幕同源：导出少了这一项，PDF/PNG 就没有编号
     numberMap: buildTopicNumbers(sheet.rootTopic, sheet.numbering),
-    canvasSettings: resolveCanvasSettings(document.settings),
+    canvasSettings,
     enableCulling: false,
     topicImageUrls,
   })

@@ -88,7 +88,9 @@ import { ZOOM_COMMAND_BY_MENU_ACTION } from '../menu/menu-actions'
 import { computeLayout, resolveLayoutOptions, restrictLayoutToTopicIds } from './layouts'
 import { hitTestIllustrationAtViewportPoint } from './hit-test'
 import { renderScene } from './runtime/canvas-renderer'
-import { resolveThemeBackground, resolveTopicStyle } from './runtime/style-resolver'
+import { resolveThemeBackground, resolveTopicStyleFrom } from './runtime/style-resolver'
+import { resolveEffectiveTheme } from './runtime/effective-theme'
+import type { ThemePalette } from '../../lib/document/themes'
 import {
   buildFontStack,
   resolveCanvasSettings,
@@ -640,6 +642,19 @@ function MindMapScene({
       dragPreview,
     ],
   )
+  /**
+   * **生效主题**：把画布级分支色板叠加进主题，只在这里解析一次。
+   *
+   * 场景（连线 + 导出用的节点样式）与屏幕上的 DOM 节点都读这一份，
+   * 于是"节点填充色 == 该分支的连线色"在**结构上**成立。
+   * 之前连线读画布色板、节点只读主题，换成不带色板的主题时就会出现
+   * "节点单色、连线彩虹"（详见 runtime/effective-theme.ts 的文件头）。
+   */
+  const effectiveTheme = useMemo(
+    () => resolveEffectiveTheme({ themeId, branchStyle, canvasSettings }),
+    [themeId, branchStyle, canvasSettings],
+  )
+
   const scene = useMemo(
     () =>
       buildScene({
@@ -652,7 +667,7 @@ function MindMapScene({
         boundaries: visibleBoundaries,
         summaries: visibleSummaries,
         illustrations: sceneIllustrations,
-        themeId,
+        theme: effectiveTheme,
         branchStyle,
         numberMap,
         canvasSettings,
@@ -667,7 +682,7 @@ function MindMapScene({
       visibleBoundaries,
       visibleSummaries,
       sceneIllustrations,
-      themeId,
+      effectiveTheme,
       branchStyle,
       numberMap,
       canvasSettings,
@@ -1840,7 +1855,7 @@ function MindMapScene({
               onCalloutMove={onCalloutMove}
               offsetX={layout.offsetX}
               offsetY={layout.offsetY}
-              themeId={themeId}
+              theme={effectiveTheme}
               branchIndex={branchIndexMap.get(node.id) ?? null}
               isActive={node.id === activeTopicId}
               isSelected={selectedTopicIds.includes(node.id)}
@@ -1998,7 +2013,7 @@ function MindMapNode({
   node,
   offsetX,
   offsetY,
-  themeId,
+  theme,
   isActive,
   isSelected,
   isEditing,
@@ -2030,7 +2045,11 @@ function MindMapNode({
   node: MindMapNodeLayout
   offsetX: number
   offsetY: number
-  themeId: string | undefined
+  /**
+   * **生效主题**（画布级分支色板已叠加）。与 scene 里节点用的是同一个对象，
+   * 所以屏幕上看到的填充色与导出、与该分支连线色必然一致。
+   */
+  theme: ThemePalette
   /** 在一级分支中的序号，缤纷主题按此取分支色；null 表示不适用（根节点/经典主题）。 */
   branchIndex: number | null
   isActive: boolean
@@ -2077,8 +2096,8 @@ function MindMapNode({
   const inlineEditShouldSkipBlurCommitRef = useRef(false)
   // 解析主题 + 节点覆盖 → 具体颜色与排印，作为内联样式覆盖 CSS 默认配色。
   // 使用 background 简写而非 backgroundColor，以清除 CSS 中的渐变背景。
-  const resolvedStyle = resolveTopicStyle(
-    themeId,
+  const resolvedStyle = resolveTopicStyleFrom(
+    theme,
     node.depth,
     node.side,
     node.topic.styleOverrides,

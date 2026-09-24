@@ -206,27 +206,15 @@ export function getFontScale(
   return fontSizeOverride / defaultFontSize
 }
 
-// ---- 分支色板（8 色循环，参考 XMind）----
-
-/**
- * 每条主分支（根的直接子节点）分配一个色相，其所有后代继承该色。
- * 用于连线和节点强调，形成视觉上的分支编码。
- */
-export const BRANCH_COLORS = [
-  '#5B8DEF', // 蓝
-  '#FF8B3D', // 橙
-  '#4CB050', // 绿
-  '#E5484D', // 红
-  '#9B6BFF', // 紫
-  '#00A6A6', // 青
-  '#F6BE00', // 黄
-  '#EC6CB0', // 粉
-] as const
-
-/** 按分支索引取色（循环）。 */
-export function getBranchColor(branchIndex: number): string {
-  return BRANCH_COLORS[branchIndex % BRANCH_COLORS.length]
-}
+// ---- 分支配色 ----
+//
+// 这里曾有一份硬编码的 8 色循环（`BRANCH_COLORS` / `getBranchColor`），
+// 作为"主题没有色板时"的连线兜底。它带来两个后果：
+//   ① 5 套经典主题自带的 `edge` 成了**死数据**（永远被这 8 色盖掉）；
+//   ② 它与节点配色（读 `theme.branchPalette`）是**两套来源** —— 不带色板的主题下
+//      变成"节点单色、连线彩虹"，而那个控件就叫「分支色板」，等于没生效。
+// 现已删除。生效配色统一由 `runtime/effective-theme.ts::resolveEffectiveTheme` 解析，
+// 节点与连线消费同一个 `ThemePalette`（见该文件顶部的完整说明与铁律 27）。
 
 // ---- 连接线线宽（按深度逐级递减）----
 

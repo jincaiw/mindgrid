@@ -19,14 +19,13 @@ import type {
   SummaryNode,
   TopicStyleOverrides,
 } from '../../../lib/document/types'
-import { resolveTopicStyle } from './style-resolver'
-import { getTheme } from '../../../lib/document/themes'
+import { resolveTopicStyleFrom } from './style-resolver'
+import type { ThemePalette } from '../../../lib/document/themes'
 import {
   branchThicknessMultiplier,
-  resolveBranchPalette,
   type DocumentCanvasSettings,
 } from '../../../lib/document/canvas-settings'
-import { BRANCH_COLORS, getEdgeLineWidth } from './style-constants'
+import { getEdgeLineWidth } from './style-constants'
 import {
   expandRect,
   rectsIntersect,
@@ -101,8 +100,15 @@ export interface BuildSceneOptions {
    * / `offsetEdge` 同一套约定；不这么干的话画布一平移，插画就会和内容分离。
    */
   illustrations?: readonly CanvasIllustration[]
-  /** 文档主题 ID（用于样式解析）。缺省使用 classic-blue。 */
-  themeId?: string
+  /**
+   * **当前生效的主题**（画布级分支色板已叠加进去）。
+   *
+   * ⚠️ 由调用方用 `resolveEffectiveTheme({ themeId, branchStyle, canvasSettings })` 解析后传入，
+   * 本模块**不再自己决定用什么色板**。这是刻意的：调色板的优先级逻辑原先在这里，
+   * 结果只有连线读它、节点样式漏了 —— 同一幅图里"节点单色、连线彩虹"。
+   * 收成"一个入参"之后，节点与连线在**类型层面**不可能用不同来源。
+   */
+  theme: ThemePalette
   /** 画布级分支样式（连线类型/粗细/分支色板），缺省回退到默认。 */
   branchStyle?: SheetBranchStyle
   /**
@@ -161,33 +167,13 @@ export function buildScene(options: BuildSceneOptions): Scene {
   const thicknessMultiplier =
     branchStyle?.thickness ??
     (canvasSettings ? branchThicknessMultiplier(canvasSettings.branchThickness) : 1)
-  const theme = getTheme(options.themeId)
-
-  /**
-   * 分支色板解析，优先级从高到低：
-   *   1. 彩虹分支显式关闭 → 无色板（单色，用主题连线色）
-   *   2. 画布级自定义色板（样式页选择 / 既有文档数据）
-   *   3. 彩虹分支显式开启 → 画布设置里的预设色板
-   *   4. 主题自带色板（缤纷主题）
-   *   5. 默认 8 色循环
-   *
-   * 第 1 条必须排在最前：否则关掉彩虹分支后，缤纷主题的 branchPalette
-   * 会接手，用户取消了却仍是彩色的。
-   */
-  const customPalette = branchStyle?.colorPalette
-  const themeBranchPalette = theme.branchPalette
+  // 生效主题由调用方解析（见 BuildSceneOptions.theme）。
+  // 这里的色板就是**渲染要用的那一份**：连线与节点同源，不需要在这里再判断优先级。
+  const theme = options.theme
   const palette =
-    canvasSettings?.rainbowBranch === false
-      ? null
-      : customPalette && customPalette.length > 0
-        ? customPalette
-        : canvasSettings?.rainbowBranch === true
-          ? resolveBranchPalette(canvasSettings.branchPalette, canvasSettings.customPalettes)
-          : themeBranchPalette && themeBranchPalette.length > 0
-            ? themeBranchPalette
-            : BRANCH_COLORS
+    theme.branchPalette && theme.branchPalette.length > 0 ? theme.branchPalette : null
 
-  /** 按分支索引取色。无色板（关闭彩虹分支）时统一用主题连线色。 */
+  /** 按分支索引取色。无色板（单色分支）时统一用主题连线色。 */
   const resolveBranchColor = (branchIndex: number): string =>
     palette === null ? theme.edge : palette[branchIndex % palette.length]
 
@@ -281,7 +267,7 @@ export function buildScene(options: BuildSceneOptions): Scene {
         layoutNode,
         bounds,
         visualStates,
-        options.themeId,
+        theme,
         options.topicImageUrls,
         branchIndexMap,
         options.numberMap,
@@ -325,7 +311,7 @@ export function buildScene(options: BuildSceneOptions): Scene {
     nodes.push(dropIndicatorToRenderNode(overlays.dropIndicator))
   }
   if (overlays.dragPreview) {
-    nodes.push(dragPreviewToRenderNode(overlays.dragPreview, options.themeId))
+    nodes.push(dragPreviewToRenderNode(overlays.dragPreview, theme))
   }
 
   // 世界包围盒（从布局计算，不受视口剔除影响）
@@ -424,7 +410,7 @@ function topicToRenderNode(
   layoutNode: MindMapNodeLayout,
   bounds: WorldRect,
   states: TopicVisualStates,
-  themeId: string | undefined,
+  theme: ThemePalette,
   topicImageUrls: Record<string, string> | undefined,
   branchIndexMap: Map<string, number>,
   numberMap?: Map<string, string>,
@@ -441,12 +427,13 @@ function topicToRenderNode(
     isDragging: id === states.draggingTopicId,
   }
 
-  const style = resolveTopicStyle(
-    themeId,
+  const style = resolveTopicStyleFrom(
+    theme,
     layoutNode.depth,
     layoutNode.side,
     layoutNode.topic.styleOverrides,
-    // 分支索引用于缤纷主题的按分支取色；根节点与未知节点传 null 走主题单色
+    // 分支索引用于按分支取色；根节点与未知节点传 null 走单色。
+    // 色板已经叠在 theme 里，所以这里取到的填充色**就是**该分支连线的颜色。
     branchIndexMap.get(id) ?? null,
   )
 
@@ -601,7 +588,7 @@ function dragPreviewToRenderNode(
     bounds: WorldRect
     styleOverrides?: TopicStyleOverrides
   },
-  themeId: string | undefined,
+  theme: ThemePalette,
 ): DragPreviewRenderNode {
   return {
     type: 'drag-preview',
@@ -611,7 +598,7 @@ function dragPreviewToRenderNode(
     text: preview.text,
     depth: preview.depth,
     side: preview.side,
-    style: resolveTopicStyle(themeId, preview.depth, preview.side, preview.styleOverrides),
+    style: resolveTopicStyleFrom(theme, preview.depth, preview.side, preview.styleOverrides),
   }
 }
 

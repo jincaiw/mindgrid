@@ -10,6 +10,15 @@ import { describe, expect, it } from 'vitest'
 import type { TopicSnapshot } from '../../lib/document/types'
 import { computeLayout } from './layouts'
 import { buildScene } from './runtime/scene-builder'
+import { resolveEffectiveTheme } from './runtime/effective-theme'
+
+/**
+ * `buildScene` 现在要求显式传"**生效主题**"（画布级分支色板已叠加）。
+ * 这些用例只关心场景结构与绘制调用，用内置默认主题即可 ——
+ * 与改动前不传 themeId 时的缺省行为一致。
+ */
+const TEST_THEME = resolveEffectiveTheme({ themeId: undefined })
+
 
 /** 按 BFS 生成近似平衡的多叉树，节点总数约等于 nodeCount。 */
 function generateTree(nodeCount: number, branchingFactor = 5): TopicSnapshot {
@@ -81,6 +90,7 @@ function measureScene(
     camera: { x: 0, y: 0, zoom: 1 },
     visualStates: EMPTY_VISUAL_STATES,
     overlays: EMPTY_OVERLAYS,
+    theme: TEST_THEME,
     enableCulling,
   })
   const elapsed = performance.now() - start

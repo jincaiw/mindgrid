@@ -2,6 +2,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TopicSnapshot } from '../../../lib/document/types'
 import { computeMindMapLayout } from '../mindmap-layout'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
+import { resolveEffectiveTheme } from './effective-theme'
+
+/**
+ * `buildScene` 现在要求显式传"**生效主题**"（画布级分支色板已叠加）。
+ * 这些用例只关心场景结构与绘制调用，用内置默认主题即可 ——
+ * 与改动前不传 themeId 时的缺省行为一致。
+ */
+const TEST_THEME = resolveEffectiveTheme({ themeId: undefined })
+
 
 const renderSceneMock = vi.hoisted(() => ({
   renderScene: vi.fn(),
@@ -49,6 +58,7 @@ function buildTestScene() {
     camera: { x: 0, y: 0, zoom: 1 },
     visualStates: emptyVisualStates,
     overlays: emptyOverlays,
+    theme: TEST_THEME,
     enableCulling: false,
   })
 }

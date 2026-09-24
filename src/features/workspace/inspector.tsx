@@ -6,7 +6,8 @@ import {
   flattenTopicTree,
   normalizeTopicIdsForBatch,
 } from '../../lib/document/tree'
-import { resolveTopicStyle } from '../canvas/runtime/style-resolver'
+import { resolveTopicStyleFrom } from '../canvas/runtime/style-resolver'
+import { resolveEffectiveTheme } from '../canvas/runtime/effective-theme'
 import { computeLayout } from '../canvas/layouts'
 import { renderScene } from '../canvas/runtime/canvas-renderer'
 import { buildScene } from '../canvas/runtime/scene-builder'
@@ -184,6 +185,7 @@ function PresentationPreview({
   rootTopic,
   chartType,
   themeId,
+  theme,
   relationships,
   boundaries,
   summaries,
@@ -191,7 +193,10 @@ function PresentationPreview({
 }: {
   rootTopic: TopicSnapshot
   chartType: ChartType
+  /** 文档主题 id：**只用于解析画布背景**（背景与分支调色板无关）。 */
   themeId: string | undefined
+  /** 生效主题（画布级分支色板已叠加）：节点与连线配色都读它。 */
+  theme: ThemePalette
   relationships: Relationship[]
   boundaries: Boundary[]
   summaries: SummaryNode[]
@@ -228,7 +233,7 @@ function PresentationPreview({
       boundaries,
       summaries,
       illustrations,
-      themeId,
+      theme,
       enableCulling: false,
     })
 
@@ -243,7 +248,7 @@ function PresentationPreview({
       drawOverlays: false,
       themeId,
     })
-  }, [rootTopic, chartType, themeId, relationships, boundaries, summaries, illustrations])
+  }, [rootTopic, chartType, themeId, theme, relationships, boundaries, summaries, illustrations])
 
   return (
     <canvas
@@ -719,6 +724,23 @@ export function Inspector({
 }: InspectorProps) {
   const activeSheet = session.document ? getActiveSheet(session.document) : null
   const canvasSettings = resolveCanvasSettings(session.document?.settings)
+  /**
+   * **生效主题**：画布级分支色板叠加进主题，面板里的三处（样式页预览条、
+   * 演说预览、以及任何读节点配色的地方）都读这一份，
+   * 于是"面板里显示的颜色"与画布/导出必然一致。
+   *
+   * ⚠️ 依赖里放 `session.document?.settings` 而不是上面的 `canvasSettings`：
+   * 后者是每次渲染新建的对象，放进来等于每渲染重算一次。
+   */
+  const effectiveTheme = useMemo(
+    () =>
+      resolveEffectiveTheme({
+        themeId: session.document?.theme?.id,
+        branchStyle: activeSheet?.branchStyle,
+        canvasSettings: resolveCanvasSettings(session.document?.settings),
+      }),
+    [session.document?.theme?.id, session.document?.settings, activeSheet?.branchStyle],
+  )
   const activeTopic =
     session.document && session.activeTopicId
       ? findTopicById(activeSheet?.rootTopic ?? session.document.sheets[0].rootTopic, session.activeTopicId)
@@ -741,14 +763,14 @@ export function Inspector({
             rootTopic.children.findIndex((child) => child.id === level1Id),
           )
 
-    return resolveTopicStyle(
-      session.document?.theme?.id,
+    return resolveTopicStyleFrom(
+      effectiveTheme,
       ancestors.length,
       ancestors.length === 0 ? 'center' : 'right',
       activeTopic.styleOverrides,
       branchIndex,
     )
-  }, [activeSheet?.rootTopic, activeTopic, session.document?.theme?.id])
+  }, [activeSheet?.rootTopic, activeTopic, effectiveTheme])
 
   const movableTargetSheets = useMemo(
     () =>
@@ -2733,6 +2755,7 @@ export function Inspector({
                 rootTopic={activeSheet?.rootTopic ?? session.document!.sheets[0].rootTopic}
                 chartType={activeSheet?.chartType ?? 'mindmap'}
                 themeId={session.document?.theme?.id}
+                theme={effectiveTheme}
                 relationships={session.document?.relationships ?? []}
                 boundaries={activeSheet?.boundaries ?? []}
                 summaries={activeSheet?.summaries ?? []}

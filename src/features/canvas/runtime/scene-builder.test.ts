@@ -7,9 +7,14 @@ import {
   type InteractionOverlays,
   type TopicVisualStates,
 } from './scene-builder'
-import type { CameraProjection, Viewport } from './render-tree'
-import { BRANCH_COLORS } from './style-constants'
+import type {
+  CameraProjection,
+  EdgeRenderNode,
+  TopicRenderNode,
+  Viewport,
+} from './render-tree'
 import { getTheme } from '../../../lib/document/themes'
+import { resolveEffectiveTheme } from './effective-theme'
 import {
   DEFAULT_CANVAS_SETTINGS,
   resolveBranchPalette,
@@ -39,6 +44,9 @@ function rootWithOnlyCallout() {
   return makeTopic('root', 'Root', [makeTopic('a', 'Alpha'), child])
 }
 
+/** 缺省主题：与改动前不传 themeId 时的行为一致。 */
+const TEST_THEME = resolveEffectiveTheme({ themeId: undefined })
+
 const defaultViewport: Viewport = { width: 1920, height: 1080 }
 const defaultCamera: CameraProjection = { x: 0, y: 0, zoom: 1 }
 const defaultVisualStates: TopicVisualStates = {
@@ -66,6 +74,7 @@ describe('buildScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -86,6 +95,7 @@ describe('buildScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -132,6 +142,7 @@ describe('buildScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -161,6 +172,7 @@ describe('buildScene', () => {
         searchMatchedTopicIds: new Set(['a2']),
       },
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -185,6 +197,7 @@ describe('buildScene', () => {
       camera: defaultCamera,
       visualStates: { ...defaultVisualStates, activeTopicId: 'a' },
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -214,6 +227,7 @@ describe('buildScene', () => {
       camera: farCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: true,
     })
 
@@ -229,6 +243,7 @@ describe('buildScene', () => {
       camera: farCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -247,6 +262,7 @@ describe('buildScene', () => {
         ...defaultOverlays,
         selectionBox: { x: 10, y: 10, width: 200, height: 150 },
       },
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -275,6 +291,7 @@ describe('buildScene', () => {
           bounds: { x: 100, y: 100, width: 140, height: 44 },
         },
       },
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -294,6 +311,7 @@ describe('buildScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -311,6 +329,7 @@ describe('buildScene', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -343,6 +362,7 @@ describe('buildScene', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       relationships,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -378,6 +398,7 @@ describe('buildScene', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       relationships,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -397,6 +418,7 @@ describe('buildScene', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       boundaries,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -434,6 +456,7 @@ describe('buildScene', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       boundaries,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -453,6 +476,7 @@ describe('buildScene', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       summaries,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -493,6 +517,7 @@ describe('buildScene', () => {
       relationships,
       boundaries,
       summaries,
+      theme: TEST_THEME,
       enableCulling: true,
     })
 
@@ -524,6 +549,7 @@ describe('buildScene', () => {
       relationships,
       boundaries,
       summaries,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -556,17 +582,21 @@ describe('buildScene', () => {
       }
       applyOverrides(root)
       const layout = computeMindMapLayout(root)
+      const branchStyle = options.colorPalette ? { colorPalette: options.colorPalette } : undefined
+      const canvasSettings = options.canvasSettings
+        ? { ...DEFAULT_CANVAS_SETTINGS, ...options.canvasSettings }
+        : undefined
       const scene = buildScene({
         layout,
         viewport: defaultViewport,
         camera: defaultCamera,
         visualStates: defaultVisualStates,
         overlays: defaultOverlays,
-        themeId: options.themeId,
-        branchStyle: options.colorPalette ? { colorPalette: options.colorPalette } : undefined,
-        canvasSettings: options.canvasSettings
-          ? { ...DEFAULT_CANVAS_SETTINGS, ...options.canvasSettings }
-          : undefined,
+        // 生效主题：与产品**同一条解析**（画布级色板叠加进主题），
+        // 于是下面这些用例顺带钉住了"节点配色与连线配色同源"。
+        theme: resolveEffectiveTheme({ themeId: options.themeId, branchStyle, canvasSettings }),
+        branchStyle,
+        canvasSettings,
         enableCulling: false,
       })
       return scene.nodes.filter((n) => n.type === 'edge')
@@ -580,10 +610,13 @@ describe('buildScene', () => {
       return map
     }
 
-    it('无主题色板时沿用默认 8 色循环', () => {
+    it('无主题色板时跟随主题连线色（不再用硬编码 8 色循环）', () => {
+      // 改动前这里是一条硬编码的 8 色循环兜底：它让 5 套经典主题的 `edge` 成了死数据，
+      // 也让连线与节点配色永远对不上（节点走主题、连线走硬编码色板）。
+      const edge = getTheme('classic-blue').edge
       const colors = branchColorByChild({ themeId: 'classic-blue' })
-      expect(colors.get('a')).toBe(BRANCH_COLORS[0])
-      expect(colors.get('b')).toBe(BRANCH_COLORS[1])
+      expect(colors.get('a')).toBe(edge)
+      expect(colors.get('b')).toBe(edge)
     })
 
     it('缤纷主题用主题自带色板，且与分支节点填充同色', () => {
@@ -636,12 +669,12 @@ describe('buildScene', () => {
       expect(colors.get('a2')).toBe('#ff2d55')
     })
 
-    it('空白颜色的覆盖视为未设置（跟随色板）', () => {
+    it('空白颜色的覆盖视为未设置（跟随主题）', () => {
       const colors = branchColorByChild({
         themeId: 'classic-blue',
         branchColorOverrides: { a: '   ' },
       })
-      expect(colors.get('a')).toBe(BRANCH_COLORS[0])
+      expect(colors.get('a')).toBe(getTheme('classic-blue').edge)
     })
 
     it('自定义配色方案能真正上色（文档级 canvas.customPalettes）', () => {
@@ -684,13 +717,78 @@ describe('buildScene', () => {
       expect(colors.get('b')).toBe(preset[1])
     })
 
-    it('彩虹分支未设置（null）时跟随主题，不覆盖既有行为', () => {
+    it('彩虹分支未设置（null）时跟随主题（用例名与实现终于一致）', () => {
+      const edge = getTheme('classic-blue').edge
       const colors = branchColorByChild({
         themeId: 'classic-blue',
         canvasSettings: { rainbowBranch: null },
       })
-      expect(colors.get('a')).toBe(BRANCH_COLORS[0])
-      expect(colors.get('b')).toBe(BRANCH_COLORS[1])
+      expect(colors.get('a')).toBe(edge)
+      expect(colors.get('b')).toBe(edge)
+    })
+
+    /**
+     * 本轮修的核心不变量：**节点配色与连线配色同源**。
+     *
+     * 改动前连线走"画布级色板 + 硬编码 8 色兜底"，节点只读主题 ——
+     * 主题自带色板时两者恰好一致，所以长期没暴露；换成不带色板的主题
+     * （「暗夜」、单色自定义风格）立刻变成"节点单色、连线彩虹"。
+     */
+    const buildNodes = (options: Parameters<typeof buildEdges>[0]) => {
+      const root = makeRoot()
+      const layout = computeMindMapLayout(root)
+      const branchStyle = options.colorPalette ? { colorPalette: options.colorPalette } : undefined
+      const canvasSettings = options.canvasSettings
+        ? { ...DEFAULT_CANVAS_SETTINGS, ...options.canvasSettings }
+        : undefined
+      return buildScene({
+        layout,
+        viewport: defaultViewport,
+        camera: defaultCamera,
+        visualStates: defaultVisualStates,
+        overlays: defaultOverlays,
+        theme: resolveEffectiveTheme({ themeId: options.themeId, branchStyle, canvasSettings }),
+        branchStyle,
+        canvasSettings,
+        enableCulling: false,
+      })
+    }
+
+    const branchFillOf = (scene: ReturnType<typeof buildNodes>, id: string) =>
+      scene.nodes.find(
+        (n): n is TopicRenderNode => n.type === 'topic' && n.id === id,
+      )!.style.fill
+    const edgeColorOf = (scene: ReturnType<typeof buildNodes>, childId: string) =>
+      scene.nodes.find(
+        (n): n is EdgeRenderNode => n.type === 'edge' && n.childId === childId,
+      )!.branchColor
+
+    it('有色板时：节点填充与该分支的连线色**同色**', () => {
+      const cases: Array<[string, Parameters<typeof buildEdges>[0]]> = [
+        ['主题自带色板', { themeId: 'rainbow' }],
+        [
+          '画布预设色板',
+          {
+            themeId: 'classic-blue',
+            canvasSettings: { rainbowBranch: true, branchPalette: 'ocean' },
+          },
+        ],
+        ['画布自定义色板', { themeId: 'classic-blue', colorPalette: ['#0a0a0a', '#f0f0f0'] }],
+      ]
+      for (const [label, options] of cases) {
+        const scene = buildNodes(options)
+        expect(branchFillOf(scene, 'a'), label).toBe(edgeColorOf(scene, 'a'))
+        expect(branchFillOf(scene, 'a'), label).not.toBe(branchFillOf(scene, 'b'))
+      }
+    })
+
+    it('无色板时：节点与连线都跟随主题（不再有硬编码兜底）', () => {
+      const theme = getTheme('classic-blue')
+      const scene = buildNodes({ themeId: 'classic-blue' })
+      expect(edgeColorOf(scene, 'a')).toBe(theme.edge)
+      expect(branchFillOf(scene, 'a')).toBe(theme.branch.fill)
+      // 单色分支：两条一级分支同色
+      expect(edgeColorOf(scene, 'a')).toBe(edgeColorOf(scene, 'b'))
     })
   })
 
@@ -710,6 +808,7 @@ describe('buildScene', () => {
         canvasSettings: options.canvasSettings
           ? { ...DEFAULT_CANVAS_SETTINGS, ...options.canvasSettings }
           : undefined,
+        theme: TEST_THEME,
         enableCulling: false,
       })
       const edge = scene.nodes.find((n) => n.type === 'edge')!
@@ -782,6 +881,7 @@ describe('贴纸进入富内容投影', () => {
         camera: defaultCamera,
         visualStates: defaultVisualStates,
         overlays: defaultOverlays,
+        theme: TEST_THEME,
         enableCulling: false,
       }),
     )
@@ -805,6 +905,7 @@ describe('贴纸进入富内容投影', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
     const rich = scene.nodes
@@ -826,6 +927,7 @@ describe('贴纸进入富内容投影', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 120, y: -80, size: 96 }],
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -855,6 +957,7 @@ describe('贴纸进入富内容投影', () => {
       camera: defaultCamera,
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -871,6 +974,7 @@ describe('贴纸进入富内容投影', () => {
       visualStates: defaultVisualStates,
       overlays: defaultOverlays,
       illustrations: [{ id: 'ill_far', illustrationId: 'bulb', x: 100000, y: 100000, size: 96 }],
+      theme: TEST_THEME,
     }
 
     const culled = buildScene({ ...base, enableCulling: true })

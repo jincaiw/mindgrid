@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computeLayout } from '../canvas/layouts'
 import { renderScene } from '../canvas/runtime/canvas-renderer'
+import { resolveEffectiveTheme } from '../canvas/runtime/effective-theme'
+import { resolveCanvasSettings } from '../../lib/document/canvas-settings'
 import { buildScene } from '../canvas/runtime/scene-builder'
 import type {
   Boundary,
@@ -51,6 +53,17 @@ export function PresentationView({ document, onExit }: PresentationViewProps) {
   const rootTopic: TopicSnapshot = activeSheet.rootTopic
   const chartType: ChartType | undefined = activeSheet.chartType
   const themeId = document.theme?.id
+  // 生效主题：与画布/导出走**同一条解析**（画布级分支色板叠加进主题）。
+  // 放映此前完全忽略画布级色板，于是"画布上是单色分支、放映里却是彩虹"。
+  const theme = useMemo(
+    () =>
+      resolveEffectiveTheme({
+        themeId,
+        branchStyle: activeSheet.branchStyle,
+        canvasSettings: resolveCanvasSettings(document.settings),
+      }),
+    [themeId, activeSheet.branchStyle, document.settings],
+  )
   const relationships: Relationship[] = document.relationships ?? []
   const boundaries: Boundary[] = activeSheet.boundaries ?? []
   // 画布级插画：放映时同样显示（与画布同一份数据、同一条渲染路径）
@@ -91,7 +104,7 @@ export function PresentationView({ document, onExit }: PresentationViewProps) {
       boundaries,
       summaries,
       illustrations,
-      themeId,
+      theme,
       enableCulling: false,
     })
 
@@ -104,7 +117,7 @@ export function PresentationView({ document, onExit }: PresentationViewProps) {
       drawOverlays: false,
       themeId,
     })
-  }, [viewport, currentSlide, layout, relationships, boundaries, summaries, illustrations, themeId])
+  }, [viewport, currentSlide, layout, relationships, boundaries, summaries, illustrations, theme, themeId])
 
   const stopAnimation = useCallback(() => {
     if (animationRef.current != null) {

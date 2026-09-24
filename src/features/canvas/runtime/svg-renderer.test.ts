@@ -4,6 +4,15 @@ import { computeMindMapLayout } from '../mindmap-layout'
 import { buildScene, type InteractionOverlays, type TopicVisualStates } from './scene-builder'
 import type { TopicRenderNode } from './render-tree'
 import { renderSceneToSvg } from './svg-renderer'
+import { resolveEffectiveTheme } from './effective-theme'
+
+/**
+ * `buildScene` 现在要求显式传"**生效主题**"（画布级分支色板已叠加）。
+ * 这些用例只关心场景结构与绘制调用，用内置默认主题即可 ——
+ * 与改动前不传 themeId 时的缺省行为一致。
+ */
+const TEST_THEME = resolveEffectiveTheme({ themeId: undefined })
+
 
 function makeTopic(id: string, text: string, children: TopicSnapshot[] = []): TopicSnapshot {
   return { id, text, collapsed: false, children }
@@ -41,6 +50,7 @@ function buildTestScene() {
     camera: { x: 0, y: 0, zoom: 1 },
     visualStates: emptyVisualStates,
     overlays: emptyOverlays,
+    theme: TEST_THEME,
     enableCulling: false,
   })
 }
@@ -95,6 +105,7 @@ describe('renderSceneToSvg', () => {
       camera: { x: 0, y: 0, zoom: 1 },
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
     const svg = renderSceneToSvg(scene)
@@ -188,6 +199,7 @@ describe('renderSceneToSvg', () => {
         dragPreview: null,
         dropIndicator: null,
       },
+      theme: TEST_THEME,
       enableCulling: false,
     })
     const svg = renderSceneToSvg(scene)
@@ -256,6 +268,7 @@ describe('renderSceneToSvg', () => {
       camera: { x: 0, y: 0, zoom: 1 },
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
     const svg = renderSceneToSvg(scene)
@@ -293,6 +306,7 @@ describe('renderSceneToSvg', () => {
       camera: { x: 0, y: 0, zoom: 1 },
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
     const svg = renderSceneToSvg(scene)
@@ -354,6 +368,7 @@ describe('贴纸导出', () => {
       camera: { x: 0, y: 0, zoom: 1 },
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -385,6 +400,7 @@ describe('贴纸导出', () => {
       camera: { x: 0, y: 0, zoom: 1 },
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -402,6 +418,7 @@ describe('画布级插画导出', () => {
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
       illustrations: [{ id: 'ill_1', illustrationId: 'rocket', x: 120, y: -80, size: 128 }],
+      theme: TEST_THEME,
       enableCulling: false,
     })
 
@@ -423,6 +440,7 @@ describe('画布级插画导出', () => {
       camera: { x: 0, y: 0, zoom: 1 },
       visualStates: emptyVisualStates,
       overlays: emptyOverlays,
+      theme: TEST_THEME,
       enableCulling: false,
     })
 

@@ -14,6 +14,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { computeLayout } from '../canvas/layouts'
 import { renderScene } from '../canvas/runtime/canvas-renderer'
+import { resolveEffectiveTheme } from '../canvas/runtime/effective-theme'
+import { resolveCanvasSettings } from '../../lib/document/canvas-settings'
 import { buildScene } from '../canvas/runtime/scene-builder'
 import type {
   Boundary,
@@ -105,6 +107,17 @@ export function PitchView({
     onThemeStyleChange?.(value)
   }
   const themeId = resolvePitchThemeId(themeStyle, documentThemeId)
+  // 生效主题：与画布/导出走**同一条解析**（画布级分支色板叠加进主题）。
+  // 放映此前完全忽略画布级色板，于是"画布上是单色分支、放映里却是彩虹"。
+  const theme = useMemo(
+    () =>
+      resolveEffectiveTheme({
+        themeId,
+        branchStyle: activeSheet.branchStyle,
+        canvasSettings: resolveCanvasSettings(document.settings),
+      }),
+    [themeId, activeSheet.branchStyle, document.settings],
+  )
 
   const safeIndex = acts.length === 0 ? 0 : Math.min(currentIndex, acts.length - 1)
   const currentAct = acts[safeIndex]
@@ -143,7 +156,7 @@ export function PitchView({
       boundaries,
       summaries,
       illustrations,
-      themeId,
+      theme,
       enableCulling: false,
     })
 
@@ -156,7 +169,7 @@ export function PitchView({
       drawOverlays: false,
       themeId,
     })
-  }, [viewport, currentAct, layout, relationships, boundaries, summaries, illustrations, themeId])
+  }, [viewport, currentAct, layout, relationships, boundaries, summaries, illustrations, theme, themeId])
 
   const stopAnimation = useCallback(() => {
     if (animationRef.current != null) {
