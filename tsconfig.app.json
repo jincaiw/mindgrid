@@ -22,5 +22,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  // `dev/ipc-smoke` 是真机 IPC 冒烟页面（见 dev/smoke-ipc.mjs）。
+  // 把它纳入类型检查是**故意的**：它调的就是真实命令函数，签名一变就该在这里报错，
+  // 而不是等到真机上才发现。它不会被正式包引用，所以不会进产物。
+  "include": ["src", "dev/ipc-smoke"]
 }
