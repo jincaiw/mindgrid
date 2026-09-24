@@ -8,11 +8,7 @@
 import type { TopicSnapshot } from '../../../lib/document/types'
 import type { MindMapEdgeLayout, MindMapNodeLayout } from '../mindmap-layout'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../mindmap-layout'
-import { hasTopicEquation } from '../../../lib/document/equation'
-import {
-  TOPIC_EQUATION_BLOCK,
-  TOPIC_EQUATION_MIN_WIDTH,
-} from '../runtime/topic-equation-constants'
+import { applyRichContentBlocks } from '../runtime/rich-content-constants'
 import { getFontScale } from '../runtime/style-constants'
 import { footprintBlocks, footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
@@ -66,15 +62,11 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   let height = metrics.padY * 2 + lineCount * lineHeight
   let nodeWidth = width
 
-  // 富内容槽位：与 `mindmap-layout.estimateNodeSize` 保持同一口径。
-  // ⚠️ 图片这里**没有**预留（历史遗留，两处本来就不一致）—— 本次只补方程，
-  // 不去动图片，免得改了非思维导图骨架的既有版面。
-  if (hasTopicEquation(topic.equation)) {
-    nodeWidth = Math.max(nodeWidth, TOPIC_EQUATION_MIN_WIDTH)
-    height += TOPIC_EQUATION_BLOCK
-  }
-
-  return { width: nodeWidth, height }
+  // 富内容槽位（图片 / 方程）：与 `mindmap-layout.estimateNodeSize` 共用同一个函数。
+  // ⚠️ 这里曾长期**漏掉图片块**（历史遗留）—— 鱼骨 / 气泡 / 时间轴 / 组织架构 / 矩阵
+  // 这五种骨架给主题加图片后，布局分配的是一份"只有文字"的高度，
+  // 而三端都照着 `TOPIC_IMAGE_TITLE_OFFSET` 往下画 → 内容溢出节点框 96px。
+  return applyRichContentBlocks({ width: nodeWidth, height }, topic)
 }
 
 /** 度量子树：叶子数量（用于垂直分配空间）。 */

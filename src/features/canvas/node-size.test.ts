@@ -8,13 +8,15 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { TopicSnapshot } from '../../lib/document/types'
+import type { ChartType, TopicSnapshot } from '../../lib/document/types'
+import { computeLayout } from './layouts'
 import { estimateNodeSize as estimateFromMindMap } from './mindmap-layout'
 import { estimateNodeSize as estimateFromLayoutUtils } from './layouts/layout-utils'
 import {
   TOPIC_EQUATION_BLOCK,
   TOPIC_EQUATION_MIN_WIDTH,
 } from './runtime/topic-equation-constants'
+import { TOPIC_IMAGE_BLOCK } from './runtime/topic-image-constants'
 
 function makeTopic(overrides: Partial<TopicSnapshot> = {}): TopicSnapshot {
   return {
@@ -28,50 +30,107 @@ function makeTopic(overrides: Partial<TopicSnapshot> = {}): TopicSnapshot {
 
 const DEPTHS = [0, 1, 2, 3] as const
 
+/**
+ * 影响节点尺寸的富内容与样式开关。
+ *
+ * ⚠️ **新增影响节点尺寸的字段时把它加进来** —— 下面的守卫会跑**全部组合**，
+ * 所以不必再逐个手写用例（这正是本文件此前漏掉"带图片"那一格的原因：
+ * 手写用例只覆盖了作者当时想到的那几种）。
+ */
+const SIZE_FEATURES: Array<{ name: string; patch: Partial<TopicSnapshot> }> = [
+  { name: '图片', patch: { image: { assetId: 'asset_1' } } },
+  { name: '方程', patch: { equation: { latex: 'x' } } },
+  { name: '空方程', patch: { equation: { latex: '   ' } } },
+  { name: '固定宽度', patch: { styleOverrides: { width: 260 } } },
+  { name: '字号覆盖', patch: { styleOverrides: { fontSize: 24 } } },
+  { name: '任务', patch: { task: { status: 'started', priority: 2 } } },
+  { name: '标记', patch: { markers: [{ id: 'star' }] } },
+  { name: '标签', patch: { labels: ['重要', '紧急'] } },
+  { name: '备注', patch: { notes: '一段备注' } },
+  { name: '链接', patch: { link: { url: 'https://example.com' } } },
+  { name: '折叠', patch: { collapsed: true } },
+]
+
+/** 按位掩码构造一个主题：多个 patch 合并，`styleOverrides` 逐键合并而不是整体覆盖。 */
+function makeCombination(mask: number): TopicSnapshot {
+  const merged: Partial<TopicSnapshot> = {}
+  const styleOverrides: NonNullable<TopicSnapshot['styleOverrides']> = {}
+  SIZE_FEATURES.forEach((feature, index) => {
+    if ((mask & (1 << index)) === 0) return
+    const { styleOverrides: patchStyle, ...rest } = feature.patch
+    Object.assign(merged, rest)
+    if (patchStyle) {
+      Object.assign(styleOverrides, patchStyle)
+    }
+  })
+  if (Object.keys(styleOverrides).length > 0) {
+    merged.styleOverrides = styleOverrides
+  }
+  return makeTopic(merged)
+}
+
 describe('estimateNodeSize 双实现一致性', () => {
-  it('默认（无覆盖）在各深度下两处完全一致', () => {
+  it('全部富内容 / 样式开关的组合下，两处完全一致（笛卡尔积）', () => {
+    const total = 1 << SIZE_FEATURES.length
+    let compared = 0
+    for (let mask = 0; mask < total; mask += 1) {
+      const topic = makeCombination(mask)
+      for (const depth of DEPTHS) {
+        const fromMindMap = estimateFromMindMap(topic, depth)
+        const fromLayoutUtils = estimateFromLayoutUtils(topic, depth)
+        expect(
+          fromLayoutUtils,
+          `组合 mask=${mask} depth=${depth} 下两处不一致：` +
+            `mindmap=${JSON.stringify(fromMindMap)} layout-utils=${JSON.stringify(fromLayoutUtils)}`,
+        ).toEqual(fromMindMap)
+        compared += 1
+      }
+    }
+    // 底线：掩码循环一旦写坏（比如 SIZE_FEATURES 变成空数组），上面会"零比较"地静默通过
+    expect(compared).toBe(total * DEPTHS.length)
+    expect(compared).toBeGreaterThan(1000)
+  })
+
+  /**
+   * ⭐ 这一格此前**缺失**，而漂移恰好就在它上面：两份实现里 `mindmap-layout` 给图片预留
+   * `TOPIC_IMAGE_BLOCK`，`layouts/layout-utils`（所有非思维导图骨架都用它）**一点没留** ——
+   * 于是鱼骨 / 气泡 / 时间轴 / 组织架构 / 矩阵这五种骨架里给主题加图片，
+   * 布局只给"文字高度"，而三端都照着 `TOPIC_IMAGE_TITLE_OFFSET` 往下画 →
+   * 内容溢出节点框 96px、压到相邻节点上。
+   * 现在两处共用 `applyRichContentBlocks`，这条守卫也留作回归。
+   */
+  it('图片块在两处都被预留（回归：非思维导图骨架曾漏掉它）', () => {
     for (const depth of DEPTHS) {
-      expect(estimateFromMindMap(makeTopic(), depth)).toEqual(
-        estimateFromLayoutUtils(makeTopic(), depth),
-      )
+      const plain = makeTopic({ text: '短' })
+      const withImage = makeTopic({ text: '短', image: { assetId: 'asset_1' } })
+      for (const estimate of [estimateFromMindMap, estimateFromLayoutUtils]) {
+        expect(estimate(withImage, depth).height - estimate(plain, depth).height).toBe(
+          TOPIC_IMAGE_BLOCK,
+        )
+      }
     }
   })
 
-  it('固定宽度覆盖下两处完全一致', () => {
-    for (const depth of DEPTHS) {
-      const topic = makeTopic({ styleOverrides: { width: 300 } })
-      expect(estimateFromMindMap(topic, depth)).toEqual(estimateFromLayoutUtils(topic, depth))
-    }
-  })
-
-  it('字号覆盖下两处完全一致', () => {
-    for (const depth of DEPTHS) {
-      const topic = makeTopic({ styleOverrides: { fontSize: 24 } })
-      expect(estimateFromMindMap(topic, depth)).toEqual(estimateFromLayoutUtils(topic, depth))
-    }
-  })
-
-  it('带方程时两处完全一致（本次新加的富内容槽位）', () => {
-    for (const depth of DEPTHS) {
-      const topic = makeTopic({ equation: { latex: 'a^2+b^2=c^2' } })
-      expect(estimateFromMindMap(topic, depth)).toEqual(estimateFromLayoutUtils(topic, depth))
-    }
-  })
-
-  it('空 LaTeX 不算方程：几何与不带方程时完全相同', () => {
-    for (const depth of DEPTHS) {
-      const plain = makeTopic()
-      const emptyLatex = makeTopic({ equation: { latex: '   ' } })
-      expect(estimateFromMindMap(emptyLatex, depth)).toEqual(estimateFromMindMap(plain, depth))
-      expect(estimateFromLayoutUtils(emptyLatex, depth)).toEqual(
-        estimateFromLayoutUtils(plain, depth),
+  it('图片 + 方程是**累加**（不是取最大）：两处都加两块', () => {
+    const plain = makeTopic({ text: '短' })
+    const both = makeTopic({
+      text: '短',
+      image: { assetId: 'asset_1' },
+      equation: { latex: 'x' },
+    })
+    for (const estimate of [estimateFromMindMap, estimateFromLayoutUtils]) {
+      expect(estimate(both, 1).height - estimate(plain, 1).height).toBe(
+        TOPIC_IMAGE_BLOCK + TOPIC_EQUATION_BLOCK,
       )
     }
   })
 
   it('方程槽位会抬高节点、并保证最小宽度', () => {
     const plain = estimateFromMindMap(makeTopic({ text: '短' }), 1)
-    const withEquation = estimateFromMindMap(makeTopic({ text: '短', equation: { latex: 'x' } }), 1)
+    const withEquation = estimateFromMindMap(
+      makeTopic({ text: '短', equation: { latex: 'x' } }),
+      1,
+    )
 
     expect(withEquation.height - plain.height).toBe(TOPIC_EQUATION_BLOCK)
     expect(withEquation.width).toBeGreaterThanOrEqual(TOPIC_EQUATION_MIN_WIDTH)
@@ -140,4 +199,79 @@ describe('estimateNodeSize 字号覆盖缩放', () => {
     expect(large.width).toBe(200)
     expect(large.height).toBeGreaterThan(small.height)
   })
+})
+
+/**
+ * 全部骨架（不只是思维导图）都必须给富内容预留高度。
+ *
+ * ## 为什么要有这一层
+ *
+ * 双实现对照只能证明"两处一致"；而"分配高度装不装得下内容"是**另一个**问题 ——
+ * 三端渲染器都无条件按 `TOPIC_IMAGE_TITLE_OFFSET` / `TOPIC_EQUATION_TITLE_OFFSET`
+ * 把内容往下画，所以只要布局少给一块，内容就会跑到节点形状外面。
+ *
+ * 这条此前没人看：`layouts/layout-utils` 服务鱼骨 / 气泡 / 时间轴 / 组织架构 / 矩阵，
+ * 却长期没给图片预留 —— 实测布局给 41px，三端要 137px。
+ * 现在把它固化成"每种骨架 × 每种富内容组合"的断言。
+ */
+describe('每种骨架都为富内容预留高度', () => {
+  const CHART_TYPES: ChartType[] = [
+    'mindmap',
+    'fishbone',
+    'bubble',
+    'timeline',
+    'org',
+    'matrix',
+    'treetable',
+  ]
+
+  function buildRoot(patch: Partial<TopicSnapshot>): TopicSnapshot {
+    return makeTopic({
+      id: 'root',
+      text: '中心主题',
+      children: [
+        makeTopic({ id: 'annotated', text: '带富内容的主题', ...patch }),
+        makeTopic({ id: 'control', text: '对照主题' }),
+      ],
+    })
+  }
+
+  function heightOf(root: TopicSnapshot, chartType: ChartType, id: string): number | null {
+    const layout = computeLayout(root, chartType)
+    return layout.nodes.find((node) => node.id === id)?.height ?? null
+  }
+
+  const CASES: Array<{ label: string; patch: Partial<TopicSnapshot>; extra: number }> = [
+    { label: '图片', patch: { image: { assetId: 'asset_1' } }, extra: TOPIC_IMAGE_BLOCK },
+    {
+      label: '方程',
+      patch: { equation: { latex: 'a^2+b^2=c^2' } },
+      extra: TOPIC_EQUATION_BLOCK,
+    },
+    {
+      label: '图片 + 方程',
+      patch: { image: { assetId: 'asset_1' }, equation: { latex: 'x' } },
+      extra: TOPIC_IMAGE_BLOCK + TOPIC_EQUATION_BLOCK,
+    },
+  ]
+
+  for (const chartType of CHART_TYPES) {
+    for (const testCase of CASES) {
+      it(`${chartType} · ${testCase.label}：分配高度多出 ${testCase.extra}px，且不影响其它节点`, () => {
+        const plain = buildRoot({})
+        const withRich = buildRoot(testCase.patch)
+
+        const before = heightOf(plain, chartType, 'annotated')
+        const after = heightOf(withRich, chartType, 'annotated')
+        expect(before, `${chartType} 里找不到 annotated 节点`).not.toBeNull()
+        expect(after).not.toBeNull()
+        expect(after! - before!).toBeCloseTo(testCase.extra, 5)
+
+        // 对照节点不受影响（改动没有波及整幅图的节点尺寸）
+        expect(heightOf(withRich, chartType, 'control')).toBe(
+          heightOf(plain, chartType, 'control'),
+        )
+      })
+    }
+  }
 })

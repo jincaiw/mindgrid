@@ -9,6 +9,9 @@
  * 注意：阴影与抗锯齿天然会有少量残余，重点看图标与标签胶囊。
  */
 
+import { resolveCanvasSettings } from '../src/lib/document/canvas-settings'
+import { NEW_DOCUMENT_THEME_ID } from '../src/lib/document/themes/built-in-themes'
+import { resolveEffectiveTheme } from '../src/features/canvas/runtime/effective-theme'
 import { computeMindMapLayout } from '../src/features/canvas/mindmap-layout'
 import {
   computeTopicImageFittedRect,
@@ -155,8 +158,17 @@ async function main() {
   const row = document.getElementById('row')!
 
   const layout = computeMindMapLayout(buildRoot())
+  // 生效主题现在是 `buildScene` 的**必填项**（v0.4.17 起节点配色与连线配色同源）。
+  // 本 harness 长期没跟：页面直接抛 `Cannot read properties of undefined (reading 'branchPalette')`，
+  // 而它不在任何门禁里 → 坏了很久没人发现（2026-09-25 修）。
+  const theme = resolveEffectiveTheme({
+    themeId: NEW_DOCUMENT_THEME_ID,
+    branchStyle: undefined,
+    canvasSettings: resolveCanvasSettings(undefined),
+  })
   const bounds = computeNodesBounds(
     buildScene({
+      theme,
       layout,
       viewport: { width: 1, height: 1 },
       camera: { x: 0, y: 0, zoom: 1 },
@@ -182,6 +194,7 @@ async function main() {
   const camera: CameraProjection = { x: -bounds.x, y: -bounds.y, zoom: 1 }
 
   const scene = buildScene({
+    theme,
     layout,
     viewport,
     camera,
