@@ -7,13 +7,16 @@
  */
 
 import type {
+  TopicAttachment,
+  TopicCallout,
   TopicLink,
   TopicMarker,
   TopicShape,
   TopicSticker,
   TopicTask,
   TopicTextTransform,
-  TopicCallout,} from '../../../lib/document/types'
+  TopicVoiceNote,
+} from '../../../lib/document/types'
 
 // ---- 图层定义（z-order 从低到高）----
 
@@ -148,6 +151,15 @@ export interface TopicRichContent {
   labels?: string[]
   /** 非空字符串表示有备注。 */
   notes?: string
+  /**
+   * 附件：节点上只呈现一个回形针图标（文件本身不参与渲染）。
+   *
+   * ⚠️ 与备注/链接一样属于 meta 行图标。此前它**没有进入这里**，
+   * 于是屏幕上有回形针、导出的 PNG / SVG 里没有（附件与语音备注曾双双缺失）。
+   */
+  attachment?: TopicAttachment
+  /** 语音备注：节点上只呈现一个话筒图标（音频本身不参与渲染）。 */
+  voiceNote?: TopicVoiceNote
   link?: TopicLink
   task?: TopicTask
 }

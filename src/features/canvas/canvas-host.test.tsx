@@ -8,6 +8,16 @@ import { resolveCanvasSettings } from '../../lib/document/canvas-settings'
 import type { DocumentSession } from '../document/use-document-session'
 import { serializeTopicsForClipboard } from './topic-system-clipboard'
 import type { TopicSnapshot } from '../../lib/document/types'
+import {
+  ATTACHMENT_ICON_SVG_INNER,
+  LINK_ICON_SVG_INNER,
+  NOTE_ICON_SVG_INNER,
+  VOICE_NOTE_ICON_SVG_INNER,
+} from './runtime/rich-content-constants'
+import {
+  TOPIC_META_ICON_ORDER,
+  type TopicMetaIconKind,
+} from './runtime/topic-meta-icons'
 
 function createSessionStub(overrides: Partial<DocumentSession> = {}): DocumentSession {
   return {
@@ -1373,6 +1383,119 @@ describe('主题语音备注指示器', () => {
     expect(indicator?.getAttribute('type')).toBe('button')
   })
 })
+
+/**
+ * meta 图标行的**跨端一致性**：屏幕上的顺序与图形必须就是导出用的那套。
+ *
+ * 这一组是本轮修的真实缺陷的验收：此前屏幕上是"便签纸 + 链条"，
+ * 导出里是"黄圆 + 蓝圆"，而附件 / 语音备注在导出里根本不存在。
+ */
+describe('meta 图标行的顺序与图形', () => {
+  const ALL_META_TOPIC_ID = 'topic_all_meta'
+
+  function makeSessionWithAllMeta() {
+    return createSessionStub({
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic: {
+              id: 'topic_root',
+              text: '中心主题',
+              collapsed: false,
+              children: [
+                {
+                  id: ALL_META_TOPIC_ID,
+                  text: '全都带上',
+                  collapsed: false,
+                  children: [],
+                  markers: [{ id: 'star' }],
+                  notes: '一段备注',
+                  attachment: { assetId: 'asset_pdf', name: '方案草案.pdf' },
+                  voiceNote: { assetId: 'asset_voice', mimeType: 'audio/webm' },
+                  link: { url: 'https://example.com' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    })
+  }
+
+  it('DOM 里的图标顺序与 TOPIC_META_ICON_ORDER 一致（与导出端同一个契约）', () => {
+    renderWithApp(<CanvasHost session={makeSessionWithAllMeta()} />)
+
+    const meta = document.querySelector(
+      `[data-topic-id="${ALL_META_TOPIC_ID}"] .mindmap-node__meta`,
+    )
+    expect(meta).not.toBeNull()
+
+    // 每一类图标的判定靠它的选择器特征；用「首个命中元素的出现次序」表达顺序
+    const ordered = TOPIC_META_ICON_ORDER.map((kind) => ({
+      kind,
+      order: Array.from(meta!.children).findIndex((child) => child.matches(META_SELECTOR[kind])),
+    }))
+
+    for (const item of ordered) {
+      expect(item.order, `DOM 里没有找到 ${item.kind} 图标`).toBeGreaterThanOrEqual(0)
+    }
+    const sorted = [...ordered]
+      .sort((a, b) => a.order - b.order)
+      .map((item) => item.kind)
+    expect(sorted).toEqual([...TOPIC_META_ICON_ORDER])
+  })
+
+  it('DOM 画的图形就是导出端用的那段字符串（同一来源，不是"看起来像"）', () => {
+    renderWithApp(<CanvasHost session={makeSessionWithAllMeta()} />)
+
+    const node = document.querySelector(`[data-topic-id="${ALL_META_TOPIC_ID}"]`)!
+    const cases: Array<[string, string]> = [
+      ['.mindmap-node__note-indicator svg', NOTE_ICON_SVG_INNER],
+      ['.mindmap-node__attachment-indicator svg', ATTACHMENT_ICON_SVG_INNER],
+      ['.mindmap-node__voice-indicator svg', VOICE_NOTE_ICON_SVG_INNER],
+      ['.mindmap-node__link-indicator svg', LINK_ICON_SVG_INNER],
+    ]
+
+    for (const [selector, expected] of cases) {
+      const svg = node.querySelector(selector)
+      expect(svg, `${selector} 没渲染出来`).not.toBeNull()
+      // 归一化：属性之间的空白由 HTML 序列化决定，这里只比"元素与属性"
+      const actual = normalizeSvg(svg!.innerHTML)
+      expect(actual, `${selector} 的图形与导出端常量不一致`).toBe(normalizeSvg(expected))
+    }
+  })
+})
+
+/**
+ * 归一化 SVG 片段，便于与常量逐字比较。
+ *
+ * 只抹掉"序列化方式"的差异，不动元素与属性本身：
+ *   - 属性之间/标签之间的空白
+ *   - HTML 序列化会把自闭合的空元素写成 `</path>`，常量里写的是 `/>`
+ */
+function normalizeSvg(markup: string): string {
+  return markup
+    .replace(/\s+/g, ' ')
+    .replace(/\s*\/>/g, '/>')
+    .replace(/>\s+</g, '><')
+    .replace(/>\s*<\/(path|circle|rect|polygon|line)>/g, '/>')
+    .trim()
+}
+
+/** 每一类 meta 图标在 DOM 里的判定选择器。 */
+const META_SELECTOR: Record<TopicMetaIconKind, string> = {
+  marker: '.mindmap-node__marker',
+  notes: '.mindmap-node__note-indicator',
+  attachment: '.mindmap-node__attachment-indicator',
+  voiceNote: '.mindmap-node__voice-indicator',
+  link: '.mindmap-node__link-indicator',
+}
 
 /**
  * 节点贴纸：渲染、拖动提交、以及"没挪动就不写文档"。

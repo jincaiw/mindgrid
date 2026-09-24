@@ -62,10 +62,9 @@ import {
   illustrationScale,
 } from './canvas-illustration-constants'
 import { findIllustrationDefinition } from '../illustration-definitions'
-import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
+import { taskStatusToSvgInner } from '../markers'
+import { buildTopicMetaIcons } from './topic-meta-icons'
 import {
-  LINK_ICON_SVG_INNER,
-  NOTE_ICON_SVG_INNER,
   RICH_ICON_SIZE,
   RICH_LABEL_BACKGROUND,
   RICH_LABEL_FONT_SIZE,
@@ -832,23 +831,16 @@ function drawRichContent(ctx: CanvasRenderingContext2D, node: TopicRenderNode, f
     )
   }
 
-  // meta 图标行：节点右侧（markers + 备注 + 链接），垂直居中
-  const metaIcons: string[] = []
-  for (const marker of rich.markers ?? []) {
-    metaIcons.push(markerToSvgInner(marker))
-  }
-  if (rich.notes && rich.notes.length > 0) {
-    metaIcons.push(NOTE_ICON_SVG_INNER)
-  }
-  if (rich.link) {
-    metaIcons.push(LINK_ICON_SVG_INNER)
-  }
+  // meta 图标行：节点右侧（标记 / 备注 / 附件 / 语音备注 / 链接），垂直居中。
+  // 图标种类与顺序由 `buildTopicMetaIcons` 统一给出 —— 与 SVG 端调同一个函数，
+  // 两端不再各写一份"哪几类要画"的列表（附件与语音备注曾双双漏掉）。
+  const metaIcons = buildTopicMetaIcons(rich)
 
   if (metaIcons.length > 0) {
     let cursorX = bounds.x + bounds.width + RICH_META_OFFSET
     const cursorY = bounds.y + bounds.height / 2 - RICH_ICON_SIZE / 2
     for (const icon of metaIcons) {
-      drawSvgInner(ctx, icon, cursorX, cursorY, RICH_ICON_SIZE, fontFamily)
+      drawSvgInner(ctx, icon.inner, cursorX, cursorY, RICH_ICON_SIZE, fontFamily)
       cursorX += RICH_ICON_SIZE + RICH_META_GAP
     }
   }

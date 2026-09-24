@@ -468,6 +468,11 @@ function topicToRenderNode(
     topic.callout ||
     (topic.labels && topic.labels.length > 0) ||
     (topic.notes && topic.notes.length > 0) ||
+    // ⚠️ 附件与语音备注也必须算进来（与贴纸/标注/方程同一条教训）：
+    // 它们是节点 meta 行上的回形针 / 话筒图标，漏掉这里就是
+    // "屏幕上有、导出的 PNG / SVG 里没有" —— 实测这两项此前确实双双缺失。
+    topic.attachment ||
+    topic.voiceNote ||
     topic.link ||
     topic.task ||
     // ⚠️ 方程必须算进来：这个布尔量决定 rich 是否生成，漏掉它会让"只有方程的主题"
@@ -481,6 +486,8 @@ function topicToRenderNode(
         callout: topic.callout,
         labels: topic.labels?.slice(),
         notes: topic.notes,
+        attachment: topic.attachment,
+        voiceNote: topic.voiceNote,
         link: topic.link,
         task: topic.task,
         image: imageUrl,

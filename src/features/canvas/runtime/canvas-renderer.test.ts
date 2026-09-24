@@ -555,15 +555,17 @@ describe('renderScene — 富内容（task / markers / notes / link / labels）'
     )
     expect(markerTexts.length).toBeGreaterThan(0)
 
-    // 备注图标（#f6be00）与链接图标（#5b8cff）应各出现一次填充
+    // 备注图标（便签纸：#f6be00 **填充**）与链接图标（链条：#5b8cff **描边**）。
+    // 链接此前是"蓝色实心圆"，改成链条后填充没了 —— 判据必须跟着图形走，
+    // 否则守的是图形本身而不是"有没有画"。
     const noteFills = calls.filter(
       (c) => c.method === 'fillStyle' && c.args[0] === '#f6be00',
     )
-    const linkFills = calls.filter(
-      (c) => c.method === 'fillStyle' && c.args[0] === '#5b8cff',
+    const linkStrokes = calls.filter(
+      (c) => c.method === 'strokeStyle' && c.args[0] === '#5b8cff',
     )
     expect(noteFills.length).toBeGreaterThan(0)
-    expect(linkFills.length).toBeGreaterThan(0)
+    expect(linkStrokes.length).toBeGreaterThan(0)
   })
 
   it('omits rich content when the topic has none', () => {
@@ -597,6 +599,138 @@ describe('renderScene — 富内容（task / markers / notes / link / labels）'
     const lastBaseline = calls.filter((c) => c.method === 'textBaseline').pop()
     expect(lastAlign?.args[0]).toBe('left')
     expect(lastBaseline?.args[0]).toBe('top')
+  })
+})
+
+/**
+ * meta 行图标（PNG 端）：附件回形针与语音备注话筒。
+ *
+ * 这两个此前**根本没进 `rich`**，PNG 里自然也没有。它们都是描边/填充路径，
+ * 用"只带这一个来源"的主题来测，颜色就成了有鉴别力的判据：
+ *   - 回形针是 `stroke: #f6be00`（便签图标用的是同色的 **fill**，两者可区分）
+ *   - 话筒囊体是 `fill: #e5484d`（priority 标记同色，故此处不放标记）
+ */
+describe('renderScene — 附件 / 语音备注图标', () => {
+  function sceneWith(child: TopicSnapshot) {
+    const layout = computeMindMapLayout(makeTopic('root', '中心', [child]))
+    return buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      theme: TEST_THEME,
+      enableCulling: false,
+    })
+  }
+
+  function boundsOfChild(scene: ReturnType<typeof sceneWith>) {
+    const node = scene.nodes.find(
+      (n): n is Extract<typeof n, { type: 'topic' }> => n.type === 'topic' && n.id === 'child',
+    )
+    if (!node) throw new Error('场景里找不到 child')
+    return node.bounds
+  }
+
+  it('只带附件的主题：节点右侧画出描边的回形针', () => {
+    const { ctx, calls } = createMockCtx()
+    const scene = sceneWith({
+      id: 'child',
+      text: '带附件',
+      collapsed: false,
+      children: [],
+      attachment: { assetId: 'asset_pdf', name: '方案草案.pdf' },
+    })
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const bounds = boundsOfChild(scene)
+    const rightEdge = bounds.x + bounds.width
+    const attachmentStrokes = calls.filter(
+      (c) => c.method === 'strokeStyle' && c.args[0] === '#f6be00',
+    )
+    expect(attachmentStrokes.length, 'PNG 里没有画出附件回形针').toBeGreaterThan(0)
+    // 描边确实发生在节点右侧的 meta 行区域（不能只是别处恰好用了同色）
+    const strokesRightOfNode = calls.filter(
+      (c) => c.method === 'lineTo' && (c.args[0] as number) > rightEdge,
+    )
+    expect(strokesRightOfNode.length).toBeGreaterThan(0)
+    // 负向对照：没有备注，就不该出现"填充的黄色圆/便签"
+    expect(calls.some((c) => c.method === 'fillStyle' && c.args[0] === '#f6be00')).toBe(false)
+  })
+
+  it('只带语音备注的主题：话筒囊体画成上下两个 r=1.6 的半圆，且方向朝外', () => {
+    const { ctx, calls } = createMockCtx()
+    const scene = sceneWith({
+      id: 'child',
+      text: '带语音',
+      collapsed: false,
+      children: [],
+      voiceNote: { assetId: 'asset_voice', mimeType: 'audio/webm', durationMs: 3200 },
+    })
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const bounds = boundsOfChild(scene)
+    const nodeCenterY = bounds.y + bounds.height / 2
+    expect(calls.some((c) => c.method === 'fillStyle' && c.args[0] === '#e5484d')).toBe(true)
+
+    // 囊体由两段 r=1.6 的半圆组成：把每段按参数采样，看它们真正覆盖到的 y 范围。
+    // viewBox 里囊体是 y 1.6→8.0、图标上沿在 nodeCenterY-7 → 世界坐标 -5.4 → +1.0。
+    // 若 sweep 方向写反，两段弧会向**内**鼓，永远够不到这两个极值。
+    const capsuleArcs = calls.filter(
+      (c) => c.method === 'arc' && Math.abs((c.args[2] as number) - 1.6) < 1e-6,
+    )
+    expect(capsuleArcs.length, '话筒囊体没画出来（是不是又用回了 <rect>？）').toBe(2)
+
+    let minY = Number.POSITIVE_INFINITY
+    let maxY = Number.NEGATIVE_INFINITY
+    const centers = capsuleArcs.map((arc) => {
+      const [cx, cy, r, start, end] = arc.args as number[]
+      // `drawArcSegment` 传给 ctx.arc 的 `end` 已经带上方向（ccw 时 end < start），
+      // 所以采样就是 start → end 的线性插值；再按 ccw 反向插值会把方向绕回来。
+      for (let step = 0; step <= 64; step += 1) {
+        const theta = start + ((end - start) * step) / 64
+        const y = cy + r * Math.sin(theta)
+        minY = Math.min(minY, y)
+        maxY = Math.max(maxY, y)
+      }
+      return { cx, cy }
+    })
+
+    // 两段半圆的圆心必须在同一条竖中轴上，纵向相距正好 3.2（viewBox 6.4 - 3.2）
+    expect(centers[0].cx).toBeCloseTo(centers[1].cx, 6)
+    expect(Math.abs(centers[0].cy - centers[1].cy)).toBeCloseTo(3.2, 6)
+    // 采样后的极值必须落在囊体真正的上下沿
+    expect(minY).toBeCloseTo(nodeCenterY - 5.4, 4)
+    expect(maxY).toBeCloseTo(nodeCenterY + 1.0, 4)
+  })
+
+  /**
+   * `people` 标记的"身体"是一条用**紧凑 flag 写法**写的半圆：
+   * `M1.5 11.5a3.5 3.5 0 017 0z`（= 0 0 1 7 0）。
+   *
+   * 回归：旧分词器把 `017` 读成数字 17，这条弧只剩 5 个参数、不足 7 个，
+   * `buildPath` 整个跳过 —— PNG 里这个小人的身体是空的，而 SVG 与屏幕都正常。
+   */
+  it('people 标记的圆弧被真的画出来（紧凑 flag 写法的回归）', () => {
+    const { ctx, calls } = createMockCtx()
+    const scene = sceneWith({
+      id: 'child',
+      text: '带小人标记',
+      collapsed: false,
+      children: [],
+      markers: [{ id: 'people' }],
+    })
+    renderScene(ctx, scene, defaultViewport, defaultCamera, 1)
+
+    const bounds = boundsOfChild(scene)
+    const nodeCenterY = bounds.y + bounds.height / 2
+    const iconY = nodeCenterY - 7 // RICH_ICON_SIZE / 2
+    // 身体弧的圆心在 viewBox (5, 11.5)、r = 3.5
+    const bodyArcs = calls.filter(
+      (c) => c.method === 'arc' && Math.abs((c.args[2] as number) - 3.5) < 1e-6,
+    )
+    expect(bodyArcs, 'people 标记的身体弧在 PNG 里被丢掉了').toHaveLength(1)
+    expect(bodyArcs[0].args[1] as number).toBeCloseTo(iconY + 11.5, 6)
   })
 })
 

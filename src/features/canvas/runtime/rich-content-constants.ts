@@ -55,13 +55,56 @@ export const RICH_LABEL_BACKGROUND = 'rgba(91,140,255,0.12)'
 /** 标签文字颜色（DOM `.mindmap-node__label` color）。 */
 export const RICH_LABEL_TEXT_COLOR = '#3b5bdb'
 
-/** 备注指示图标（14×14 viewBox 内部元素），与 DOM 的 `NoteGlyph` 对齐。 */
-export const NOTE_ICON_SVG_INNER =
-  '<circle cx="7" cy="7" r="6" fill="#f6be00"/><path d="M4 6h6M4 8h6M4 10h4" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round"/>'
+/**
+ * meta 行图标的**唯一来源**（14×14 viewBox 内部元素）。
+ *
+ * ## 这四个常量为什么必须同时被 DOM 与导出端渲染
+ *
+ * 它们原先只是"导出端的副本"，DOM 侧另有四个手写的 JSX 组件（`NoteGlyph` /
+ * `LinkGlyph` / `AttachmentGlyph` / `VoiceNoteGlyph`），靠注释里一句"与 DOM 对齐"
+ * 维持。实测结果是四组里**两组图形根本不是同一个东西、两组导出里完全没有**：
+ *   - 备注：DOM 是黄色便签纸（折角 + 三行字），导出的却是"黄圆 + 白线"
+ *   - 链接：DOM 是蓝色链条，导出的却是"蓝圆 + 白箭头"
+ *   - 附件、语音备注：导出端连字段都没接进去，图标整个不存在
+ * 都在屏幕上看不出来，只有把导出图放大对照才发现。
+ *
+ * 现在的约定是**结构性**的：DOM 的四个 Glyph 组件用 `dangerouslySetInnerHTML`
+ * 渲染这四个常量（见 `canvas-host.tsx`），导出端直接用同样的字符串。
+ * `topic-meta-icons.test.ts` 会读 `canvas-host.tsx` 的源码，断言组件里不再出现
+ * 内联的 `d="…"` —— 想再写第二份图形会被守卫拦住。
+ *
+ * ⚠️ 写新图标时：`svg-inner-canvas` 只支持 `<circle>` / `<path>` / `<text>`，
+ * 用别的元素（例如 `<rect>`）会被**静默跳过**，PNG 里少一块且不报错。
+ * `topic-meta-icons.test.ts` 里有一条"每个元素都必须被解析出来"的守卫。
+ */
 
-/** 链接指示图标（14×14 viewBox 内部元素），与 DOM 的 `LinkGlyph` 对齐。 */
+/** 备注指示图标：黄色便签纸 + 折角 + 三行字（与 DOM 屏幕表现一致）。 */
+export const NOTE_ICON_SVG_INNER =
+  '<path d="M2.5 1.5h6l3 3v8h-9z" fill="#f6be00" fill-opacity="0.18" stroke="#f6be00" stroke-width="1" stroke-linejoin="round"/>' +
+  '<path d="M8.5 1.5v3h3" fill="none" stroke="#f6be00" stroke-width="1" stroke-linejoin="round"/>' +
+  '<path d="M4 6.5h5M4 8.5h5M4 10.5h3" fill="none" stroke="rgba(180,83,9,0.5)" stroke-width="0.8" stroke-linecap="round"/>'
+
+/** 链接指示图标：蓝色链条（与 DOM 屏幕表现一致）。 */
 export const LINK_ICON_SVG_INNER =
-  '<circle cx="7" cy="7" r="6" fill="#5b8cff"/><path d="M4.5 9.5L9 5M9 5H6M9 5v3" fill="none" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
+  '<path d="M5.5 8.5l3-3M5 6a2.5 2.5 0 0 0 -3 0l-.5.5a2.5 2.5 0 0 0 3.5 3.5L6 9M9 8a2.5 2.5 0 0 0 3 0l.5-.5a2.5 2.5 0 0 0 -3.5 -3.5L8 5" fill="none" stroke="#5b8cff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
+
+/** 附件指示图标：黄色回形针。 */
+export const ATTACHMENT_ICON_SVG_INNER =
+  '<path d="M9.5 4.5l-4 4a2 2 0 0 0 2.8 2.8l4.2-4.2a3.5 3.5 0 0 0 -5 -5L3.2 6.4a5 5 0 0 0 7 7l1.6-1.6" fill="none" stroke="#f6be00" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>'
+
+/**
+ * 语音备注指示图标：红色话筒（囊体 + 拾音弧 + 支脚）。
+ *
+ * ⚠️ 话筒的囊体**用 path 表达而不是 `<rect rx>`**：DOM 原来写的是 `<rect>`，
+ * 而 `svg-inner-canvas` 不支持 `<rect>`（静默跳过），照抄到导出端会只剩弧和支脚。
+ * DOM 侧现在也从这一个常量渲染，所以两边是同一个形状。
+ */
+export const VOICE_NOTE_ICON_SVG_INNER =
+  // 囊体 = 圆角矩形（x 5.4→8.6、y 1.6→8.0、rx 1.6）用两段半圆 + 两条直边表达；
+  // sweep 取 0（counter-clockwise）才会分别从**下方**与**上方**绕过去。
+  '<path d="M5.4 3.2L5.4 6.4A1.6 1.6 0 0 0 8.6 6.4L8.6 3.2A1.6 1.6 0 0 0 5.4 3.2Z" fill="#e5484d"/>' +
+  '<path d="M3.2 6.6a3.8 3.8 0 0 0 7.6 0" fill="none" stroke="#e5484d" stroke-width="1.2" stroke-linecap="round"/>' +
+  '<path d="M7 10.4v2" fill="none" stroke="#e5484d" stroke-width="1.2" stroke-linecap="round"/>'
 
 /**
  * 富内容在**节点高度**上占用的固定块 —— 图片与方程各一块。

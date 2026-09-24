@@ -46,10 +46,20 @@ await page.waitForFunction(
 const status = await page.locator('#status').textContent()
 console.log(status)
 
+/**
+ * 页面里的 `✅/❌` 就是判据本身 —— 只打印不算数。
+ *
+ * 这条是补上的：脚本此前无论如何都退出 0，"跑过"和"通过"分不开，
+ * 而这类页面的故障恰恰都是静默的（少画一块、几何偏一点，都不抛异常）。
+ */
+const failedLines = status.split('\n').filter((line) => line.includes('❌'))
+
 // 顺带存一张并排对照图（Canvas / SVG / 差值三格），便于人工扫一眼
 await page.screenshot({ path: 'outputs/native/parity/export-parity.png', fullPage: true })
 console.log('\nsaved outputs/native/parity/export-parity.png')
 console.log('\nconsole 错误数 =', consoleErrors.length, consoleErrors.slice(0, 3))
 console.log('失败请求 =', failedRequests)
+console.log('对账失败行数 =', failedLines.length, failedLines.map((line) => line.trim()).slice(0, 4))
 
 await browser.close()
+process.exitCode = failedLines.length === 0 && consoleErrors.length === 0 ? 0 : 1

@@ -5,6 +5,7 @@ import { buildScene, type InteractionOverlays, type TopicVisualStates } from './
 import type { TopicRenderNode } from './render-tree'
 import { renderSceneToSvg } from './svg-renderer'
 import { resolveEffectiveTheme } from './effective-theme'
+import { RICH_ICON_SIZE, RICH_META_GAP } from './rich-content-constants'
 
 /**
  * `buildScene` 现在要求显式传"**生效主题**"（画布级分支色板已叠加）。
@@ -247,7 +248,7 @@ describe('renderSceneToSvg', () => {
     expect(w2).toBeGreaterThan(w1)
   })
 
-  it('renders rich content (markers/labels/notes/link/task) on topic nodes', () => {
+  it('renders rich content (markers/labels/notes/attachment/voice/link/task) on topic nodes', () => {
     const root = makeTopic('root', '中心', [
       {
         id: 'rich_child',
@@ -257,6 +258,8 @@ describe('renderSceneToSvg', () => {
         markers: [{ id: 'priority-1' }, { id: 'star' }],
         labels: ['重要', '待办'],
         notes: '这是一段备注',
+        attachment: { assetId: 'asset_pdf', name: '方案草案.pdf', byteSize: 2048 },
+        voiceNote: { assetId: 'asset_voice', mimeType: 'audio/webm', durationMs: 3200 },
         link: { url: 'https://example.com', title: '示例' },
         task: { status: 'started', priority: 2 },
       },
@@ -273,20 +276,64 @@ describe('renderSceneToSvg', () => {
     })
     const svg = renderSceneToSvg(scene)
 
-    // 优先级 marker：红色圆 + 数字 1
     expect(svg).toContain('aria-label="任务状态 started"')
-    // priority-1 渲染为 fill 颜色 #e5484d 的圆
-    expect(svg).toContain('fill="#e5484d"')
-    // star marker 渲染为 fill #f6be00 的 path
-    expect(svg).toContain('fill="#f6be00"')
-    // 便签图标：黄色圆 fill="#f6be00" + 横线 path
-    expect(svg).toContain('aria-label="任务状态 started"')
-    // 链接图标：蓝色圆 fill="#5b8cff"
-    // 标签胶囊：rgba(91,140,255,0.12) 背景的 rect
+    // 逐类用**图形独有的片段**判别。原先这里靠 `fill="#f6be00"` / `fill="#5b8cff"`
+    // 这种颜色串，而 star 标记与便签同色、任务环与链条同色 —— 判据没有鉴别力，
+    // "画错图形"（黄圆 vs 便签纸）根本测不出来。
+    expect(svg, 'star 标记').toContain('M7 1l1.8 3.7 4.1.6')
+    expect(svg, '备注图标应为便签纸').toContain('M2.5 1.5h6l3 3v8h-9z')
+    expect(svg, '附件图标（回形针）在导出里缺失').toContain('M9.5 4.5l-4 4a2 2 0 0 0 2.8 2.8')
+    expect(svg, '语音备注图标（话筒）在导出里缺失').toContain('M5.4 3.2L5.4 6.4')
+    expect(svg, '链接图标应为链条').toContain('M5.5 8.5l3-3')
+    // 标签胶囊背景 + 文字
     expect(svg).toContain('fill="rgba(91,140,255,0.12)"')
-    // 标签文字（XML 转义后）
     expect(svg).toContain('重要')
     expect(svg).toContain('待办')
+  })
+
+  it('meta 图标按约定顺序排列，间距等于 RICH_ICON_SIZE + RICH_META_GAP', () => {
+    const root = makeTopic('root', '中心', [
+      {
+        id: 'rich_child',
+        text: '富内容节点',
+        collapsed: false,
+        children: [],
+        notes: '备注',
+        attachment: { assetId: 'asset_pdf', name: '方案草案.pdf' },
+        voiceNote: { assetId: 'asset_voice', mimeType: 'audio/webm' },
+        link: { url: 'https://example.com' },
+      },
+    ])
+    const svg = renderSceneToSvg(
+      buildScene({
+        layout: computeMindMapLayout(root),
+        viewport: { width: 800, height: 600 },
+        camera: { x: 0, y: 0, zoom: 1 },
+        visualStates: emptyVisualStates,
+        overlays: emptyOverlays,
+        theme: TEST_THEME,
+        enableCulling: false,
+      }),
+    )
+
+    // meta 图标是 `<g transform="translate(x y)">图形</g>`；用图形片段认领各自的 x。
+    const groupRe = /<g transform="translate\(([\d.-]+) [\d.-]+\)">(.*?)<\/g>/g
+    const found: Array<{ x: number; kind: string }> = []
+    for (const match of svg.matchAll(groupRe)) {
+      const x = Number(match[1])
+      const inner = match[2]
+      if (inner.includes('M2.5 1.5h6l3 3v8h-9z')) found.push({ x, kind: 'notes' })
+      else if (inner.includes('M9.5 4.5l-4 4a2 2 0 0 0 2.8 2.8')) found.push({ x, kind: 'attachment' })
+      else if (inner.includes('M5.4 3.2L5.4 6.4')) found.push({ x, kind: 'voiceNote' })
+      else if (inner.includes('M5.5 8.5l3-3')) found.push({ x, kind: 'link' })
+    }
+
+    found.sort((a, b) => a.x - b.x)
+    expect(found.map((item) => item.kind)).toEqual(['notes', 'attachment', 'voiceNote', 'link'])
+    // 相邻间距固定（14 + 4）——顺序或计数错了这一步会先崩
+    for (let i = 1; i < found.length; i += 1) {
+      expect(found[i].x - found[i - 1].x).toBeCloseTo(RICH_ICON_SIZE + RICH_META_GAP, 5)
+    }
   })
 
   it('centers the label row including the +N overflow pill (>3 labels)', () => {

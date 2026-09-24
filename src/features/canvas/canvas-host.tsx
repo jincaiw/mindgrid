@@ -39,6 +39,12 @@ import {
 } from './runtime/topic-callout-constants'
 import { wrapText } from './runtime/style-constants'
 import {
+  ATTACHMENT_ICON_SVG_INNER,
+  LINK_ICON_SVG_INNER,
+  NOTE_ICON_SVG_INNER,
+  VOICE_NOTE_ICON_SVG_INNER,
+} from './runtime/rich-content-constants'
+import {
   FOCUS_BRANCH_UNAVAILABLE_MESSAGE,
   resolveBranchFocusTarget,
   resolveFocusVisibleTopicIds,
@@ -2019,15 +2025,9 @@ function TaskStatusIcon({ status, priority }: { status: string; priority?: numbe
 
 const PRIORITY_DOT_COLORS = ['#e5484d', '#ff8b3d', '#f6be00', '#4cb050', '#0ea5e9', '#5b8cff', '#9b6bff']
 
-/** 备注指示图标（便签纸样式）。 */
+/** 备注指示图标（便签纸样式）。图形来自 rich-content-constants，见 MetaGlyph 注释。 */
 function NoteGlyph() {
-  return (
-    <svg className="note-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <path d="M2.5 1.5h6l3 3v8h-9z" fill="#f6be00" fillOpacity="0.18" stroke="#f6be00" strokeWidth="1" strokeLinejoin="round" />
-      <path d="M8.5 1.5v3h3" fill="none" stroke="#f6be00" strokeWidth="1" strokeLinejoin="round" />
-      <path d="M4 6.5h5M4 8.5h5M4 10.5h3" stroke="rgba(180,83,9,0.5)" strokeWidth="0.8" strokeLinecap="round" />
-    </svg>
-  )
+  return <MetaGlyph className="note-icon" inner={NOTE_ICON_SVG_INNER} />
 }
 
 /** 链接指示图标。 */
@@ -2054,58 +2054,52 @@ function calloutStrokeColor(style: { borderColor: string; textColor: string }): 
   return style.borderColor === 'transparent' ? style.textColor : style.borderColor
 }
 
-function AttachmentGlyph() {
-  // 回形针：XMind 用同一个隐喻表示"这个主题带了附件"
-  return (
-    <svg className="attachment-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <path
-        d="M9.5 4.5l-4 4a2 2 0 002.8 2.8l4.2-4.2a3.5 3.5 0 00-5-5L3.2 6.4a5 5 0 007 7l1.6-1.6"
-        fill="none"
-        stroke="#f6be00"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-function VoiceNoteGlyph() {
-  // 话筒 + 声波：与 XMind 的语音备注同一隐喻（"这个主题里有一段录音"）
+/**
+ * meta 行图标（回形针 / 话筒 / 便签纸 / 链条）**统一从 `rich-content-constants`
+ * 的常量渲染**，不再在这里手写第二份图形。
+ *
+ * ## 这不是洁癖，是三个真实缺陷的修法
+ *
+ * 这四个组件原先各自内联 `<path d="…">`，导出端另有一份字符串常量，靠注释里
+ * 一句"与 DOM 对齐"维持。实测漂移结果：
+ *   - 备注：屏幕上是**便签纸**，导出里是**黄圆 + 白线**
+ *   - 链接：屏幕上是**链条**，导出里是**蓝圆 + 白箭头**
+ *   - 附件 / 语音备注：导出端压根没有这两类图标
+ * 全是"看着都对、并排一比就露"的静默不一致。
+ *
+ * 现在 DOM 与 PNG / SVG 用的是同一段字符串（`topic-meta-icons.ts` 里的
+ * `*_ICON_SVG_INNER`），`topic-meta-icons.test.ts` 会读本文件源码，
+ * 断言这几个组件里不再出现内联的 `d="`。
+ *
+ * 注意 `VoiceNoteGlyph` 之前用 `<rect rx>` 画话筒囊体，而导出端的
+ * `svg-inner-canvas` 不支持 `<rect>`（静默跳过）—— 现在统一成 path，两端同形。
+ */
+function MetaGlyph({ className, inner }: { className: string; inner: string }) {
   return (
     <svg
-      className="voice-note-icon"
+      className={className}
       width="14"
       height="14"
       viewBox="0 0 14 14"
       aria-hidden="true"
-    >
-      <rect x="5.4" y="1.6" width="3.2" height="6.4" rx="1.6" fill="#e5484d" />
-      <path
-        d="M3.2 6.6a3.8 3.8 0 007.6 0"
-        fill="none"
-        stroke="#e5484d"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-      />
-      <path d="M7 10.4v2" stroke="#e5484d" strokeWidth="1.2" strokeLinecap="round" />
-    </svg>
+      // 常量来自项目内部（rich-content-constants），不含任何用户输入
+      dangerouslySetInnerHTML={{ __html: inner }}
+    />
   )
 }
 
+function AttachmentGlyph() {
+  // 回形针：XMind 用同一个隐喻表示"这个主题带了附件"
+  return <MetaGlyph className="attachment-icon" inner={ATTACHMENT_ICON_SVG_INNER} />
+}
+
+function VoiceNoteGlyph() {
+  // 话筒 + 声波：与 XMind 的语音备注同一隐喻（"这个主题里有一段录音"）
+  return <MetaGlyph className="voice-note-icon" inner={VOICE_NOTE_ICON_SVG_INNER} />
+}
+
 function LinkGlyph() {
-  return (
-    <svg className="link-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <path
-        d="M5.5 8.5l3-3M5 6a2.5 2.5 0 00-3 0l-.5.5a2.5 2.5 0 003.5 3.5L6 9M9 8a2.5 2.5 0 003 0l.5-.5a2.5 2.5 0 00-3.5-3.5L8 5"
-        fill="none"
-        stroke="#5b8cff"
-        strokeWidth="1.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
+  return <MetaGlyph className="link-icon" inner={LINK_ICON_SVG_INNER} />
 }
 
 function MindMapNode({

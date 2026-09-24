@@ -100,6 +100,36 @@ describe('tokenizePath', () => {
     expect(cmds[1].args).toEqual([6, 6, 0, 1, 1, 4.51, 2.46])
   })
 
+  /**
+   * 弧线的两个 flag 在 SVG 里是**单字符** `0`/`1`，且与前后的数字之间允许没有分隔符：
+   * `a3.5 3.5 0 017 0` 就是 `0 0 1 7 0`（大弧 0 / 扫掠 1 / 终点 7,0）。
+   *
+   * 这条是回归：任何"按数字整体切分"的分词器会把 `017` 读成数字 `17`，
+   * 于是这条弧只剩 5 个参数、不足 7 个，`buildPath` 整个跳过 ——
+   * **弧线被静默丢掉**。实测后果：`people` 标记的身体、回形针的弯钩在 PNG 里缺一块，
+   * SVG 导出与屏幕却完全正常。
+   */
+  it('parses compact arc flags (flag 紧跟数字，中间没有分隔符)', () => {
+    const compact = tokenizePath('M1.5 11.5a3.5 3.5 0 017 0z')
+    expect(compact[1].op).toBe('a')
+    expect(compact[1].args).toEqual([3.5, 3.5, 0, 0, 1, 7, 0])
+
+    // 变体：`00-5-5` = 0,0,-5,-5（两个 flag 粘在一起，后面紧跟负数）
+    const negative = tokenizePath('M9.5 4.5a3.5 3.5 0 00-5-5')
+    expect(negative[1].args).toEqual([3.5, 3.5, 0, 0, 0, -5, -5])
+
+    // `007 7` = 0,0,7,7
+    const packed = tokenizePath('M7 1.5a5 5 0 007 7')
+    expect(packed[1].args).toEqual([5, 5, 0, 0, 0, 7, 7])
+  })
+
+  it('allows arc arguments to repeat without a new command letter', () => {
+    // 两段弧写成一条命令：flag 的单字符语义必须一直保持
+    const cmds = tokenizePath('a2 2 0 0110 10 2 2 0 0110 10')
+    expect(cmds).toHaveLength(1)
+    expect(cmds[0].args).toEqual([2, 2, 0, 0, 1, 10, 10, 2, 2, 0, 0, 1, 10, 10])
+  })
+
   it('returns empty array for empty or garbage input', () => {
     expect(tokenizePath('')).toEqual([])
     expect(tokenizePath('   ')).toEqual([])
@@ -199,6 +229,23 @@ describe('drawSvgInner', () => {
     expect(lines[0].args).toEqual([19, 23]) // +2,+2
     expect(lines[1].args).toEqual([22, 26]) // 再 +3,+3
     expect(calls.some((c) => c.method === 'stroke')).toBe(true)
+  })
+
+  /**
+   * 紧凑 flag 写法必须真的画出弧线（回归：旧实现整段跳过）。
+   *
+   * `people` 标记的身体就是这种写法；少了这条，PNG 里那一块是空的而没有任何报错。
+   */
+  it('actually rasterizes an arc written with compact flags', () => {
+    const { ctx, calls } = createCtx()
+    drawSvgInner(ctx, '<path d="M1.5 11.5a3.5 3.5 0 017 0z" fill="#5b8cff"/>', 0, 0)
+
+    const arcCalls = calls.filter((c) => c.method === 'arc')
+    expect(arcCalls, '紧凑 flag 的弧线整段被丢掉了').toHaveLength(1)
+    // 起点 (1.5,11.5) → 终点 (8.5,11.5)，半径 3.5 → 圆心 (5,11.5)
+    expect(arcCalls[0].args[0]).toBeCloseTo(5, 6)
+    expect(arcCalls[0].args[1]).toBeCloseTo(11.5, 6)
+    expect(arcCalls[0].args[2]).toBeCloseTo(3.5, 6)
   })
 
   it('applies fill-opacity through globalAlpha and restores it', () => {

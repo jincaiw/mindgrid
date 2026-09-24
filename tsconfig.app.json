@@ -22,8 +22,11 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  // `dev/ipc-smoke` 是真机 IPC 冒烟页面（见 dev/smoke-ipc.mjs）。
-  // 把它纳入类型检查是**故意的**：它调的就是真实命令函数，签名一变就该在这里报错，
-  // 而不是等到真机上才发现。它不会被正式包引用，所以不会进产物。
-  "include": ["src", "dev/ipc-smoke"]
+  // `dev/` 下的取证脚本全部纳入类型检查 —— 真机冒烟页（`dev/ipc-smoke`）、
+  // 导出对照台（`dev/export-parity.ts`）、方程对照台（`dev/equation-parity.ts`）。
+  // **这是故意的**：它们调的就是真实的产品函数，签名一变就该在这里报错。
+  // 代价已经付过一次：`buildScene` 的 `theme` 变成必填后，`export-parity.html`
+  // 一直抛异常，而它不在任何门禁里 —— 坏了很久没人发现（2026-09-25 才修）。
+  // 它们不会被正式包引用，所以不会进产物。
+  "include": ["src", "dev"]
 }

@@ -916,6 +916,72 @@ describe('贴纸进入富内容投影', () => {
 
 })
 
+/**
+ * 附件与语音备注进入富内容投影。
+ *
+ * 与贴纸/标注/方程同一族缺陷：它们在节点上只是 meta 行里的一个图标
+ * （回形针 / 话筒），先前**根本没进 rich**，于是屏幕上有、导出的 PNG / SVG 里没有。
+ * 这一组刻意用"只带附件"与"只带语音备注"的主题 —— 只要那个聚合布尔量漏掉字段，
+ * 图标就整个消失，而且只在"该主题没有别的富内容"时才暴露。
+ */
+describe('附件与语音备注进入富内容投影', () => {
+  function buildWithChild(child: TopicSnapshot) {
+    const layout = computeMindMapLayout(
+      makeTopic('root', 'Root', [child, makeTopic('plain', '素主题')]),
+    )
+    return buildScene({
+      layout,
+      viewport: defaultViewport,
+      camera: defaultCamera,
+      visualStates: defaultVisualStates,
+      overlays: defaultOverlays,
+      theme: TEST_THEME,
+      enableCulling: false,
+    })
+  }
+
+  function richOf(scene: ReturnType<typeof buildScene>, id: string) {
+    const node = scene.nodes.find((n) => n.type === 'topic' && n.id === id)
+    if (!node || node.type !== 'topic') throw new Error(`场景里找不到 ${id}`)
+    return node.rich
+  }
+
+  it('只带附件的主题也会生成 rich，且附件字段原样带过去', () => {
+    const attachment = { assetId: 'asset_pdf', name: '方案草案.pdf', byteSize: 2048 }
+    const scene = buildWithChild({
+      id: 'with_attachment',
+      text: '带附件',
+      collapsed: false,
+      children: [],
+      attachment,
+    })
+
+    // 负向对照：把 hasRichContent 里的 attachment 那一支删掉，这条立刻变红
+    expect(richOf(scene, 'with_attachment')?.attachment).toEqual(attachment)
+    // 没有附件的主题不该凭空多出附件
+    expect(richOf(scene, 'plain')?.attachment).toBeUndefined()
+  })
+
+  it('只带语音备注的主题也会生成 rich，且时长等信息原样带过去', () => {
+    const voiceNote = {
+      assetId: 'asset_voice',
+      mimeType: 'audio/webm',
+      byteSize: 8192,
+      durationMs: 3200,
+    }
+    const scene = buildWithChild({
+      id: 'with_voice',
+      text: '带语音',
+      collapsed: false,
+      children: [],
+      voiceNote,
+    })
+
+    expect(richOf(scene, 'with_voice')?.voiceNote).toEqual(voiceNote)
+    expect(richOf(scene, 'plain')?.voiceNote).toBeUndefined()
+  })
+})
+
   // ---- 画布级插画 ----
 
   it('把插画转成节点：中心 = 存储坐标 + layout.offset，包围盒是正方形', () => {

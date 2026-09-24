@@ -215,15 +215,25 @@ describe('estimateNodeSize 字号覆盖缩放', () => {
  * 现在把它固化成"每种骨架 × 每种富内容组合"的断言。
  */
 describe('每种骨架都为富内容预留高度', () => {
-  const CHART_TYPES: ChartType[] = [
-    'mindmap',
-    'fishbone',
-    'bubble',
-    'timeline',
-    'org',
-    'matrix',
-    'treetable',
-  ]
+  /**
+   * ⚠️ 写成 `Record<ChartType, true>` 而不是数组：新增一种骨架时 TS 会在这里报错，
+   * 逼着把新骨架纳入下面的穷举。此前这里是一串手写的字面量，**漏掉了
+   * `logic` / `tree` / `brace` 三种** —— 而"守卫覆盖度 = 作者当时想到的几种"
+   * 正是上一轮那个图片溢出缺陷的成因。
+   */
+  const CHART_TYPE_MATRIX: Record<ChartType, true> = {
+    mindmap: true,
+    logic: true,
+    tree: true,
+    org: true,
+    fishbone: true,
+    timeline: true,
+    brace: true,
+    matrix: true,
+    bubble: true,
+    treetable: true,
+  }
+  const CHART_TYPES = Object.keys(CHART_TYPE_MATRIX) as ChartType[]
 
   function buildRoot(patch: Partial<TopicSnapshot>): TopicSnapshot {
     return makeTopic({
@@ -273,5 +283,46 @@ describe('每种骨架都为富内容预留高度', () => {
         )
       })
     }
+  }
+
+  /**
+   * 附件与语音备注**刻意不参与节点尺寸**：节点上只有一个 14×14 的图标
+   * （回形针 / 话筒），画在节点右侧的 meta 行上，不占节点内部空间。
+   *
+   * 这条断言两个方向都盯住：
+   *   - 有人给它们加了高度块 → 尺寸变了，红；
+   *   - 有人"顺手"把它们从 `rich` 里摘掉（以为不影响布局）→ 由
+   *     `scene-builder.test.ts` 里那两条"只带附件/只带语音"的用例兜住。
+   * 之所以要显式写出来，是因为 `SIZE_FEATURES` 的笛卡尔积只验证"两处实现一致"，
+   * 并不表达"这两个字段**不该**影响尺寸"这个契约。
+   */
+  const SIZE_NEUTRAL_FIELDS: Array<{ label: string; patch: Partial<TopicSnapshot> }> = [
+    { label: '附件', patch: { attachment: { assetId: 'asset_pdf', name: '方案草案.pdf' } } },
+    {
+      label: '语音备注',
+      patch: { voiceNote: { assetId: 'asset_voice', mimeType: 'audio/webm', durationMs: 3200 } },
+    },
+  ]
+
+  for (const field of SIZE_NEUTRAL_FIELDS) {
+    it(`${field.label}不参与节点尺寸（不应在布局里预留高度）`, () => {
+      for (const chartType of CHART_TYPES) {
+        const plain = buildRoot({})
+        const withField = buildRoot(field.patch)
+
+        for (const id of ['annotated', 'control']) {
+          expect(
+            heightOf(withField, chartType, id),
+            `${chartType} 里 ${field.label} 改变了节点高（应保持不变）`,
+          ).toBe(heightOf(plain, chartType, id))
+        }
+        // 宽度同样不该被改动
+        for (const estimate of [estimateFromMindMap, estimateFromLayoutUtils]) {
+          expect(estimate(makeTopic({ text: '短', ...field.patch }), 1)).toEqual(
+            estimate(makeTopic({ text: '短' }), 1),
+          )
+        }
+      }
+    })
   }
 })

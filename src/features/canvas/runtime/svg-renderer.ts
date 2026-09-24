@@ -52,10 +52,9 @@ import {
 import { findIllustrationDefinition } from '../illustration-definitions'
 import { resolveThemeBackground } from './style-resolver'
 import { applyTextTransform } from './text-transform'
-import { markerToSvgInner, taskStatusToSvgInner } from '../markers'
+import { taskStatusToSvgInner } from '../markers'
+import { buildTopicMetaIcons } from './topic-meta-icons'
 import {
-  LINK_ICON_SVG_INNER,
-  NOTE_ICON_SVG_INNER,
   RICH_ICON_SIZE,
   RICH_LABEL_BACKGROUND,
   RICH_LABEL_FONT_SIZE,
@@ -467,29 +466,18 @@ function topicToSvg(
       )
     }
 
-    // meta 图标行：节点右侧（markers + note + link），垂直居中
-    const metaIcons: string[] = []
-    if (rich.markers && rich.markers.length > 0) {
-      for (const m of rich.markers) {
-        metaIcons.push(markerToSvgInner(m))
-      }
-    }
-    if (rich.notes && rich.notes.length > 0) {
-      // 便签图标：黄色圆 + 横线
-      metaIcons.push(NOTE_ICON_SVG_INNER)
-    }
-    if (rich.link) {
-      // 链接图标：蓝色圆 + ↗ 箭头
-      metaIcons.push(LINK_ICON_SVG_INNER)
-    }
+    // meta 图标行：节点右侧（标记 / 备注 / 附件 / 语音备注 / 链接），垂直居中。
+    // 图标种类与顺序来自 `buildTopicMetaIcons` —— 与 PNG 端调同一个函数，
+    // 顺序或"画哪几类"的差异在结构上不再可能（附件 / 语音备注曾整个缺失）。
+    const metaIcons = buildTopicMetaIcons(rich)
     if (metaIcons.length > 0) {
       const iconSize = RICH_ICON_SIZE
       const gap = RICH_META_GAP
       let cursorX = bounds.x + bounds.width + RICH_META_OFFSET
       const cursorY = bounds.y + bounds.height / 2 - iconSize / 2
-      for (const inner of metaIcons) {
+      for (const icon of metaIcons) {
         elements.push(
-          `  <g transform="translate(${fmt(cursorX)} ${fmt(cursorY)})">${inner}</g>`,
+          `  <g transform="translate(${fmt(cursorX)} ${fmt(cursorY)})">${icon.inner}</g>`,
         )
         cursorX += iconSize + gap
       }

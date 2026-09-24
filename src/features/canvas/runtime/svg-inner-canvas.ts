@@ -198,34 +198,88 @@ function readColor(raw: string | null): string | null {
 
 // ---- 路径 ----
 
-const PATH_NUMBER_RE = /-?(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?/g
-const PATH_TOKEN_RE = new RegExp(
-  `[MmLlHhVvCcQqAaZz]|${PATH_NUMBER_RE.source}`,
-  'g',
-)
 const IS_COMMAND_RE = /[MmLlHhVvCcQqAaZz]/
+const IS_SEPARATOR_RE = /[\s,]/
+/** SVG 数字：支持前导符号、`.5` / `4.` 两种写法与指数。粘性匹配，不使用切片。 */
+const PATH_NUMBER_RE = /[+-]?(?:\d*\.\d+|\d+\.?)(?:[eE][+-]?\d+)?/y
 
-/** 将 SVG path 的 `d` 属性按命令切分为「命令 + 参数」序列。 */
+/**
+ * 将 SVG path 的 `d` 属性按命令切分为「命令 + 参数」序列。
+ *
+ * ## 为什么不用「先整串切 token 再分组」的写法（这是一个真实缺陷的修法）
+ *
+ * SVG 规范里**弧线（A/a）的两个 flag 是单字符** `"0" | "1"`，而 flag 与相邻数字
+ * 之间允许**没有分隔符** —— `a3.5 3.5 0 017 0z` 就是 `0 0 1 7 0` 的合法紧凑写法
+ * （大弧标志 0、扫掠标志 1、终点 7,0）。任何「按数字整体切分」的分词器都会把
+ * `017` 读成一个数字 `17`，于是这条弧线只剩 5 个参数、不足 7 个，
+ * `buildPath` 里的 `while (i + arity <= args.length)` 直接不进循环 ——
+ * **整段弧线被静默丢掉**，PNG 里的图形少一块而没有任何报错。
+ *
+ * 实测：`people` 标记的身体 `M1.5 11.5a3.5 3.5 0 017 0z` 与注释里那版
+ * `M9.5 4.5l-4 4a2 2 0 002.8 2.8...`（回形针）都中招 —— 屏幕上完整、
+ * PNG 导出缺一块。所以这里改成**按位置读参数**：弧线命令的第 4、5 个参数
+ * 一定是单字符 flag，其余按数字读。
+ *
+ * 输出形状保持不变：每个显式命令字母一个条目，后续隐式重复的参数累加进同一个条目
+ * （`l1 2 3 4` → 一个 `l` 条目带 4 个参数）。
+ */
 export function tokenizePath(d: string): Array<{ op: string; args: number[] }> {
-  const tokens = d.match(PATH_TOKEN_RE)
-  if (!tokens) return []
-
   const commands: Array<{ op: string; args: number[] }> = []
+  let current: { op: string; args: number[] } | null = null
+  /** 当前弧线命令已经读到的参数序号（0..6），非弧线命令不使用。 */
+  let arcPhase = 0
   let i = 0
-  while (i < tokens.length) {
-    const op = tokens[i]
-    if (!IS_COMMAND_RE.test(op)) {
-      i += 1 // 游离数字（非法输入）跳过
+
+  while (i < d.length) {
+    while (i < d.length && IS_SEPARATOR_RE.test(d[i])) i += 1
+    if (i >= d.length) break
+
+    const ch = d[i]
+    if (IS_COMMAND_RE.test(ch)) {
+      i += 1
+      if (ch === 'Z' || ch === 'z') {
+        commands.push({ op: ch, args: [] })
+        // Z 不带参数：后续出现的数字属于"游离数字"，与旧实现一样跳过
+        current = null
+        continue
+      }
+      current = { op: ch, args: [] }
+      commands.push(current)
+      arcPhase = 0
       continue
     }
-    i += 1
-    const args: number[] = []
-    while (i < tokens.length && !IS_COMMAND_RE.test(tokens[i])) {
-      args.push(Number(tokens[i]))
+
+    // 游离数字（非法输入）：旧实现直接跳过，这里保持同样行为
+    if (!current) {
       i += 1
+      continue
     }
-    commands.push({ op, args })
+
+    const isArc = current.op === 'A' || current.op === 'a'
+    if (isArc && (arcPhase === 3 || arcPhase === 4)) {
+      if (ch !== '0' && ch !== '1') {
+        // 不是合法 flag：整条弧线参数作废，重新按七个一组计数
+        arcPhase = 0
+        i += 1
+        continue
+      }
+      current.args.push(Number(ch))
+      i += 1
+      arcPhase += 1
+      continue
+    }
+
+    PATH_NUMBER_RE.lastIndex = i
+    const match = PATH_NUMBER_RE.exec(d)
+    if (!match || match.index !== i) {
+      i += 1 // 非法字符：跳过，避免死循环
+      continue
+    }
+    current.args.push(Number(match[0]))
+    i = PATH_NUMBER_RE.lastIndex
+    if (isArc) arcPhase = (arcPhase + 1) % 7
   }
+
   return commands
 }
 

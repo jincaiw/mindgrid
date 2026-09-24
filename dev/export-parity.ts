@@ -17,7 +17,15 @@ import {
   computeTopicImageFittedRect,
   computeTopicImageRect,
 } from '../src/features/canvas/runtime/topic-image-constants'
-import { getNodePadding } from '../src/features/canvas/runtime/style-constants'
+import { FONT_FAMILY, getNodePadding } from '../src/features/canvas/runtime/style-constants'
+import { drawSvgInner } from '../src/features/canvas/runtime/svg-inner-canvas'
+import { markerToSvgInner } from '../src/features/canvas/markers'
+import {
+  ATTACHMENT_ICON_SVG_INNER,
+  LINK_ICON_SVG_INNER,
+  NOTE_ICON_SVG_INNER,
+  VOICE_NOTE_ICON_SVG_INNER,
+} from '../src/features/canvas/runtime/rich-content-constants'
 import {
   preloadTopicImages,
   preloadTopicImageSizes,
@@ -64,8 +72,25 @@ function buildRoot(): TopicSnapshot {
         markers: [{ id: 'priority-1' }, { id: 'star' }, { id: 'flag' }],
         labels: ['重要', '紧急', '待办', '归档', '第五个'],
         notes: '这是一段备注',
+        // 附件与语音备注：2026-09-25 之前它们**根本没进 rich**，
+        // 屏幕上（DOM）有回形针 / 话筒图标，PNG 与 SVG 里都没有；
+        // 「备注 / 链接」两端图形也曾经不是同一个东西（黄圆 vs 便签纸、蓝圆 vs 链条）。
+        // 放进这个对照台就是为了让"屏幕图形 == 两端导出图形"被真引擎逐像素比一次。
+        attachment: { assetId: 'parity-attachment', name: '方案草案.pdf', byteSize: 2048 },
+        voiceNote: { assetId: 'parity-voice', mimeType: 'audio/webm', durationMs: 3200 },
         link: { url: 'https://example.com', title: '示例' },
         task: { status: 'started', priority: 2 },
+      }),
+      // 单独一份：只带语音备注 / 只带附件，避免"有别的富内容所以看不出来漏没漏"
+      topic({
+        id: 'voice-only',
+        text: '只有语音备注',
+        voiceNote: { assetId: 'parity-voice-2', mimeType: 'audio/webm', durationMs: 1200 },
+      }),
+      topic({
+        id: 'attachment-only',
+        text: '只有附件',
+        attachment: { assetId: 'parity-attachment-2', name: '附件.zip', byteSize: 512 },
       }),
       topic({
         id: 'done',
@@ -293,6 +318,8 @@ async function main() {
     canvas,
     bounds,
   })
+  // ---- meta 图标栅格化对账：SVG 那一路（DOM 也是这一路）↔ Canvas 那一路（PNG 导出）----
+  lines.push(...(await measureMetaIconRasterization(row)))
   const imageNode = scene.nodes.find(
     (item): item is TopicRenderNode => item.type === 'topic' && !!item.rich?.image,
   )
@@ -316,6 +343,144 @@ async function main() {
     '',
     ...lines,
   ].join('\n')
+}
+
+/**
+ * meta 行图标（备注 / 附件 / 语音备注 / 链接 / 标记）的**栅格化对账**。
+ *
+ * ## 为什么要单独量这一组
+ *
+ * 这四类图标在项目里有两条绘制链：
+ *   - DOM 与 SVG 导出：直接把同一段 SVG 片段写进文档（浏览器负责画）
+ *   - PNG 导出：`drawSvgInner` 把这段片段解析成 Canvas 调用
+ *
+ * 第二条链**只支持 `<circle>` / `<path>` / `<text>`，其余元素静默跳过** ——
+ * 所以"同样的字符串"在两条链上可能画出不同的东西：
+ *   - 语音话筒的囊体原先写成 `<rect>` → PNG 里只剩弧和支脚（少一大块）
+ *   - 弧线用紧凑 flag 写法（`a3.5 3.5 0 017 0`）时旧分词器整段丢掉 → PNG 里缺一块
+ * 两者都不报错、单测也很难"看见"，只有把两条链的位图并排比才露出来。
+ *
+ * 判据用**墨迹像素比**（Canvas 非白像素 / SVG 非白像素）而不只是差值率：
+ * 少画一整块时，差值率也许只有几个百分点，但墨迹量会显著偏低 ——
+ * 那才是"少了一块"的直接证据。
+ */
+const ICON_RENDER_SIZE = 84 // 14 世界单位 × 6，放大到能看清
+/** 墨迹量允许的偏差（抗锯齿、路径闭合方式带来的边界差）。 */
+const INK_RATIO_TOLERANCE = 0.08
+/** 逐像素差值率上限（仅抗锯齿残余）。 */
+const ICON_DIFF_RATIO_LIMIT = 0.08
+
+async function measureMetaIconRasterization(row: HTMLElement): Promise<string[]> {
+  const icons: Array<{ name: string; inner: string; expectInk: boolean }> = [
+    { name: '备注', inner: NOTE_ICON_SVG_INNER, expectInk: true },
+    { name: '附件', inner: ATTACHMENT_ICON_SVG_INNER, expectInk: true },
+    { name: '语音备注', inner: VOICE_NOTE_ICON_SVG_INNER, expectInk: true },
+    { name: '链接', inner: LINK_ICON_SVG_INNER, expectInk: true },
+    { name: 'people 标记', inner: markerToSvgInner({ id: 'people' }), expectInk: true },
+  ]
+
+  const lines: string[] = ['', '—— meta 图标：SVG 一路 vs Canvas(PNG) 一路 ——']
+  const stage = document.createElement('div')
+  stage.className = 'stage'
+  const recap: Array<{ name: string; inkRatio: number; diffRatio: number; ok: boolean }> = []
+
+  for (const icon of icons) {
+    const size = ICON_RENDER_SIZE
+
+    // ① SVG 一路（DOM 也是这一路）
+    const svgText =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" ` +
+      `viewBox="0 0 14 14">${icon.inner}</svg>`
+    const svgCanvas = await rasterizeAtSize(svgText, size)
+
+    // ② Canvas 一路（PNG 导出）
+    const canvas = document.createElement('canvas')
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, size, size)
+    drawSvgInner(ctx, icon.inner, 0, 0, size, FONT_FAMILY)
+
+    const svgInk = countInk(svgCanvas)
+    const canvasInk = countInk(canvas)
+    const diff = countDiff(svgCanvas, canvas)
+
+    const inkRatio = svgInk === 0 ? 0 : canvasInk / svgInk
+    const diffRatio = diff / (size * size)
+    const ok =
+      (icon.expectInk ? svgInk > 0 : svgInk === 0) &&
+      Math.abs(inkRatio - 1) <= INK_RATIO_TOLERANCE &&
+      diffRatio <= ICON_DIFF_RATIO_LIMIT
+
+    recap.push({ name: icon.name, inkRatio, diffRatio, ok })
+    lines.push(
+      `${ok ? '✅' : '❌'} ${icon.name.padEnd(12, ' ')} ` +
+        `墨迹 Canvas/SVG = ${canvasInk}/${svgInk}（${(inkRatio * 100).toFixed(1)}%）` +
+        `  像素差 ${(diffRatio * 100).toFixed(2)}%`,
+    )
+
+    // 缩略图：上面 SVG、下面 Canvas，肉眼可直接对照
+    const thumb = document.createElement('figure')
+    thumb.style.margin = '0 0 6px'
+    const top = document.createElement('img')
+    top.src = svgCanvas.toDataURL('image/png')
+    top.style.width = `${size}px`
+    top.style.height = `${size}px`
+    const bottom = document.createElement('img')
+    bottom.src = canvas.toDataURL('image/png')
+    bottom.style.width = `${size}px`
+    bottom.style.height = `${size}px`
+    const caption = document.createElement('figcaption')
+    caption.textContent = `${icon.name}（上 SVG / 下 Canvas）`
+    caption.style.font = '11px/1.4 monospace'
+    thumb.append(top, bottom, caption)
+    stage.append(thumb)
+  }
+
+  row.append(cell('meta 图标两种绘制链对照', stage))
+
+  const failed = recap.filter((item) => !item.ok).length
+  lines.push(
+    failed === 0
+      ? `✅ ${recap.length} 个图标在两条绘制链上一致`
+      : `❌ ${failed}/${recap.length} 个图标两条绘制链不一致（多半是某条链静默跳过了元素）`,
+  )
+  return lines
+}
+
+/** 按 1:1 尺寸栅格化一段 SVG 字符串（白底）。 */
+async function rasterizeAtSize(svgText: string, size: number): Promise<HTMLCanvasElement> {
+  const canvas = await rasterizeSvg(svgText, size / DPR, size / DPR)
+  return canvas
+}
+
+/** 数"非白"像素（已合成白底）。 */
+function countInk(canvas: HTMLCanvasElement): number {
+  const { data } = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height)
+  let ink = 0
+  for (let i = 0; i < data.length; i += 4) {
+    if (data[i] < 245 || data[i + 1] < 245 || data[i + 2] < 245) ink += 1
+  }
+  return ink
+}
+
+/** 两路逐像素（任一通道差 > 24 记为差异）。 */
+function countDiff(a: HTMLCanvasElement, b: HTMLCanvasElement): number {
+  const da = a.getContext('2d')!.getImageData(0, 0, a.width, a.height).data
+  const db = b.getContext('2d')!.getImageData(0, 0, b.width, b.height).data
+  let diff = 0
+  const limit = Math.min(da.length, db.length)
+  for (let i = 0; i < limit; i += 4) {
+    if (
+      Math.abs(da[i] - db[i]) > 24 ||
+      Math.abs(da[i + 1] - db[i + 1]) > 24 ||
+      Math.abs(da[i + 2] - db[i + 2]) > 24
+    ) {
+      diff += 1
+    }
+  }
+  return diff
 }
 
 const round1 = (value: number) => Math.round(value * 10) / 10
