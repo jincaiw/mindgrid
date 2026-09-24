@@ -17,6 +17,12 @@ pub enum AssetKind {
     Image,
     Icon,
     Attachment,
+    /// 主题语音备注（录制的音频）。
+    ///
+    /// ⚠️ **刻意不从 MIME 推**：`from_mime_type` 里 `audio/*` 仍归 `Attachment`，
+    /// 因为"附了一个 mp3"和"录了一段语音"是两件事，落错目录会让资源区看起来莫名其妙。
+    /// 语音备注由命令层用 `register_with_kind` 显式指定 kind。
+    VoiceNote,
 }
 
 impl AssetKind {
@@ -26,6 +32,7 @@ impl AssetKind {
             AssetKind::Image => "images",
             AssetKind::Icon => "icons",
             AssetKind::Attachment => "attachments",
+            AssetKind::VoiceNote => "voice-notes",
         }
     }
 
@@ -103,7 +110,9 @@ impl AssetIndex {
 
     /// 从 MIME 类型推断扩展名（小写，不含点）。
     pub fn extension_for_mime_type(mime_type: &str) -> &'static str {
-        match mime_type {
+        // MIME 可能带参数（`audio/webm;codecs=opus`），按分号前的主体匹配
+        let base = mime_type.split(';').next().unwrap_or(mime_type).trim();
+        match base {
             "image/png" => "png",
             "image/jpeg" => "jpg",
             "image/gif" => "gif",
@@ -111,16 +120,26 @@ impl AssetIndex {
             "image/svg+xml" => "svg",
             "image/bmp" => "bmp",
             "application/pdf" => "pdf",
+            // 录音：与 `lib/document/voice-note.ts` 的 `voiceNoteFileExtension` 同一口径。
+            // 扩展名只影响资源区里的文件名与"导出后用系统播放器能不能打开"。
+            "audio/webm" => "webm",
+            "audio/mp4" | "audio/m4a" | "audio/x-m4a" => "m4a",
+            "audio/ogg" => "ogg",
+            "audio/mpeg" => "mp3",
+            "audio/wav" | "audio/x-wav" => "wav",
             _ => "bin",
         }
     }
 
-    /// 扫描文档树，收集所有被引用的 asset_id（来自 topic.image / topic.attachment）。
+    /// 扫描文档树，收集所有被引用的 asset_id
+    /// （来自 topic.image / topic.attachment / topic.voice_note）。
     /// 用于 GC 与引用计数验证。
     ///
     /// ⚠️ **浮动主题也要扫**（曾经漏过）：它们在 `rootTopic` 树之外，
     /// 漏掉的话"给浮动主题配了图"的用户在**保存**时会被 GC 把图当垃圾删掉，
     /// 而且要等下次打开文件才发现（与附件那轮踩的是同一类坑）。
+    /// ⚠️ **新增带资源的主题字段时，`collect_topic_asset_ids` 必须同步加一处**，
+    /// 漏掉就是"保存后录音消失"。
     pub fn collect_referenced_asset_ids(document: &DocumentSnapshot) -> HashSet<String> {
         let mut ids = HashSet::new();
         for sheet in &document.sheets {
@@ -176,6 +195,24 @@ impl AssetStore {
         width: Option<u32>,
         height: Option<u32>,
     ) -> String {
+        let kind = AssetKind::from_mime_type(mime_type);
+        self.register_with_kind(bytes, mime_type, kind, width, height)
+    }
+
+    /// 与 `register` 相同，但**显式指定 kind**（语音备注用它，
+    /// 因为 `audio/*` 从 MIME 推出来的默认类别是附件，见 `AssetKind::VoiceNote` 的说明）。
+    ///
+    /// ⚠️ 去重是按**内容**的：若同一份字节先以附件身份登记过，这里会复用那一条
+    /// （kind 仍是 Attachment）。资源本身照样能被正确解析（读取只认 asset_id），
+    /// 只是它在资源区里的目录不是 `voice-notes/`。这是内容寻址的固有取舍，不是缺陷。
+    pub fn register_with_kind(
+        &mut self,
+        bytes: Vec<u8>,
+        mime_type: &str,
+        kind: AssetKind,
+        width: Option<u32>,
+        height: Option<u32>,
+    ) -> String {
         let sha256 = AssetIndex::compute_sha256(&bytes);
 
         // 去重：相同内容复用已有条目
@@ -183,7 +220,6 @@ impl AssetStore {
             return existing.asset_id.clone();
         }
 
-        let kind = AssetKind::from_mime_type(mime_type);
         let extension = AssetIndex::extension_for_mime_type(mime_type);
         let asset_id = AssetIndex::build_asset_id(&sha256, extension);
         let byte_size = bytes.len() as u64;
@@ -351,6 +387,94 @@ pub fn encode_base64(bytes: &[u8]) -> String {
     encoded
 }
 
+/// Base64 字符 → 6 位值。非字母表字符（含 `=`、空白）返回 None。
+fn base64_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+/// 解码标准 Base64（容忍空白与 `=` 填充）。
+///
+/// 与 `encode_base64` 相对：录音在 WebView 里是 `Blob`，落库时统一走
+/// `data:` URL，于是 Rust 侧需要能解开它。同样不引 `base64` crate，理由见上。
+pub fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    let mut out = Vec::with_capacity(input.len() / 4 * 3);
+    let mut group: u32 = 0;
+    let mut count: usize = 0;
+
+    for byte in input.bytes() {
+        // 填充之后没有有效数据，直接收尾
+        if byte == b'=' {
+            break;
+        }
+        if byte.is_ascii_whitespace() {
+            continue;
+        }
+        let value = base64_value(byte)
+            .ok_or_else(|| format!("Base64 含有非法字符：{}", byte as char))?;
+        group = (group << 6) | value as u32;
+        count += 1;
+        if count == 4 {
+            out.push(((group >> 16) & 0xff) as u8);
+            out.push(((group >> 8) & 0xff) as u8);
+            out.push((group & 0xff) as u8);
+            group = 0;
+            count = 0;
+        }
+    }
+
+    // 尾块：2 字符 → 1 字节，3 字符 → 2 字节；1 字符不合法
+    match count {
+        0 => {}
+        2 => {
+            group <<= 12;
+            out.push(((group >> 16) & 0xff) as u8);
+        }
+        3 => {
+            group <<= 6;
+            out.push(((group >> 16) & 0xff) as u8);
+            out.push(((group >> 8) & 0xff) as u8);
+        }
+        _ => return Err("Base64 长度不合法".to_string()),
+    }
+
+    Ok(out)
+}
+
+/// 解析 `data:<mime>[;参数];base64,<payload>`，返回 (mime, 字节)。
+///
+/// 只接受 base64 形式：录音走的就是它。这里**不做 MIME 白名单**——
+/// 白名单放在命令层（语音备注只认 `audio/*`），因为"能解出字节"与
+/// "这个字节是不是我们想要的东西"是两件事。
+pub fn parse_base64_data_url(data_url: &str) -> Result<(String, Vec<u8>), String> {
+    let rest = data_url
+        .strip_prefix("data:")
+        .ok_or_else(|| "不是合法的 data URL".to_string())?;
+    let comma = rest
+        .find(',')
+        .ok_or_else(|| "data URL 缺少数据段".to_string())?;
+    let header = &rest[..comma];
+    let payload = &rest[comma + 1..];
+
+    if !header.ends_with(";base64") {
+        return Err("只支持 base64 编码的 data URL".to_string());
+    }
+    // 去掉末尾的 `;base64`；保留可能的编解码参数（如 `audio/webm;codecs=opus`）
+    let mime = header.trim_end_matches(";base64").trim();
+    if mime.is_empty() {
+        return Err("data URL 缺少 MIME 类型".to_string());
+    }
+
+    let bytes = decode_base64(payload)?;
+    Ok((mime.to_string(), bytes))
+}
+
 /// 将资源字节流编码为可直接用于 `<img src>` 的 data URL。
 /// 形如 `data:image/png;base64,iVBORw0...`。
 pub fn encode_asset_data_url(mime_type: &str, bytes: &[u8]) -> String {
@@ -369,6 +493,12 @@ fn collect_topic_asset_ids(topic: &TopicSnapshot, ids: &mut HashSet<String>) {
     if let Some(attachment) = &topic.attachment {
         if !attachment.asset_id.is_empty() {
             ids.insert(attachment.asset_id.clone());
+        }
+    }
+    // 语音备注同理：漏掉这一支 = 用户一保存，录的那段音就没了。
+    if let Some(voice_note) = &topic.voice_note {
+        if !voice_note.asset_id.is_empty() {
+            ids.insert(voice_note.asset_id.clone());
         }
     }
     for child in &topic.children {
@@ -471,6 +601,92 @@ mod tests {
     }
 
     #[test]
+    fn garbage_collect_keeps_voice_note_assets() {
+        // 语音备注是"新增持久化字段"的典型：漏掉 GC 引用扫描这一处，
+        // 用户一保存录音就没了（而且资源区里也查不到，因为是被 GC 主动清掉的）。
+        let mut store = AssetStore::default();
+        let asset_id = store.register_with_kind(
+            b"opus-bytes".to_vec(),
+            "audio/webm;codecs=opus",
+            AssetKind::VoiceNote,
+            None,
+            None,
+        );
+
+        let mut document = crate::domain::document::DocumentSnapshot::new_default();
+        document.sheets[0].root_topic.voice_note =
+            Some(crate::domain::document::TopicVoiceNote {
+                asset_id: asset_id.clone(),
+                mime_type: "audio/webm;codecs=opus".to_string(),
+                byte_size: Some(10),
+                duration_ms: Some(1200),
+            });
+
+        let ids = AssetIndex::collect_referenced_asset_ids(&document);
+        assert!(ids.contains(&asset_id));
+
+        let removed = store.garbage_collect(&document);
+        assert!(removed.is_empty(), "被语音备注引用的资源不该被回收");
+        assert_eq!(store.index.assets.len(), 1);
+    }
+
+    #[test]
+    fn voice_note_assets_land_in_their_own_subdirectory() {
+        let mut store = AssetStore::default();
+        let asset_id = store.register_with_kind(
+            b"opus-bytes".to_vec(),
+            "audio/webm",
+            AssetKind::VoiceNote,
+            None,
+            None,
+        );
+        let entry = store
+            .index
+            .assets
+            .iter()
+            .find(|e| e.asset_id == asset_id)
+            .expect("entry should exist");
+        assert_eq!(entry.kind.subdirectory(), "voice-notes");
+        // 扩展名要跟着 MIME 走：落在资源区里的文件名得能看出是什么
+        assert!(asset_id.ends_with(".webm"), "实际：{asset_id}");
+    }
+
+    #[test]
+    fn audio_attachments_still_go_to_attachments() {
+        // 刻意的分工：`audio/*` 从 MIME 推出来的默认类别仍是**附件**
+        // （"附了一个 mp3" ≠ "录了一段语音"），语音备注靠 register_with_kind 显式指定。
+        assert_eq!(AssetKind::from_mime_type("audio/mpeg"), AssetKind::Attachment);
+        assert_eq!(AssetKind::from_mime_type("audio/webm"), AssetKind::Attachment);
+    }
+
+    #[test]
+    fn base64_round_trips_and_parses_data_urls() {
+        // 录音在 WebView 里是 Blob → 统一以 data URL 落库，所以 Rust 侧必须能解开。
+        // 覆盖三种尾块长度（编码的填充分支）与带编解码参数的 MIME。
+        for probe in [&b"a"[..], &b"ab"[..], &b"abc"[..], &b"abcd"[..], &b""[..]] {
+            let encoded = encode_base64(probe);
+            let decoded = decode_base64(&encoded).expect("decode should succeed");
+            assert_eq!(decoded, probe, "往返失败：{probe:?}");
+        }
+
+        let (mime, bytes) =
+            parse_base64_data_url("data:audio/webm;codecs=opus;base64,aGVsbG8=").expect("parse");
+        assert_eq!(mime, "audio/webm;codecs=opus");
+        assert_eq!(bytes, b"hello");
+    }
+
+    #[test]
+    fn base64_and_data_url_reject_broken_input() {
+        // 坏输入要**报错**而不是解出一段垃圾：录音数据一旦错了，
+        // 用户拿到的是一个点开没声音的附件，比直接失败更难排查。
+        assert!(decode_base64("a").is_err(), "单字符不是合法尾块");
+        assert!(decode_base64("!!!!").is_err(), "非字母表字符");
+        assert!(parse_base64_data_url("audio/webm;base64,AAAA").is_err(), "缺 data: 前缀");
+        assert!(parse_base64_data_url("data:audio/webm,AAAA").is_err(), "非 base64 形式");
+        assert!(parse_base64_data_url("data:;base64,AAAA").is_err(), "缺 MIME");
+    }
+
+    #[test]
     fn garbage_collect_keeps_attachment_assets() {
         let mut store = AssetStore::default();
         let asset_id = store.register(b"pdf-bytes".to_vec(), "application/pdf", None, None);
@@ -544,6 +760,7 @@ mod tests {
                 }),
                 task: None,
                 attachment: None,
+                voice_note: None,
                 layout_hints: None,
                 structure: None,
                 extensions: None,
@@ -560,6 +777,7 @@ mod tests {
             image: None,
             task: None,
             attachment: None,
+            voice_note: None,
             layout_hints: None,
             structure: None,
             extensions: None,

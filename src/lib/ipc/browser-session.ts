@@ -927,6 +927,62 @@ export async function invokeBrowserCommand<TResult>(
     // 明确拒绝并说明，比静默什么都不做诚实
     case 'open_topic_attachment':
       throw new Error('浏览器开发态无法用系统默认应用打开附件，请使用桌面版')
+    case 'set_topic_voice_note': {
+      const topicId = String(payload.topic_id)
+      const dataUrl = String(payload.data_url ?? '')
+      const durationMs =
+        typeof payload.duration_ms === 'number' && Number.isFinite(payload.duration_ms)
+          ? Math.max(0, Math.round(payload.duration_ms))
+          : undefined
+
+      // 与 Rust 侧同一套校验：白名单只放 audio/，空数据直接拒
+      const mimeMatch = /^data:([^;,]+)[;,]/.exec(dataUrl)
+      const mimeType = mimeMatch ? mimeMatch[1] : ''
+      if (!mimeType.startsWith('audio/')) {
+        throw new Error(`不是音频数据：${mimeType || '未知类型'}`)
+      }
+      const base64Start = dataUrl.indexOf(';base64,')
+      const byteSize = base64Start >= 0 ? Math.floor((dataUrl.length - base64Start - 8) * 0.75) : 0
+      if (byteSize <= 0) {
+        throw new Error('录音数据为空')
+      }
+
+      const assetId = registerBrowserAssetDataUrl(dataUrl)
+
+      return applyMutation('编辑语音备注', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+        if (!topic) {
+          throw new Error('找不到目标主题')
+        }
+        topic.voiceNote = {
+          assetId,
+          mimeType,
+          byteSize,
+          ...(durationMs === undefined ? {} : { durationMs }),
+        }
+        return topicId
+      }) as TResult
+    }
+    case 'remove_topic_voice_note': {
+      const topicId = String(payload.topic_id)
+
+      return applyMutation('编辑语音备注', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+        if (!topic) {
+          throw new Error('找不到目标主题')
+        }
+        topic.voiceNote = undefined
+        return topicId
+      }) as TResult
+    }
     case 'apply_topic_style_to_siblings': {
       const topicId = String(payload.topic_id)
 

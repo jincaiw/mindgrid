@@ -325,6 +325,28 @@ export function openTopicAttachment(topicId: string) {
   return invokeCommand<string>('open_topic_attachment', { topic_id: topicId })
 }
 
+/**
+ * 写入主题语音备注：录音以 `data:audio/...;base64,...` 传入，
+ * 桌面端与浏览器开发态**同一个契约**（录音只有 `Blob`，没有路径可传）。
+ *
+ * `durationMs` 必须由调用方按录制时间轴给出：`MediaRecorder` 不给时长，
+ * webm 容器也常常没有可用的 duration 头，事后补不出来。
+ */
+export function setTopicVoiceNote(topicId: string, dataUrl: string, durationMs?: number) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_voice_note', {
+    topic_id: topicId,
+    data_url: dataUrl,
+    duration_ms: durationMs,
+  })
+}
+
+/** 移除主题语音备注（音频本体留给保存时的 GC 回收，撤销后仍可恢复）。 */
+export function removeTopicVoiceNote(topicId: string) {
+  return invokeCommand<DocumentSessionSnapshot>('remove_topic_voice_note', {
+    topic_id: topicId,
+  })
+}
+
 /** 读取资源内容为 data URL（形如 data:image/png;base64,...），供画布渲染使用。 */
 export function readAssetDataUrl(assetId: string) {
   return invokeCommand<string>('read_asset_data_url', { asset_id: assetId })

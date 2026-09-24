@@ -1,11 +1,11 @@
-use crate::app::assets::AssetStore;
+use crate::app::assets::{parse_base64_data_url, AssetKind, AssetStore};
 use crate::domain::document::find_topic;
 use crate::domain::document::{
     CanvasIllustration, DocumentRepairReport, DocumentSession, DocumentSessionSnapshot,
     DocumentSnapshot,
     SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker,
     TopicCallout, TopicSticker, TopicStructure, TopicStyleOverrides,
-    TopicTask,
+    TopicTask, TopicVoiceNote,
 };
 use crate::AppState;
 use std::fs;
@@ -1271,6 +1271,78 @@ pub fn remove_topic_attachment(
         .map_err(|_| "unable to acquire document state".to_string())?;
 
     guard.set_topic_attachment(&topic_id, None)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 设置主题语音备注：把录音（data URL）登记进 `assets/voice-notes/`，再写入 `topic.voice_note`。
+///
+/// 为什么入参是 **data URL** 而不是文件路径：录音在 WebView 里只有一个 `Blob`，没有路径；
+/// 而附件那条通道的浏览器降级链路本来也吃 data URL。两端共用一个契约，
+/// 省掉"桌面端写临时文件再读回来"这一圈。
+///
+/// `duration_ms` 由调用方按**录制时间轴**给出：`MediaRecorder` 不提供时长，
+/// 而 webm 边录边写常常没有可用的 duration 头（读出来是 `Infinity`），
+/// 所以时长必须在录的那一刻记下来，事后无法补。
+#[tauri::command]
+pub fn set_topic_voice_note(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    data_url: String,
+    duration_ms: Option<u64>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let (mime_type, bytes) = parse_base64_data_url(&data_url)?;
+    // 白名单放在这里而不是解析函数里：解析只管"能不能解出字节"
+    if !mime_type.starts_with("audio/") {
+        return Err(format!("不是音频数据：{mime_type}"));
+    }
+    if bytes.is_empty() {
+        return Err("录音数据为空".to_string());
+    }
+    let byte_size = bytes.len() as u64;
+
+    // 先完成资源登记再动文档，避免半途留下空引用（与附件同一条纪律）
+    let asset_id = {
+        let mut assets = state
+            .asset_store
+            .lock()
+            .map_err(|_| "unable to acquire asset store".to_string())?;
+        assets.register_with_kind(bytes, &mime_type, AssetKind::VoiceNote, None, None)
+    };
+
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_voice_note(
+        &topic_id,
+        Some(TopicVoiceNote {
+            asset_id,
+            mime_type,
+            byte_size: Some(byte_size),
+            duration_ms,
+        }),
+    )?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 移除主题语音备注（`topic.voice_note` 置空）。撤销标签为「编辑语音备注」。
+/// 资源本体由保存时的 GC 回收，不在此处删除，保证撤销后仍可恢复。
+#[tauri::command]
+pub fn remove_topic_voice_note(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    guard.set_topic_voice_note(&topic_id, None)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }

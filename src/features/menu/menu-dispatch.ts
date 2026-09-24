@@ -395,6 +395,8 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     // 附件同样落在右侧面板的「附件」小节里编辑（与其它插入项同一约定：
     // 系统文件对话框只在该面板里弹，不把对话框逻辑散到派发层）
     case 'insert.attachment':
+    // 语音备注同理：录音控件在右侧面板的「语音备注」小节里
+    case 'insert.voice-note':
     // 贴纸在右侧面板的「贴纸」小节里选（点一下就贴到选中主题上）
     case 'insert.sticker':
     // 标注在右侧面板的「标注」小节里开关与编辑（画布上直接可见的说明框）

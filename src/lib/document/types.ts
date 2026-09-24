@@ -81,6 +81,26 @@ export interface TopicAttachment {
   byteSize?: number
 }
 
+/**
+ * 主题语音备注：录制的音频随 .mgd 存进 `assets/voice-notes/`，这里只放引用与展示元数据。
+ *
+ * 与 `TopicAttachment` **同形**（都不参与节点尺寸、节点上只放一个图标），
+ * 差别只有两点：没有原始文件名（是录出来的，名字由时长决定），
+ * 以及多一个 `durationMs` 供界面显示与列表使用。
+ *
+ * ⚠️ 这是一个**新增的持久化字段**，加它时必须同时处理"卫星点"（见 skill
+ * `persisted-field-addition`）：两处克隆函数、资源 GC 的引用扫描、
+ * 跨文件合并的 asset id 重映射、界面里的聚合布尔量、序列化缺省与撤销通道。
+ * 漏掉 GC 那处 → **保存时把录音当垃圾删掉**；漏掉合并那处 → 合并后录音指向悬空资源。
+ */
+export interface TopicVoiceNote {
+  assetId: string
+  mimeType: string
+  byteSize?: number
+  /** 时长（毫秒）。录制时按实际经过时间计；缺省或非法时界面不显示时长。 */
+  durationMs?: number
+}
+
 export type TopicTaskStatus = 'none' | 'started' | 'completed' | 'pending'
 
 /** 轻量任务属性，用于在思维导图中跟踪行动项。 */
@@ -243,6 +263,7 @@ export interface TopicSnapshot {
   link?: TopicLink
   image?: TopicImage
   attachment?: TopicAttachment
+  voiceNote?: TopicVoiceNote
   task?: TopicTask
   layoutHints?: TopicLayoutHints
   /** 节点级骨架覆盖（结构 / 方向），优先于画布级 `chartType` 与 `layoutConfig.direction`。 */

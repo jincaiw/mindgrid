@@ -283,6 +283,9 @@ pub fn build_menu<R: Runtime>(
         .item(&item(handle, "insert.link", "链接")?)
         // XMind 把「附件」放在 链接 与 标记 之间；贴纸紧跟在附件之后
         .item(&item(handle, "insert.attachment", "附件…")?)
+        // 「语音备注」在 XMind 里紧跟附件（附件 → 语音备注）。这里不加省略号：
+        // 它不弹任何对话框，点了只是把右栏聚焦到该主题的录音那一节。
+        .item(&item(handle, "insert.voice-note", "语音备注")?)
         .item(&item(handle, "insert.sticker", "贴纸")?)
         .item(&item(handle, "insert.illustration", "插画")?)
         .item(&item(handle, "insert.callout", "标注")?)

@@ -95,6 +95,23 @@ pub struct TopicAttachment {
     pub byte_size: Option<u64>,
 }
 
+/// 主题语音备注：录制的音频随 .mgd 存进 `assets/voice-notes/`，这里只放引用与展示元数据。
+///
+/// 与 `TopicAttachment` **同形**（同样不参与节点尺寸，节点上只有一个话筒图标），
+/// 差别只有两点：没有原始文件名（是录出来的），以及多一个 `durationMs` 供界面显示与列表使用。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicVoiceNote {
+    pub asset_id: String,
+    /// 真实录制的 MIME（由命令层从入参带回，不用请求值猜）。
+    pub mime_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub byte_size: Option<u64>,
+    /// 时长（毫秒）。缺失时界面不显示时长。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TopicTaskStatus {
@@ -260,6 +277,8 @@ pub struct TopicSnapshot {
     pub image: Option<TopicImage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment: Option<TopicAttachment>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_note: Option<TopicVoiceNote>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<TopicTask>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1285,6 +1304,20 @@ impl DocumentSession {
         })
     }
 
+    /// 设置/移除主题语音备注。`None` 时移除。
+    ///
+    /// 音频本体由命令层先登记进资源表（`assets/voice-notes/`），这里只写引用。
+    pub fn set_topic_voice_note(
+        &mut self,
+        topic_id: &str,
+        voice_note: Option<TopicVoiceNote>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("编辑语音备注", |editor| {
+            editor.set_topic_voice_note(topic_id, voice_note)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     pub fn set_topic_notes(
         &mut self,
         topic_id: &str,
@@ -1665,6 +1698,7 @@ impl TopicSnapshot {
             link: None,
             image: None,
             attachment: None,
+            voice_note: None,
             task: None,
             layout_hints: None,
             structure: None,
@@ -1698,6 +1732,7 @@ impl SheetSnapshot {
                 link: None,
                 image: None,
                 attachment: None,
+                voice_note: None,
                 task: None,
                 layout_hints: None,
                 structure: None,
@@ -1870,6 +1905,7 @@ pub(crate) fn clone_topic_branch(topic: &TopicSnapshot) -> TopicSnapshot {
         link: topic.link.clone(),
         image: topic.image.clone(),
         attachment: topic.attachment.clone(),
+        voice_note: topic.voice_note.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
         structure: topic.structure.clone(),
@@ -1905,6 +1941,7 @@ fn clone_topic_branch_with_map(
         link: topic.link.clone(),
         image: topic.image.clone(),
         attachment: topic.attachment.clone(),
+        voice_note: topic.voice_note.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
         structure: topic.structure.clone(),
@@ -1928,7 +1965,7 @@ mod tests {
     use super::{
         apply_inverse, Boundary, CanvasIllustration, DocumentRepairReport, DocumentSession,
         DocumentSnapshot, Relationship, SummaryNode, TopicAttachment, TopicCallout, TopicSnapshot,
-        TopicSticker,
+        TopicSticker, TopicVoiceNote,
     };
 
     #[test]
@@ -2748,10 +2785,65 @@ mod tests {
             mime_type: None,
             byte_size: Some(42),
         });
+        // 语音备注是同一类"带资源引用的字段"，同样必须在克隆里保留：
+        // 漏掉就是"复制主题后录音没了"，而且资源区里那段音频也再没人引用。
+        source.voice_note = Some(TopicVoiceNote {
+            asset_id: "sha256-clone-voice.webm".to_string(),
+            mime_type: "audio/webm".to_string(),
+            byte_size: Some(2048),
+            duration_ms: Some(1500),
+        });
 
         let cloned = super::clone_topic_branch(&source);
 
         assert_eq!(cloned.attachment, source.attachment);
+        assert_eq!(cloned.voice_note, source.voice_note);
+    }
+
+    #[test]
+    fn set_topic_voice_note_round_trips_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[0]
+            .id
+            .clone();
+        let voice_note = TopicVoiceNote {
+            asset_id: "sha256-voice.webm".to_string(),
+            mime_type: "audio/webm;codecs=opus".to_string(),
+            byte_size: Some(4096),
+            duration_ms: Some(3200),
+        };
+
+        let recorded = session
+            .set_topic_voice_note(&topic_id, Some(voice_note.clone()))
+            .expect("voice note should be set");
+        assert_eq!(
+            super::find_topic(recorded.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .voice_note,
+            Some(voice_note.clone())
+        );
+        assert_eq!(recorded.next_undo_action.as_deref(), Some("编辑语音备注"));
+
+        // 一次撤销即移除录音（与附件/图片同一套富字段通道）
+        let undone = session.undo().expect("undo should succeed");
+        assert!(super::find_topic(undone.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .voice_note
+            .is_none());
+
+        // 重做再回到"已录制"
+        let redone = session.redo().expect("redo should succeed");
+        assert_eq!(
+            super::find_topic(redone.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .voice_note,
+            Some(voice_note)
+        );
     }
 
     #[test]
@@ -3073,6 +3165,7 @@ mod tests {
             image: None,
             task: None,
             attachment: None,
+            voice_note: None,
             layout_hints: None,
             structure: None,
             extensions: None,
@@ -3094,6 +3187,7 @@ mod tests {
             image: None,
             task: None,
             attachment: None,
+            voice_note: None,
             layout_hints: None,
             structure: None,
             extensions: None,

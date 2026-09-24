@@ -50,6 +50,8 @@ import {
   setTopicAttachment as setTopicAttachmentCommand,
   removeTopicAttachment as removeTopicAttachmentCommand,
   openTopicAttachment as openTopicAttachmentCommand,
+  setTopicVoiceNote as setTopicVoiceNoteCommand,
+  removeTopicVoiceNote as removeTopicVoiceNoteCommand,
   renameSheet,
   renameTopic,
   saveDocumentFile,
@@ -206,6 +208,12 @@ export interface DocumentSession extends DocumentSessionState {
   removeTopicAttachment: (topicId: string) => Promise<void>
   /** 用系统默认应用打开附件；返回已打开的文件名。 */
   openTopicAttachment: (topicId: string) => Promise<string>
+  /**
+   * 写入主题语音备注。`dataUrl` 是录制的音频（两端同一个契约：录音只有 Blob，没有路径），
+   * `durationMs` 必须按录制时间轴给出 —— MediaRecorder 不给时长，事后补不出来。
+   */
+  setTopicVoiceNote: (topicId: string, dataUrl: string, durationMs?: number) => Promise<void>
+  removeTopicVoiceNote: (topicId: string) => Promise<void>
   /** 读取资源 data URL 供画布渲染（不入历史栈）。 */
   readAssetDataUrl: (assetId: string) => Promise<string>
   setTopicLink: (topicId: string, link: TopicLink | null) => Promise<void>
@@ -1443,6 +1451,22 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicVoiceNote = useCallback(
+    async (topicId: string, dataUrl: string, durationMs?: number) => {
+      await runCommand('编辑语音备注', () =>
+        setTopicVoiceNoteCommand(topicId, dataUrl, durationMs),
+      )
+    },
+    [runCommand],
+  )
+
+  const clearTopicVoiceNote = useCallback(
+    async (topicId: string) => {
+      await runCommand('编辑语音备注', () => removeTopicVoiceNoteCommand(topicId))
+    },
+    [runCommand],
+  )
+
   // 打开附件**不改文档**：不进撤销栈、也不把文档置为"未保存"
   const launchTopicAttachment = useCallback(
     (topicId: string) => openTopicAttachmentCommand(topicId),
@@ -1807,6 +1831,8 @@ export function useDocumentSession(): DocumentSession {
       setTopicAttachment: updateTopicAttachment,
       removeTopicAttachment: clearTopicAttachment,
       openTopicAttachment: launchTopicAttachment,
+      setTopicVoiceNote: updateTopicVoiceNote,
+      removeTopicVoiceNote: clearTopicVoiceNote,
       readAssetDataUrl,
       setTopicLink: updateTopicLink,
       setTopicMarkers: updateTopicMarkers,

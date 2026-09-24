@@ -116,6 +116,8 @@ importDocxOutline: async () => {},
     moveTopicFreely: async () => {},
     setTopicsPosition: async () => {},
     setTopicAttachment: async () => {},
+    setTopicVoiceNote: async () => {},
+    removeTopicVoiceNote: async () => {},
     removeTopicAttachment: async () => {},
     openTopicAttachment: async () => '',
     setSheetLayoutDirection: async () => {},
@@ -1293,6 +1295,81 @@ describe('主题附件指示器', () => {
 
     // 负向对照：没有附件的主题不该出现回形针
     expect(plain?.querySelector('.mindmap-node__attachment-indicator')).toBeNull()
+  })
+})
+
+/**
+ * 节点语音备注图标。
+ *
+ * 与附件那一组同构：同样受"这一行富内容是否渲染"的聚合布尔量控制，
+ * 而且它还是**按钮**（点一下播放），所以额外钉住两点：
+ * ① 提示里带时长（用户不点也能看出录了多久）；
+ * ② 点击要 `stopPropagation` —— 节点本身也是按钮，不拦会被当成"选中主题"。
+ */
+describe('主题语音备注指示器', () => {
+  function makeSessionWithVoiceNote() {
+    return createSessionStub({
+      document: {
+        schemaVersion: '1.0.0',
+        documentId: 'doc_1',
+        revision: 1,
+        activeSheetId: 'sheet_1',
+        sheets: [
+          {
+            id: 'sheet_1',
+            title: '主画布',
+            rootTopic: {
+              id: 'topic_root',
+              text: '中心主题',
+              collapsed: false,
+              children: [
+                {
+                  id: 'topic_with_voice',
+                  text: '带语音',
+                  collapsed: false,
+                  children: [],
+                  // 刻意**只**给语音备注：没有标记/备注/链接/附件
+                  voiceNote: {
+                    assetId: 'asset_voice',
+                    mimeType: 'audio/webm',
+                    byteSize: 8192,
+                    durationMs: 3200,
+                  },
+                },
+                { id: 'topic_plain', text: '没有语音', collapsed: false, children: [] },
+              ],
+            },
+          },
+        ],
+      },
+    })
+  }
+
+  it('只带语音备注的主题也渲染话筒图标；没有的不渲染', () => {
+    renderWithApp(<CanvasHost session={makeSessionWithVoiceNote()} />)
+
+    const withVoice = document.querySelector('[data-topic-id="topic_with_voice"]')
+    const plain = document.querySelector('[data-topic-id="topic_plain"]')
+    const indicator = withVoice?.querySelector('.mindmap-node__voice-indicator')
+
+    expect(indicator).not.toBeNull()
+    // 时长要出现在提示里（3.2 秒 → 0:03）
+    expect(indicator?.getAttribute('title')).toBe('语音备注 0:03')
+    expect(indicator?.getAttribute('aria-label')).toBe('播放语音备注（0:03）')
+
+    expect(plain?.querySelector('.mindmap-node__voice-indicator')).toBeNull()
+  })
+
+  it('图标是按钮（可交互），而不是纯展示元素', () => {
+    // 为什么不在这里测"点一下会播放"：jsdom 没有音频实现、也拿不到
+    // `readAssetDataUrl` 的稳定桩，点击后的状态会被异步失败复位 ——
+    // 断言"点了之后 aria-label 变成停止"会时灵时不灵（**没有鉴别力的测试比没有更糟**）。
+    // 播放链路交给真引擎取证：`dev/capture-voice-note.mjs`（假麦克风录取 → 落库 → 播放）。
+    renderWithApp(<CanvasHost session={makeSessionWithVoiceNote()} />)
+
+    const indicator = document.querySelector('.mindmap-node__voice-indicator')
+    expect(indicator?.tagName).toBe('BUTTON')
+    expect(indicator?.getAttribute('type')).toBe('button')
   })
 })
 

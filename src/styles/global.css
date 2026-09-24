@@ -3659,6 +3659,72 @@ button {
   z-index: 4;
 }
 
+/*
+ * 语音备注图标。它是**按钮**（点一下播放），所以必须显式清掉按钮的默认外观：
+ * `.mindmap-node__marker` / `.mindmap-node__note-indicator` 那一批是纯展示元素
+ * （还带 pointer-events: none），照抄它们会把这里变成一个带边框的小方块。
+ */
+.mindmap-node__voice-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  line-height: 0;
+  cursor: pointer;
+}
+
+.mindmap-node__voice-indicator--playing {
+  animation: mindmap-voice-indicator-pulse 1s ease-in-out infinite;
+}
+
+@keyframes mindmap-voice-indicator-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mindmap-node__voice-indicator--playing {
+    animation: none;
+  }
+}
+
+/*
+ * 播放引擎：音频元素不给 controls 时本就没有可视尺寸，显式隐藏是为了
+ * 不依赖浏览器的默认行为（有的实现会给一个 0×0 但可聚焦的盒子，会截获 Tab）。
+ */
+.canvas-voice-audio,
+.panel__voice-note-audio {
+  display: none;
+}
+
+.panel__voice-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel__voice-note-duration {
+  font-variant-numeric: tabular-nums;
+}
+
+.panel__voice-note-recording {
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.panel__voice-note-error {
+  margin: 4px 0 0;
+  color: var(--color-danger);
+  font-size: 12px;
+}
+
 .mindmap-node__marker,
 .mindmap-node__note-indicator {
   display: inline-flex;

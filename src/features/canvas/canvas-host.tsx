@@ -20,6 +20,8 @@ import {
 import { resolveIndentTarget, resolveOutdentTarget } from '../../lib/document/topic-outline'
 import { isFreelyPositionableTopic } from '../../lib/document/free-topics'
 import { displayAttachmentName } from '../../lib/document/attachment'
+import { formatVoiceDuration } from '../../lib/document/voice-note'
+import { readAssetDataUrl } from '../../lib/ipc/commands'
 import { StickerIcon } from './stickers'
 import { findStickerDefinition } from './sticker-definitions'
 import {
@@ -654,6 +656,47 @@ function MindMapScene({
     () => resolveEffectiveTheme({ themeId, branchStyle, canvasSettings }),
     [themeId, branchStyle, canvasSettings],
   )
+
+  /**
+   * 语音备注播放：**整个场景共用一个 `<audio>`**，同一时刻只播一段。
+   *
+   * 为什么不做成"每个节点一个 audio"：1000 个带语音的主题就是 1000 个媒体元素，
+   * 而每个 data URL 都要单独占内存。共用一个、切换时换 `src` 即可。
+   * 另一条硬纪律：**播放的 data URL 只在点击时才读**——按主题预加载会在
+   * 每次切换选中主题时都读一遍字节流，而多数时候用户并不点播放。
+   */
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
+  const [playingVoiceTopicId, setPlayingVoiceTopicId] = useState<string | null>(null)
+  const playingVoiceTopicIdRef = useRef<string | null>(null)
+  playingVoiceTopicIdRef.current = playingVoiceTopicId
+
+  const handleToggleTopicVoiceNote = useCallback((topicId: string, assetId: string) => {
+    const audio = voiceAudioRef.current
+    if (!audio) {
+      return
+    }
+    // 再点同一个 → 停止；点另一个 → 换源从头播
+    if (playingVoiceTopicIdRef.current === topicId) {
+      audio.pause()
+      return
+    }
+    setPlayingVoiceTopicId(topicId)
+    void (async () => {
+      try {
+        const dataUrl = await readAssetDataUrl(assetId)
+        if (!dataUrl) {
+          setPlayingVoiceTopicId(null)
+          return
+        }
+        audio.src = dataUrl
+        await audio.play()
+      } catch {
+        // 资源缺失（例如已被保存时的 GC 回收）或播放被拒：静默复位，
+        // 不弹提示——画布上的图标回到未播放态就是最直接的反馈
+        setPlayingVoiceTopicId(null)
+      }
+    })()
+  }, [])
 
   const scene = useMemo(
     () =>
@@ -1875,6 +1918,8 @@ function MindMapScene({
               onPointerDown={handleNodePointerDown}
               onContextMenu={handleNodeContextMenu}
               onToggleCollapsed={onToggleTopicCollapsed}
+              onToggleVoiceNote={handleToggleTopicVoiceNote}
+              playingVoiceNote={playingVoiceTopicId === node.id}
               onEditingTextChange={onEditingTextChange}
               onCommitEditingTopic={onCommitEditingTopic}
               onCancelEditingTopic={onCancelEditingTopic}
@@ -1887,6 +1932,23 @@ function MindMapScene({
             />
           ))}
         </div>
+        {/*
+          场景内唯一的播放引擎（见 handleToggleTopicVoiceNote 的说明）。
+          不加 controls，且对辅助技术隐藏：它只是"能播"这件事的实现细节，
+          用户看到的入口是节点上的话筒图标。
+        */}
+        <audio
+          ref={voiceAudioRef}
+          className="canvas-voice-audio"
+          aria-hidden="true"
+          onPlay={() => {
+            // 播放真正开始/结束时才改状态：`play()` 可能被浏览器拒，
+            // 那时 optimistic 地置位会让图标高亮着一动不动
+            setPlayingVoiceTopicId(playingVoiceTopicIdRef.current)
+          }}
+          onPause={() => setPlayingVoiceTopicId(null)}
+          onEnded={() => setPlayingVoiceTopicId(null)}
+        />
       </div>
 
       {contextMenu ? (
@@ -1994,6 +2056,29 @@ function AttachmentGlyph() {
   )
 }
 
+function VoiceNoteGlyph() {
+  // 话筒 + 声波：与 XMind 的语音备注同一隐喻（"这个主题里有一段录音"）
+  return (
+    <svg
+      className="voice-note-icon"
+      width="14"
+      height="14"
+      viewBox="0 0 14 14"
+      aria-hidden="true"
+    >
+      <rect x="5.4" y="1.6" width="3.2" height="6.4" rx="1.6" fill="#e5484d" />
+      <path
+        d="M3.2 6.6a3.8 3.8 0 007.6 0"
+        fill="none"
+        stroke="#e5484d"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
+      <path d="M7 10.4v2" stroke="#e5484d" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function LinkGlyph() {
   return (
     <svg className="link-icon" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
@@ -2028,6 +2113,8 @@ function MindMapNode({
   onPointerDown,
   onContextMenu,
   onToggleCollapsed,
+  onToggleVoiceNote,
+  playingVoiceNote,
   onEditingTextChange,
   onCommitEditingTopic,
   onCancelEditingTopic,
@@ -2072,6 +2159,10 @@ function MindMapNode({
     topicId: string,
   ) => void
   onToggleCollapsed: (topicId: string) => Promise<void>
+  /** 点击节点上的话筒图标：播放/停止该主题的语音备注（资源 id 由节点自己带上来）。 */
+  onToggleVoiceNote: (topicId: string, assetId: string) => void
+  /** 该节点的语音备注是否正在播放（用于图标高亮）。 */
+  playingVoiceNote: boolean
   onEditingTextChange: (text: string) => void
   onCommitEditingTopic: () => Promise<void>
   onCancelEditingTopic: () => void
@@ -2452,9 +2543,11 @@ function MindMapNode({
   const linkInfo = topicData.link ?? null
   const labelList = topicData.labels && topicData.labels.length > 0 ? topicData.labels : null
   const attachmentInfo = topicData.attachment ?? null
+  const voiceNoteInfo = topicData.voiceNote ?? null
   // ⚠️ 附件必须算进 hasMeta：这个布尔值决定整行 meta 是否渲染，
   // 漏掉它会让"只带附件的主题"完全看不到回形针（接了一半的线）
-  const hasMeta = !!(markers || notesText || linkInfo || attachmentInfo)
+  // 语音备注同理：漏掉就是"录完了但节点上什么都不显示"。
+  const hasMeta = !!(markers || notesText || linkInfo || attachmentInfo || voiceNoteInfo)
 
   return (
     <>
@@ -2518,6 +2611,34 @@ function MindMapNode({
               >
                 <AttachmentGlyph />
               </span>
+            ) : null}
+            {voiceNoteInfo ? (
+              // 做成按钮而不是纯图标：XMind 的语音备注就是**点一下播放**。
+              // stopPropagation 是必须的——节点本身是按钮，不拦会把点击当成"选中主题"
+              // （与折叠按钮、链接指示器同一套处理）。
+              <button
+                className={`mindmap-node__voice-indicator${playingVoiceNote ? ' mindmap-node__voice-indicator--playing' : ''}`}
+                type="button"
+                title={
+                  formatVoiceDuration(voiceNoteInfo.durationMs)
+                    ? `语音备注 ${formatVoiceDuration(voiceNoteInfo.durationMs)}`
+                    : '语音备注'
+                }
+                aria-label={
+                  playingVoiceNote
+                    ? '停止播放语音备注'
+                    : `播放语音备注${formatVoiceDuration(voiceNoteInfo.durationMs) ? `（${formatVoiceDuration(voiceNoteInfo.durationMs)}）` : ''}`
+                }
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                }}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onToggleVoiceNote(node.id, voiceNoteInfo.assetId)
+                }}
+              >
+                <VoiceNoteGlyph />
+              </button>
             ) : null}
             {linkInfo ? (
               <a

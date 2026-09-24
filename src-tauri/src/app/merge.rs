@@ -150,6 +150,13 @@ fn remap_topic_asset_ids(topic: &mut TopicSnapshot, map: &HashMap<String, String
             attachment.asset_id = next.clone();
         }
     }
+    // 语音备注也要改写：漏掉这一处，合并后录音会指向**目标库里不存在的资源**
+    // （图/附件当时踩过的同一类坑——关系线悬空、附件丢失都是这么来的）。
+    if let Some(voice_note) = &mut topic.voice_note {
+        if let Some(next) = map.get(&voice_note.asset_id) {
+            voice_note.asset_id = next.clone();
+        }
+    }
     for child in &mut topic.children {
         remap_topic_asset_ids(child, map);
     }
@@ -168,8 +175,34 @@ mod tests {
     use super::*;
     use crate::app::assets::AssetStore;
     use crate::domain::document::{
-        CanvasIllustration, TopicAttachment, TopicImage, TopicSnapshot,
+        CanvasIllustration, TopicAttachment, TopicImage, TopicSnapshot, TopicVoiceNote,
     };
+
+    #[test]
+    fn remap_rewrites_voice_note_asset_ids() {
+        // 合并时资源按内容复制进目标库，id 可能变 → 不重映射就是"录音指向目标库里
+        // 不存在的资源"（合并那一轮在图与附件上各踩过一次，形态完全一样）。
+        let mut map = HashMap::new();
+        map.insert("sha256-old.webm".to_string(), "sha256-new.webm".to_string());
+
+        let mut source = topic("t_voice", "带语音", vec![]);
+        source.voice_note = Some(TopicVoiceNote {
+            asset_id: "sha256-old.webm".into(),
+            mime_type: "audio/webm".into(),
+            byte_size: Some(10),
+            duration_ms: Some(900),
+        });
+
+        remap_topic_asset_ids(&mut source, &map);
+
+        assert_eq!(
+            source
+                .voice_note
+                .expect("语音备注不该在重映射中丢失")
+                .asset_id,
+            "sha256-new.webm"
+        );
+    }
 
     fn topic(id: &str, text: &str, children: Vec<TopicSnapshot>) -> TopicSnapshot {
         let mut value = TopicSnapshot::new(text);

@@ -16,7 +16,7 @@ use crate::domain::document::{
     SummaryNode, ThemeRef, TopicAttachment, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
     TopicCallout,
     TopicSticker,
-    TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask,
+    TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask, TopicVoiceNote,
 };
 
 /// 主题字段级变更（正向 old→new，逆操作只需交换 old/new）。
@@ -60,6 +60,11 @@ pub enum TopicFieldChange {
     Attachment {
         old: Option<TopicAttachment>,
         new: Option<TopicAttachment>,
+    },
+    /// 主题语音备注（引用 assets/voice-notes/ 下的资源，None 表示移除录音）。
+    VoiceNote {
+        old: Option<TopicVoiceNote>,
+        new: Option<TopicVoiceNote>,
     },
     /// 节点级骨架覆盖（结构 / 方向）。
     Structure {
@@ -263,6 +268,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     old: new.clone(),
                     new: old.clone(),
                 },
+                TopicFieldChange::VoiceNote { old, new } => TopicFieldChange::VoiceNote {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
             };
             Operation::SetTopicField {
                 sheet_id: sheet_id.clone(),
@@ -451,6 +460,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::Image { new, .. } => topic.image = new.clone(),
         TopicFieldChange::Structure { new, .. } => topic.structure = new.clone(),
         TopicFieldChange::Attachment { new, .. } => topic.attachment = new.clone(),
+        TopicFieldChange::VoiceNote { new, .. } => topic.voice_note = new.clone(),
     }
 }
 
@@ -999,6 +1009,24 @@ impl<'a> DocumentEditor<'a> {
             |t| t.attachment.clone(),
             |new, old| TopicFieldChange::Attachment { old, new },
             |t, v| t.attachment = v,
+        );
+    }
+
+    /// 设置/移除主题语音备注。`None` 时移除。
+    /// 与附件/图片一样走富字段通道：撤销/重做只需交换 old/new。
+    fn set_topic_voice_note_raw(
+        &mut self,
+        sheet_id: &str,
+        topic_id: &str,
+        new_voice_note: Option<TopicVoiceNote>,
+    ) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_voice_note,
+            |t| t.voice_note.clone(),
+            |new, old| TopicFieldChange::VoiceNote { old, new },
+            |t, v| t.voice_note = v,
         );
     }
 
@@ -1956,6 +1984,17 @@ impl<'a> DocumentEditor<'a> {
     ) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑附件")?;
         self.set_topic_attachment_raw(&sheet_id, topic_id, attachment);
+        Ok(())
+    }
+
+    /// 设置/移除主题语音备注。`None` 时移除。
+    pub fn set_topic_voice_note(
+        &mut self,
+        topic_id: &str,
+        voice_note: Option<TopicVoiceNote>,
+    ) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑语音备注")?;
+        self.set_topic_voice_note_raw(&sheet_id, topic_id, voice_note);
         Ok(())
     }
 

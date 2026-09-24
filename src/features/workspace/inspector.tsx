@@ -59,6 +59,13 @@ import {
   displayAttachmentName,
   formatAttachmentSize,
 } from '../../lib/document/attachment'
+import { formatVoiceDuration } from '../../lib/document/voice-note'
+import {
+  blobToDataUrl,
+  checkVoiceNoteSupport,
+  startVoiceRecording,
+  type VoiceRecorderHandle,
+} from '../../lib/media/voice-recorder'
 import { StickerIcon } from '../canvas/stickers'
 import {
   STICKER_DEFINITIONS,
@@ -1312,6 +1319,142 @@ export function Inspector({
     } catch (error) {
       // Rust 侧把原因写在 Err(String) 里（找不到资源、无法打开…），别吞掉
       onNotify?.(typeof error === 'string' && error.trim() ? error : '无法打开附件')
+    }
+  }
+
+  // —— 语音备注：录音 / 播放 / 删除 ——
+  //
+  // 录音是本项目里**唯一会占用硬件**的操作，因此有两条硬纪律：
+  // ① 任何出口都必须释放麦克风轨道（统一封装在 `voice-recorder` 里）；
+  // ② **切主题或卸载时必须取消正在进行的录音** —— 否则用户切走之后麦克风还开着，
+  //    而界面上没有任何东西能告诉他这件事（只有系统指示灯是线索）。
+  const voiceSupport = useMemo(() => checkVoiceNoteSupport(), [])
+  /**
+   * 正在进行的录音句柄放在 **state** 而不是 ref 里：这样"卸载/换新句柄时取消"
+   * 可以用闭包捕获**值**来写（`active?.cancel()`），而不是在 cleanup 里读
+   * `ref.current` —— 后者既会被 lint 拦，读到的也不保证还是当时那个句柄。
+   */
+  const [voiceRecorder, setVoiceRecorder] = useState<VoiceRecorderHandle | null>(null)
+  const [voiceRecording, setVoiceRecording] = useState(false)
+  const [voiceElapsedMs, setVoiceElapsedMs] = useState(0)
+  const [voiceError, setVoiceError] = useState('')
+  const [voicePlaying, setVoicePlaying] = useState(false)
+  const voiceAudioRef = useRef<HTMLAudioElement | null>(null)
+  const voiceNoteTopicId = activeTopic?.id
+  const voiceNote = activeTopic?.voiceNote ?? null
+
+  // 录音计时：只在录的时候跑（200ms 足够跟手，也不至于每帧 setState）
+  useEffect(() => {
+    if (!voiceRecording || !voiceRecorder) {
+      return
+    }
+    const timer = window.setInterval(() => {
+      setVoiceElapsedMs(voiceRecorder.elapsedMs())
+    }, 200)
+    return () => window.clearInterval(timer)
+  }, [voiceRecording, voiceRecorder])
+
+  /**
+   * 句柄被替换或组件卸载时，取消那一次录音。
+   *
+   * 这是"麦克风不会一直开着"的**兜底**：`cancel()` 内部会释放音轨，
+   * 而对已经结束的录音是幂等的（录音器里有 settled 守卫）。
+   */
+  useEffect(() => {
+    const active = voiceRecorder
+    return () => {
+      active?.cancel()
+    }
+  }, [voiceRecorder])
+
+  // 切主题 = 放弃这段录音（换个主题继续录到一半的音频没有归属），并停掉正在播的音频
+  useEffect(() => {
+    setVoiceRecorder(null)
+    setVoiceRecording(false)
+    setVoiceElapsedMs(0)
+    setVoiceError('')
+    setVoicePlaying(false)
+    voiceAudioRef.current?.pause()
+  }, [voiceNoteTopicId])
+
+  const handleStartVoiceRecording = async () => {
+    setVoiceError('')
+    try {
+      const recorder = await startVoiceRecording()
+      setVoiceRecorder(recorder)
+      setVoiceElapsedMs(0)
+      setVoiceRecording(true)
+    } catch (error) {
+      // 不支持 / 未授权 / 无设备 —— 一律给出可直接照做的说明
+      setVoiceError(error instanceof Error ? error.message : '无法开始录音')
+      setVoiceRecording(false)
+    }
+  }
+
+  const handleStopVoiceRecording = async () => {
+    const recorder = voiceRecorder
+    const topicId = voiceNoteTopicId
+    setVoiceRecording(false)
+    setVoiceElapsedMs(0)
+    if (!recorder || !topicId) {
+      setVoiceRecorder(null)
+      return
+    }
+    try {
+      // ⚠️ **先 await 拿到结果，再清 state**：清 `voiceRecorder` 会触发 effect cleanup
+      // 去 `cancel()`；虽然录音器内部已经用"已请求停止"守卫挡住了清分片，
+      // 但把顺序写对能少一层依赖（顺序错了就是"录音只剩最后一个分片、没有文件头"）。
+      const recorded = await recorder.stop()
+      setVoiceRecorder(null)
+      const dataUrl = await blobToDataUrl(recorded.blob)
+      if (!dataUrl) {
+        setVoiceError('读取录音数据失败')
+        return
+      }
+      await session.setTopicVoiceNote(topicId, dataUrl, recorded.durationMs)
+      setVoiceError('')
+      onNotify?.(`已加入语音备注（${formatVoiceDuration(recorded.durationMs)}）`)
+    } catch (error) {
+      setVoiceRecorder(null)
+      setVoiceError(error instanceof Error ? error.message : '录音失败')
+    }
+  }
+
+  const handleCancelVoiceRecording = () => {
+    setVoiceRecorder(null)
+    setVoiceRecording(false)
+    setVoiceElapsedMs(0)
+  }
+
+  /**
+   * 播放 / 停止。
+   *
+   * 音频的 data URL **按需加载**（点播放时才读资源），而不是随主题切换预加载：
+   * 后者要为每个主题的每次切换都读一遍字节流，而多数时候用户并不点播放。
+   * `<audio>` 以主题 id 为 key，切主题即重建，省掉"手动清 src"这一步。
+   */
+  const handleToggleVoicePlayback = async () => {
+    const audio = voiceAudioRef.current
+    if (!audio || !voiceNote) {
+      return
+    }
+    if (!audio.paused) {
+      audio.pause()
+      return
+    }
+    setVoiceError('')
+    try {
+      if (!audio.src) {
+        const dataUrl = await session.readAssetDataUrl(voiceNote.assetId)
+        if (!dataUrl) {
+          setVoiceError('录音数据缺失，可能已在保存时被回收')
+          return
+        }
+        audio.src = dataUrl
+      }
+      await audio.play()
+    } catch (error) {
+      setVoiceError(error instanceof Error ? error.message : '无法播放录音')
     }
   }
 
@@ -2598,6 +2741,114 @@ export function Inspector({
                     ) : null}
                   </div>
                 </div>
+              </PanelSection>
+            ) : null}
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <PanelSection title="语音备注">
+                <p className="panel__muted">
+                  录一段语音挂在这个主题上，音频随文档一起保存（走资源区按内容去重）。
+                </p>
+
+                <div className="panel__field">
+                  <span>录音</span>
+                  {voiceNote ? (
+                    <div className="panel__voice-note">
+                      <span className="panel__voice-note-duration">
+                        {formatVoiceDuration(voiceNote.durationMs) || '已录制'}
+                      </span>
+                      {formatAttachmentSize(voiceNote.byteSize) ? (
+                        <span className="panel__muted">
+                          {formatAttachmentSize(voiceNote.byteSize)}
+                        </span>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="panel__muted">当前主题没有语音备注。</p>
+                  )}
+                </div>
+
+                {voiceSupport.supported ? (
+                  voiceRecording ? (
+                    <div className="panel__field-row">
+                      <span className="panel__voice-note-recording" role="status">
+                        录音中 {formatVoiceDuration(voiceElapsedMs)}
+                      </span>
+                      <button
+                        className="panel__action"
+                        type="button"
+                        aria-label="停止并保存录音"
+                        onClick={() => void handleStopVoiceRecording()}
+                      >
+                        停止并保存
+                      </button>
+                      <button
+                        className="panel__action panel__action--ghost"
+                        type="button"
+                        aria-label="取消录音"
+                        onClick={handleCancelVoiceRecording}
+                      >
+                        取消
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="panel__field-row">
+                      <button
+                        className="panel__action"
+                        type="button"
+                        aria-label="开始录音"
+                        onClick={() => void handleStartVoiceRecording()}
+                      >
+                        {voiceNote ? '重新录制' : '开始录音'}
+                      </button>
+                      {voiceNote ? (
+                        <>
+                          <button
+                            className="panel__action"
+                            type="button"
+                            aria-label="播放语音备注"
+                            onClick={() => void handleToggleVoicePlayback()}
+                          >
+                            {voicePlaying ? '停止' : '播放'}
+                          </button>
+                          <button
+                            className="panel__action panel__action--ghost"
+                            type="button"
+                            aria-label="移除语音备注"
+                            onClick={() => void session.removeTopicVoiceNote(activeTopic.id)}
+                          >
+                            移除
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  )
+                ) : (
+                  // 不支持时**明说原因**，而不是留一个点了没反应的按钮
+                  <p className="panel__muted" role="status">
+                    {voiceSupport.message}
+                  </p>
+                )}
+
+                {voiceError ? (
+                  <p className="panel__voice-note-error" role="alert">
+                    {voiceError}
+                  </p>
+                ) : null}
+
+                {/*
+                  以主题 id 为 key：切主题即重建，`src` 自然清空 —— 省掉
+                  "手动把上一段录音的 data URL 清掉"这一步（漏了就会串音）。
+                  不加 controls：它只是播放引擎，按钮在面板上。
+                */}
+                <audio
+                  key={activeTopic.id}
+                  ref={voiceAudioRef}
+                  className="panel__voice-note-audio"
+                  onPlay={() => setVoicePlaying(true)}
+                  onPause={() => setVoicePlaying(false)}
+                  onEnded={() => setVoicePlaying(false)}
+                />
               </PanelSection>
             ) : null}
 

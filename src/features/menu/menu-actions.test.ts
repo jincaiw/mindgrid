@@ -146,6 +146,27 @@ it('declares Simplified Chinese so system-injected window items are localized', 
 })
 
 /**
+ * 麦克风用途说明守卫。
+ *
+ * macOS 上 **Info.plist 里没有 `NSMicrophoneUsageDescription` 就拿不到麦克风**：
+ * `getUserMedia` 直接以 `NotAllowedError` 拒绝，而且**连授权对话框都不弹**
+ * （系统认定这个 App 没打算用麦克风）。表现是"点了开始录音只得到一句未授权提示"，
+ * 用户去系统设置里也找不到这个 App —— 因为系统根本没有它的麦克风条目。
+ *
+ * 删掉这个键同样**没有任何编译期/运行时报错**，只在用户点录音时才暴露，故静态守卫。
+ * 文案会原样显示在系统授权对话框里，所以顺带钉住"要说清用途"。
+ */
+it('declares a microphone usage description for voice notes', () => {
+  expect(infoPlistSource).toContain('NSMicrophoneUsageDescription')
+  const description = /<key>NSMicrophoneUsageDescription<\/key>\s*<string>([^<]+)<\/string>/.exec(
+    infoPlistSource,
+  )
+  expect(description).not.toBeNull()
+  // 不能是空串或占位符：它要出现在系统对话框里
+  expect(description![1].trim().length).toBeGreaterThan(8)
+})
+
+/**
  * 应用菜单守卫。
  *
  * `Menu::default()` 里那段 macOS 应用菜单（服务 / 隐藏 / 隐藏其他 / 显示全部 / 退出）

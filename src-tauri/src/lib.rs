@@ -136,6 +136,8 @@ pub fn run() {
             app::commands::set_topic_attachment,
             app::commands::remove_topic_attachment,
             app::commands::open_topic_attachment,
+            app::commands::set_topic_voice_note,
+            app::commands::remove_topic_voice_note,
             app::commands::read_asset_data_url,
             app::commands::set_document_theme,
             app::commands::create_relationship,
