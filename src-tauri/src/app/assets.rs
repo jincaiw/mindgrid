@@ -761,6 +761,7 @@ mod tests {
                 task: None,
                 attachment: None,
                 voice_note: None,
+                equation: None,
                 layout_hints: None,
                 structure: None,
                 extensions: None,
@@ -782,6 +783,7 @@ mod tests {
             structure: None,
             extensions: None,
             extra: serde_json::Map::new(),
+        equation: None,
         });
 
         let referenced = AssetIndex::collect_referenced_asset_ids(&document);

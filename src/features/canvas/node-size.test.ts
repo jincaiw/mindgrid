@@ -11,6 +11,10 @@ import { describe, expect, it } from 'vitest'
 import type { TopicSnapshot } from '../../lib/document/types'
 import { estimateNodeSize as estimateFromMindMap } from './mindmap-layout'
 import { estimateNodeSize as estimateFromLayoutUtils } from './layouts/layout-utils'
+import {
+  TOPIC_EQUATION_BLOCK,
+  TOPIC_EQUATION_MIN_WIDTH,
+} from './runtime/topic-equation-constants'
 
 function makeTopic(overrides: Partial<TopicSnapshot> = {}): TopicSnapshot {
   return {
@@ -45,6 +49,41 @@ describe('estimateNodeSize 双实现一致性', () => {
       const topic = makeTopic({ styleOverrides: { fontSize: 24 } })
       expect(estimateFromMindMap(topic, depth)).toEqual(estimateFromLayoutUtils(topic, depth))
     }
+  })
+
+  it('带方程时两处完全一致（本次新加的富内容槽位）', () => {
+    for (const depth of DEPTHS) {
+      const topic = makeTopic({ equation: { latex: 'a^2+b^2=c^2' } })
+      expect(estimateFromMindMap(topic, depth)).toEqual(estimateFromLayoutUtils(topic, depth))
+    }
+  })
+
+  it('空 LaTeX 不算方程：几何与不带方程时完全相同', () => {
+    for (const depth of DEPTHS) {
+      const plain = makeTopic()
+      const emptyLatex = makeTopic({ equation: { latex: '   ' } })
+      expect(estimateFromMindMap(emptyLatex, depth)).toEqual(estimateFromMindMap(plain, depth))
+      expect(estimateFromLayoutUtils(emptyLatex, depth)).toEqual(
+        estimateFromLayoutUtils(plain, depth),
+      )
+    }
+  })
+
+  it('方程槽位会抬高节点、并保证最小宽度', () => {
+    const plain = estimateFromMindMap(makeTopic({ text: '短' }), 1)
+    const withEquation = estimateFromMindMap(makeTopic({ text: '短', equation: { latex: 'x' } }), 1)
+
+    expect(withEquation.height - plain.height).toBe(TOPIC_EQUATION_BLOCK)
+    expect(withEquation.width).toBeGreaterThanOrEqual(TOPIC_EQUATION_MIN_WIDTH)
+  })
+
+  it('图片与方程可以叠加（各自预留一块）', () => {
+    const imageOnly = estimateFromMindMap(makeTopic({ image: { assetId: 'a' } }), 1)
+    const both = estimateFromMindMap(
+      makeTopic({ image: { assetId: 'a' }, equation: { latex: 'x' } }),
+      1,
+    )
+    expect(both.height - imageOnly.height).toBe(TOPIC_EQUATION_BLOCK)
   })
 })
 

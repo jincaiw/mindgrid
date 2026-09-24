@@ -112,6 +112,25 @@ pub struct TopicVoiceNote {
     pub duration_ms: Option<u64>,
 }
 
+/// 主题方程：只存 LaTeX 源码与显示模式。
+///
+/// **刻意不存尺寸**：尺寸是渲染结果（MathJax 的 viewBox），随引擎版本可能变；
+/// 存进文件会让"文件里的数字"和"渲染出来的形状"两套来源打架。
+/// 节点上的版面由 `features/canvas/runtime/topic-equation-constants` 的固定槽位契约决定。
+///
+/// 与图片/附件/语音备注的差别：**不引用任何资源** —— 所以它不需要进
+/// 资源 GC 的引用扫描（`app/assets.rs`），也不需要跨文件合并时的 asset id 重映射
+/// （`app/merge.rs`）。这两处刻意**不动**。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TopicEquation {
+    /// LaTeX 源码（不含 `$` 定界符）。空串视为没有方程，存储侧不做额外清洗。
+    pub latex: String,
+    /// display 模式（单独成行、分式更大）。缺省等同 inline。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<bool>,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum TopicTaskStatus {
@@ -279,6 +298,9 @@ pub struct TopicSnapshot {
     pub attachment: Option<TopicAttachment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice_note: Option<TopicVoiceNote>,
+    /// 主题方程（LaTeX → SVG）。不引用资源，见 `TopicEquation` 的说明。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub equation: Option<TopicEquation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub task: Option<TopicTask>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1318,6 +1340,21 @@ impl DocumentSession {
         })
     }
 
+    /// 设置/移除主题方程。`None` 时移除。
+    ///
+    /// 与语音备注不同：没有任何资源要登记（LaTeX 源码就是全部内容），
+    /// 所以命令层直连这里，不经资源表。
+    pub fn set_topic_equation(
+        &mut self,
+        topic_id: &str,
+        equation: Option<TopicEquation>,
+    ) -> Result<DocumentSessionSnapshot, String> {
+        self.apply_change_set("编辑方程", |editor| {
+            editor.set_topic_equation(topic_id, equation)?;
+            Ok(topic_id.to_string())
+        })
+    }
+
     pub fn set_topic_notes(
         &mut self,
         topic_id: &str,
@@ -1699,6 +1736,7 @@ impl TopicSnapshot {
             image: None,
             attachment: None,
             voice_note: None,
+            equation: None,
             task: None,
             layout_hints: None,
             structure: None,
@@ -1733,6 +1771,7 @@ impl SheetSnapshot {
                 image: None,
                 attachment: None,
                 voice_note: None,
+                equation: None,
                 task: None,
                 layout_hints: None,
                 structure: None,
@@ -1906,6 +1945,7 @@ pub(crate) fn clone_topic_branch(topic: &TopicSnapshot) -> TopicSnapshot {
         image: topic.image.clone(),
         attachment: topic.attachment.clone(),
         voice_note: topic.voice_note.clone(),
+        equation: topic.equation.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
         structure: topic.structure.clone(),
@@ -1942,6 +1982,7 @@ fn clone_topic_branch_with_map(
         image: topic.image.clone(),
         attachment: topic.attachment.clone(),
         voice_note: topic.voice_note.clone(),
+        equation: topic.equation.clone(),
         task: topic.task.clone(),
         layout_hints: topic.layout_hints.clone(),
         structure: topic.structure.clone(),
@@ -1963,8 +2004,10 @@ pub fn create_id(prefix: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        apply_inverse, Boundary, CanvasIllustration, DocumentRepairReport, DocumentSession,
-        DocumentSnapshot, Relationship, SummaryNode, TopicAttachment, TopicCallout, TopicSnapshot,
+        apply_inverse, find_topic, Boundary, CanvasIllustration, DocumentRepairReport,
+        DocumentSession,
+        DocumentSnapshot, Relationship, SummaryNode, TopicAttachment, TopicCallout, TopicEquation,
+        TopicSnapshot,
         TopicSticker, TopicVoiceNote,
     };
 
@@ -2847,6 +2890,104 @@ mod tests {
     }
 
     #[test]
+    fn set_topic_equation_round_trips_and_supports_undo() {
+        let mut session = DocumentSession::create_default();
+        let topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[0]
+            .id
+            .clone();
+        let equation = TopicEquation {
+            latex: "\\frac{a}{b}".to_string(),
+            display: Some(true),
+        };
+
+        let recorded = session
+            .set_topic_equation(&topic_id, Some(equation.clone()))
+            .expect("equation should be set");
+        assert_eq!(
+            find_topic(recorded.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .equation,
+            Some(equation.clone())
+        );
+        assert_eq!(recorded.next_undo_action.as_deref(), Some("编辑方程"));
+
+        // 一次撤销即移除方程（走的是与其它富字段相同的通道）
+        let undone = session.undo().expect("undo should succeed");
+        assert!(find_topic(undone.document.root_topic(), &topic_id)
+            .expect("topic should exist")
+            .equation
+            .is_none());
+
+        // 重做再回到"有方程"
+        let redone = session.redo().expect("redo should succeed");
+        assert_eq!(
+            find_topic(redone.document.root_topic(), &topic_id)
+                .expect("topic should exist")
+                .equation,
+            Some(equation)
+        );
+    }
+
+    #[test]
+    fn equation_survives_save_and_reopen() {
+        // 方程不引用资源，所以它唯一需要证明的是"能原样进文件、原样出来"。
+        // 这条同时钉住 serde 的 camelCase 与可选字段缺省。
+        let mut session = DocumentSession::create_default();
+        let topic_id = session
+            .document
+            .as_ref()
+            .expect("document should exist")
+            .root_topic()
+            .children[0]
+            .id
+            .clone();
+        session
+            .set_topic_equation(
+                &topic_id,
+                Some(TopicEquation {
+                    latex: "e^{i\\pi}+1=0".to_string(),
+                    display: None,
+                }),
+            )
+            .expect("equation should be set");
+
+        let serialized = serde_json::to_string(&session.document).expect("document should serialize");
+        assert!(
+            serialized.contains("e^{i\\\\pi}+1=0") || serialized.contains("e^{i\\pi}+1=0"),
+            "序列化结果里应含 LaTeX 源码：{serialized}"
+        );
+        let parsed: DocumentSnapshot =
+            serde_json::from_str(&serialized).expect("document should deserialize");
+        let restored = find_topic(parsed.root_topic(), &topic_id).expect("topic should exist");
+        assert_eq!(
+            restored.equation,
+            Some(TopicEquation {
+                latex: "e^{i\\pi}+1=0".to_string(),
+                display: None,
+            })
+        );
+    }
+
+    #[test]
+    fn clone_topic_branch_keeps_equation() {
+        // 复制/粘贴走 clone_topic_branch：漏掉新字段的话，粘贴出来的主题会**静默丢掉方程**。
+        let mut source = TopicSnapshot::new("带方程的主题");
+        source.equation = Some(TopicEquation {
+            latex: "\\sum_{i=1}^{n} i".to_string(),
+            display: Some(false),
+        });
+
+        let cloned = super::clone_topic_branch(&source);
+
+        assert_eq!(cloned.equation, source.equation);
+    }
+
+    #[test]
     fn set_topics_collapsed_batch_is_a_single_undo_step() {
         let mut session = DocumentSession::create_default();
         let root_topic = session
@@ -3166,6 +3307,7 @@ mod tests {
             task: None,
             attachment: None,
             voice_note: None,
+            equation: None,
             layout_hints: None,
             structure: None,
             extensions: None,
@@ -3188,6 +3330,7 @@ mod tests {
             task: None,
             attachment: None,
             voice_note: None,
+            equation: None,
             layout_hints: None,
             structure: None,
             extensions: None,

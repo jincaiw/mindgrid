@@ -101,6 +101,20 @@ export interface TopicVoiceNote {
   durationMs?: number
 }
 
+/**
+ * 主题方程：只存 LaTeX 源码与显示模式。
+ *
+ * **刻意不存尺寸**：尺寸是渲染结果（MathJax viewBox），随版本可能变；
+ * 存进去会让"文件里的数字"和"渲染出来的形状"两套来源打架。
+ * 节点上的版面由 `features/canvas/runtime/topic-equation-constants` 按固定槽位契约决定。
+ */
+export interface TopicEquation {
+  /** LaTeX 源码（不含 `$` 定界符）。空串视为没有方程，存储侧不做额外清洗。 */
+  latex: string
+  /** display 模式（单独成行、分式更大）。缺省等同 inline。 */
+  display?: boolean
+}
+
 export type TopicTaskStatus = 'none' | 'started' | 'completed' | 'pending'
 
 /** 轻量任务属性，用于在思维导图中跟踪行动项。 */
@@ -264,6 +278,8 @@ export interface TopicSnapshot {
   image?: TopicImage
   attachment?: TopicAttachment
   voiceNote?: TopicVoiceNote
+  /** 主题方程（LaTeX → SVG）。与图片/附件一样是独立槽位，不参与文字排版。 */
+  equation?: TopicEquation
   task?: TopicTask
   layoutHints?: TopicLayoutHints
   /** 节点级骨架覆盖（结构 / 方向），优先于画布级 `chartType` 与 `layoutConfig.direction`。 */

@@ -5,7 +5,12 @@ import {
   type SubtreeFootprintResolver,
 } from './layouts/mixed-structure'
 import { getFontScale } from './runtime/style-constants'
+import { hasTopicEquation } from '../../lib/document/equation'
 import { TOPIC_IMAGE_BLOCK, TOPIC_IMAGE_MIN_WIDTH } from './runtime/topic-image-constants'
+import {
+  TOPIC_EQUATION_BLOCK,
+  TOPIC_EQUATION_MIN_WIDTH,
+} from './runtime/topic-equation-constants'
 
 type LayoutSide = 'left' | 'right' | 'center'
 
@@ -155,10 +160,26 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
   const lineCount = Math.max(1, Math.ceil((textLength * charW) / usable))
   const height = m.padY * 2 + lineCount * lineHeight
 
+  // 富内容槽位：图片与方程各自预留一块固定高度（方程契约见 topic-equation-constants）。
+  // 图片那条分支**逐字保持原样**，避免动到已校准的节点几何。
   if (topic.image) {
-    return {
+    const withImage = {
       width: Math.max(width, TOPIC_IMAGE_MIN_WIDTH),
       height: height + TOPIC_IMAGE_BLOCK,
+    }
+    if (!hasTopicEquation(topic.equation)) {
+      return withImage
+    }
+    return {
+      width: Math.max(withImage.width, TOPIC_EQUATION_MIN_WIDTH),
+      height: withImage.height + TOPIC_EQUATION_BLOCK,
+    }
+  }
+
+  if (hasTopicEquation(topic.equation)) {
+    return {
+      width: Math.max(width, TOPIC_EQUATION_MIN_WIDTH),
+      height: height + TOPIC_EQUATION_BLOCK,
     }
   }
 

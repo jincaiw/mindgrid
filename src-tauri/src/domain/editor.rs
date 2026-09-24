@@ -15,6 +15,7 @@ use crate::domain::document::{
     SheetNumbering, SheetSnapshot,
     SummaryNode, ThemeRef, TopicAttachment, TopicImage, TopicLink, TopicLayoutHints, TopicMarker,
     TopicCallout,
+    TopicEquation,
     TopicSticker,
     TopicSnapshot, TopicStyleOverrides, TopicStructure, TopicTask, TopicVoiceNote,
 };
@@ -65,6 +66,12 @@ pub enum TopicFieldChange {
     VoiceNote {
         old: Option<TopicVoiceNote>,
         new: Option<TopicVoiceNote>,
+    },
+    /// 主题方程（LaTeX 源码 + 显示模式，None 表示移除方程）。
+    /// 与其它富字段不同，它**不引用资源**，所以不涉及资源登记与 GC。
+    Equation {
+        old: Option<TopicEquation>,
+        new: Option<TopicEquation>,
     },
     /// 节点级骨架覆盖（结构 / 方向）。
     Structure {
@@ -272,6 +279,10 @@ pub fn invert_operation(op: &Operation) -> Operation {
                     old: new.clone(),
                     new: old.clone(),
                 },
+                TopicFieldChange::Equation { old, new } => TopicFieldChange::Equation {
+                    old: new.clone(),
+                    new: old.clone(),
+                },
             };
             Operation::SetTopicField {
                 sheet_id: sheet_id.clone(),
@@ -461,6 +472,7 @@ fn do_set_topic_field(document: &mut DocumentSnapshot, sheet_id: &str, topic_id:
         TopicFieldChange::Structure { new, .. } => topic.structure = new.clone(),
         TopicFieldChange::Attachment { new, .. } => topic.attachment = new.clone(),
         TopicFieldChange::VoiceNote { new, .. } => topic.voice_note = new.clone(),
+        TopicFieldChange::Equation { new, .. } => topic.equation = new.clone(),
     }
 }
 
@@ -1027,6 +1039,24 @@ impl<'a> DocumentEditor<'a> {
             |t| t.voice_note.clone(),
             |new, old| TopicFieldChange::VoiceNote { old, new },
             |t, v| t.voice_note = v,
+        );
+    }
+
+    /// 设置/移除主题方程。`None` 时移除。
+    /// 走与其它富字段相同的通道：撤销/重做只需交换 old/new。
+    fn set_topic_equation_raw(
+        &mut self,
+        sheet_id: &str,
+        topic_id: &str,
+        new_equation: Option<TopicEquation>,
+    ) {
+        self.set_topic_rich_field(
+            sheet_id,
+            topic_id,
+            new_equation,
+            |t| t.equation.clone(),
+            |new, old| TopicFieldChange::Equation { old, new },
+            |t, v| t.equation = v,
         );
     }
 
@@ -1995,6 +2025,19 @@ impl<'a> DocumentEditor<'a> {
     ) -> Result<(), String> {
         let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑语音备注")?;
         self.set_topic_voice_note_raw(&sheet_id, topic_id, voice_note);
+        Ok(())
+    }
+
+    /// 设置/移除主题方程。`None` 时移除。
+    ///
+    /// 与语音备注/附件不同，这里**没有资源登记步骤** —— LaTeX 源码本身就是全部内容。
+    pub fn set_topic_equation(
+        &mut self,
+        topic_id: &str,
+        equation: Option<TopicEquation>,
+    ) -> Result<(), String> {
+        let sheet_id = self.ensure_active_topic_sheet(topic_id, "编辑方程")?;
+        self.set_topic_equation_raw(&sheet_id, topic_id, equation);
         Ok(())
     }
 

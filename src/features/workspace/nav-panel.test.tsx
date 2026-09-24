@@ -102,6 +102,7 @@ function makeSession(overrides: Partial<DocumentSession> = {}): DocumentSession 
     moveTopicFreely: async () => {},
     setTopicsPosition: async () => {},
     setTopicAttachment: async () => {},
+    setTopicEquation: async () => {},
     setTopicVoiceNote: async () => {},
     removeTopicVoiceNote: async () => {},
     removeTopicAttachment: async () => {},

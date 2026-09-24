@@ -25,6 +25,7 @@
  * 调用方在文档变化后预热一次，之后所有渲染路径都能同步拿到结果 —— 与主题图片
  * "资源索引里带固有尺寸"是同一个思路，只是尺寸的来源从资源表换成了渲染结果。
  */
+import { normalizeEquationLatex } from '../document/equation'
 import texSvgUrl from '../../vendor/mathjax/tex-svg.js?url'
 
 /** MathJax 4 暴露给我们用到的那部分接口（其它字段不承诺稳定，不要依赖）。 */
@@ -42,10 +43,8 @@ export function equationKey(latex: string, display: boolean) {
   return `${display ? 'display' : 'inline'}:${latex}`
 }
 
-/** 去掉首尾空白；全空白视为"没有方程"。渲染与几何都用这个口径。 */
-export function normalizeLatex(latex: string | null | undefined) {
-  return (latex ?? '').trim()
-}
+/** 口径来自文档层（`lib/document/equation`）—— 渲染、布局、三端必须同一份。 */
+export { normalizeEquationLatex as normalizeLatex } from '../document/equation'
 
 function mathJaxGlobal(): MathJaxGlobal | undefined {
   if (typeof window === 'undefined') {
@@ -111,7 +110,7 @@ const cache = new Map<string, EquationRenderResult>()
 
 /** 取已缓存的结果；没有就返回 null（**不触发加载、不阻塞**）。 */
 export function getCachedEquation(latex: string, display = false): EquationRenderResult | null {
-  const normalized = normalizeLatex(latex)
+  const normalized = normalizeEquationLatex(latex)
   if (!normalized) {
     return null
   }
@@ -164,7 +163,7 @@ export function extractEquationSvg(container: Element): EquationRenderResult {
  * 结果进缓存，因此同一 `latex|display` 只渲染一次。
  */
 export function renderEquationSync(latex: string, display = false): EquationRenderResult | null {
-  const normalized = normalizeLatex(latex)
+  const normalized = normalizeEquationLatex(latex)
   if (!normalized) {
     return null
   }
@@ -215,7 +214,7 @@ export async function prerenderEquations(
 ): Promise<void> {
   const unique = new Map<string, boolean>()
   for (const entry of entries) {
-    const normalized = normalizeLatex(entry.latex)
+    const normalized = normalizeEquationLatex(entry.latex)
     if (normalized) {
       unique.set(normalized, entry.display ?? false)
     }

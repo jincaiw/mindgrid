@@ -50,6 +50,7 @@ import {
   setTopicAttachment as setTopicAttachmentCommand,
   removeTopicAttachment as removeTopicAttachmentCommand,
   openTopicAttachment as openTopicAttachmentCommand,
+  setTopicEquation as setTopicEquationCommand,
   setTopicVoiceNote as setTopicVoiceNoteCommand,
   removeTopicVoiceNote as removeTopicVoiceNoteCommand,
   renameSheet,
@@ -94,6 +95,7 @@ import type {
   TopicLink,
   TopicMarker,
   TopicCallout,
+  TopicEquation,
   TopicSticker,
   TopicDirection,
   TopicStructure,
@@ -212,6 +214,8 @@ export interface DocumentSession extends DocumentSessionState {
    * 写入主题语音备注。`dataUrl` 是录制的音频（两端同一个契约：录音只有 Blob，没有路径），
    * `durationMs` 必须按录制时间轴给出 —— MediaRecorder 不给时长，事后补不出来。
    */
+  /** 写入主题方程；传 null 即移除。与语音备注不同，没有资源登记。 */
+  setTopicEquation: (topicId: string, equation: TopicEquation | null) => Promise<void>
   setTopicVoiceNote: (topicId: string, dataUrl: string, durationMs?: number) => Promise<void>
   removeTopicVoiceNote: (topicId: string) => Promise<void>
   /** 读取资源 data URL 供画布渲染（不入历史栈）。 */
@@ -1451,6 +1455,13 @@ export function useDocumentSession(): DocumentSession {
     [runCommand],
   )
 
+  const updateTopicEquation = useCallback(
+    async (topicId: string, equation: TopicEquation | null) => {
+      await runCommand('编辑方程', () => setTopicEquationCommand(topicId, equation))
+    },
+    [runCommand],
+  )
+
   const updateTopicVoiceNote = useCallback(
     async (topicId: string, dataUrl: string, durationMs?: number) => {
       await runCommand('编辑语音备注', () =>
@@ -1831,6 +1842,7 @@ export function useDocumentSession(): DocumentSession {
       setTopicAttachment: updateTopicAttachment,
       removeTopicAttachment: clearTopicAttachment,
       openTopicAttachment: launchTopicAttachment,
+      setTopicEquation: updateTopicEquation,
       setTopicVoiceNote: updateTopicVoiceNote,
       removeTopicVoiceNote: clearTopicVoiceNote,
       readAssetDataUrl,

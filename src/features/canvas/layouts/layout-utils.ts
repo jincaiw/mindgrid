@@ -8,6 +8,11 @@
 import type { TopicSnapshot } from '../../../lib/document/types'
 import type { MindMapEdgeLayout, MindMapNodeLayout } from '../mindmap-layout'
 import { MAX_FIXED_WIDTH, MIN_FIXED_WIDTH } from '../mindmap-layout'
+import { hasTopicEquation } from '../../../lib/document/equation'
+import {
+  TOPIC_EQUATION_BLOCK,
+  TOPIC_EQUATION_MIN_WIDTH,
+} from '../runtime/topic-equation-constants'
 import { getFontScale } from '../runtime/style-constants'
 import { footprintBlocks, footprintHalfHeight, type SubtreeFootprintResolver } from './mixed-structure'
 
@@ -58,9 +63,18 @@ export function estimateNodeSize(topic: TopicSnapshot, depth: number) {
         )
   const usable = Math.max(1, width - metrics.padX * 2)
   const lineCount = Math.max(1, Math.ceil((textLength * charW) / usable))
-  const height = metrics.padY * 2 + lineCount * lineHeight
+  let height = metrics.padY * 2 + lineCount * lineHeight
+  let nodeWidth = width
 
-  return { width, height }
+  // 富内容槽位：与 `mindmap-layout.estimateNodeSize` 保持同一口径。
+  // ⚠️ 图片这里**没有**预留（历史遗留，两处本来就不一致）—— 本次只补方程，
+  // 不去动图片，免得改了非思维导图骨架的既有版面。
+  if (hasTopicEquation(topic.equation)) {
+    nodeWidth = Math.max(nodeWidth, TOPIC_EQUATION_MIN_WIDTH)
+    height += TOPIC_EQUATION_BLOCK
+  }
+
+  return { width: nodeWidth, height }
 }
 
 /** 度量子树：叶子数量（用于垂直分配空间）。 */

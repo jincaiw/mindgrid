@@ -983,6 +983,30 @@ export async function invokeBrowserCommand<TResult>(
         return topicId
       }) as TResult
     }
+    case 'set_topic_equation': {
+      const topicId = String(payload.topic_id)
+      const raw = payload.equation
+      // 与 Rust 侧同一套口径：空 LaTeX 等于"没有方程"，顺手 trim（TeX 首尾空白无语义）
+      const latex =
+        raw && typeof raw === 'object' && typeof (raw as { latex?: unknown }).latex === 'string'
+          ? ((raw as { latex: string }).latex as string).trim()
+          : ''
+      const display = Boolean(raw && typeof raw === 'object' && (raw as { display?: unknown }).display)
+      const equation = latex ? { latex, ...(display ? { display: true } : {}) } : undefined
+
+      return applyMutation('编辑方程', (draft) => {
+        const rootTopic = getActiveRootTopic(draft)
+        const sheet = getActiveSheet(draft)
+        const topic =
+          findTopicById(rootTopic, topicId) ??
+          sheet.floatingTopics?.find((candidate) => candidate.id === topicId)
+        if (!topic) {
+          throw new Error('找不到目标主题')
+        }
+        topic.equation = equation
+        return topicId
+      }) as TResult
+    }
     case 'apply_topic_style_to_siblings': {
       const topicId = String(payload.topic_id)
 

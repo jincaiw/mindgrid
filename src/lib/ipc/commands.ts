@@ -11,6 +11,7 @@ import type {
   TopicSticker,
   TopicSnapshot,
   TopicStructure,
+  TopicEquation,
   TopicStyleOverrides,
   TopicTask,
 } from '../document/types'
@@ -344,6 +345,20 @@ export function setTopicVoiceNote(topicId: string, dataUrl: string, durationMs?:
 export function removeTopicVoiceNote(topicId: string) {
   return invokeCommand<DocumentSessionSnapshot>('remove_topic_voice_note', {
     topic_id: topicId,
+  })
+}
+
+/**
+ * 设置/移除主题方程（`equation` 传 null 即移除）。
+ *
+ * 与语音备注的差别：**没有资源登记** —— LaTeX 源码就是全部内容，
+ * 渲染产物（SVG）不入库，它是引擎输出，尺寸会随版本变。
+ * 空 LaTeX 由两端一致地当成"没有方程"。
+ */
+export function setTopicEquation(topicId: string, equation: TopicEquation | null) {
+  return invokeCommand<DocumentSessionSnapshot>('set_topic_equation', {
+    topic_id: topicId,
+    equation,
   })
 }
 

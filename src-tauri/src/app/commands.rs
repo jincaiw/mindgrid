@@ -3,7 +3,8 @@ use crate::domain::document::find_topic;
 use crate::domain::document::{
     CanvasIllustration, DocumentRepairReport, DocumentSession, DocumentSessionSnapshot,
     DocumentSnapshot,
-    SheetBranchStyle, SheetNumbering, TopicAttachment, TopicImage, TopicLink, TopicMarker,
+    SheetBranchStyle, SheetNumbering, TopicAttachment, TopicEquation, TopicImage, TopicLink,
+    TopicMarker,
     TopicCallout, TopicSticker, TopicStructure, TopicStyleOverrides,
     TopicTask, TopicVoiceNote,
 };
@@ -1271,6 +1272,45 @@ pub fn remove_topic_attachment(
         .map_err(|_| "unable to acquire document state".to_string())?;
 
     guard.set_topic_attachment(&topic_id, None)?;
+
+    persist_recovery_and_snapshot(&app, &state, &mut guard)
+}
+
+/// 设置/移除主题方程：`equation` 为 None 时移除。
+///
+/// 与其它富字段命令的差别：**这里没有资源登记**（LaTeX 源码就是全部内容，
+/// 渲染产物不入库 —— 它的尺寸是引擎输出，存进去会和渲染结果两套来源打架），
+/// 所以直接落字段。也正因为不引用资源，它不参与资源 GC 与合并时的 id 重映射。
+///
+/// `display` 缺省等同 inline（前端不必显式传 false）。
+#[tauri::command]
+pub fn set_topic_equation(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    topic_id: String,
+    equation: Option<TopicEquation>,
+) -> Result<DocumentSessionSnapshot, String> {
+    let mut guard = state
+        .document_session
+        .lock()
+        .map_err(|_| "unable to acquire document state".to_string())?;
+
+    // 空 LaTeX 视为"没有方程"：与 `TopicEquation` 的注释、渲染端的 `normalizeLatex`
+    // 保持同一个口径，免得把 `Some({ latex: "" })` 这种空壳写进文件。
+    // 顺手 trim：TeX 里首尾空白无语义。
+    let equation = equation.and_then(|value| {
+        let latex = value.latex.trim().to_string();
+        if latex.is_empty() {
+            None
+        } else {
+            Some(TopicEquation {
+                latex,
+                display: value.display,
+            })
+        }
+    });
+
+    guard.set_topic_equation(&topic_id, equation)?;
 
     persist_recovery_and_snapshot(&app, &state, &mut guard)
 }
