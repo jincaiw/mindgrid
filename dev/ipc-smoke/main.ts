@@ -116,6 +116,10 @@ const cases: Array<[string, () => Promise<unknown>]> = [
   ['remove_topic_attachment', () => api.removeTopicAttachment(BOGUS)],
   ['open_topic_attachment', () => api.openTopicAttachment(BOGUS)],
   ['set_topic_voice_note', () => api.setTopicVoiceNote(BOGUS, 'data:audio/webm;base64,AAAA', 1000)],
+  // 方程不引用资源，但同样走「主题 id 不存在 → 业务层提前失败」这条安全路径：
+  // 参数被正确接收才会进到"找不到主题"，这正是本夹具要判的东西。
+  ['set_topic_equation', () => api.setTopicEquation(BOGUS, { latex: 'a^2', display: true })],
+  ['set_topic_equation', () => api.setTopicEquation(BOGUS, null)],
   ['remove_topic_voice_note', () => api.removeTopicVoiceNote(BOGUS)],
   ['set_topic_markers', () => api.setTopicMarkers(BOGUS, [])],
   ['set_topic_stickers', () => api.setTopicStickers(BOGUS, [])],

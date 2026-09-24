@@ -105,8 +105,8 @@ import {
 } from './runtime/scene-builder'
 import { pickTopicImageUrl, useTopicImageUrls } from './runtime/topic-image-store'
 import {
-  colorizeEquationSvg,
   pickTopicEquationPayload,
+  sizeEquationSvg,
   useTopicEquations,
 } from './runtime/topic-equation-store'
 import { naturalEquationSize } from './runtime/topic-equation-constants'
@@ -2498,14 +2498,17 @@ function MindMapNode({
             className="mindmap-node__equation-svg"
             data-equation-width={equationNatural.width}
             data-equation-height={equationNatural.height}
-            style={{
-              width: `${equationNatural.width}px`,
-              height: `${equationNatural.height}px`,
-            }}
+            // ⚠️ **必须重写根标签的宽高**（`sizeEquationSvg`）：独立标记里的宽高是 viewBox
+            // 单位（上千），直接塞进来会真的按那个尺寸渲染 —— 公式糊满画布。
+            // 填成自然尺寸后由 CSS 的 max-* 收紧，与导出的 contain 语义等价。
             // MathJax 自己会转义输入（LaTeX 里的尖括号不会原样出现），
-            // 且颜色已按节点文字色落定 —— 三端（DOM/Canvas/SVG）必须用同一个颜色值。
+            // 颜色按节点文字色落定 —— 三端（DOM/Canvas/SVG）必须同一个颜色值。
             dangerouslySetInnerHTML={{
-              __html: colorizeEquationSvg(equation.svg, resolvedStyle.textColor),
+              __html: sizeEquationSvg(
+                equation.svg,
+                equationNatural,
+                resolvedStyle.textColor,
+              ),
             }}
           />
         ) : equation.error ? (

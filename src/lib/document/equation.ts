@@ -23,3 +23,39 @@ export function hasTopicEquation(equation: TopicEquation | null | undefined): bo
 export function isDisplayEquation(equation: TopicEquation | null | undefined): boolean {
   return equation?.display === true
 }
+
+/**
+ * 把界面上的"输入框 + 开关"整理成要写进文档的值。
+ *
+ * 两条规则集中在这里，界面只负责调用：
+ * - 空 LaTeX → `null`（= 移除方程），与 Rust 命令层、`hasTopicEquation` 同一口径；
+ * - `display: false` → **省略字段**而不是存 `false`：`.mgd` 里少一个键，与"从未设过"
+ *   完全同形，避免同一种文档状态出现两种写法（否则"比较是否变化"要写两套判据）。
+ */
+export function toTopicEquation(
+  latex: string | null | undefined,
+  display: boolean,
+): TopicEquation | null {
+  const normalized = normalizeEquationLatex(latex)
+  if (!normalized) {
+    return null
+  }
+  return display ? { latex: normalized, display: true } : { latex: normalized }
+}
+
+/**
+ * 两个方程在**文档语义**上是否相同（忽略 `display` 的 `false` 与缺省之别）。
+ *
+ * 用它判断"要不要写一条撤销记录"：没变就不写，否则点一下输入框都会多出一条。
+ */
+export function isSameTopicEquation(
+  a: TopicEquation | null | undefined,
+  b: TopicEquation | null | undefined,
+): boolean {
+  const left = toTopicEquation(a?.latex, isDisplayEquation(a))
+  const right = toTopicEquation(b?.latex, isDisplayEquation(b))
+  if (left === null || right === null) {
+    return left === right
+  }
+  return left.latex === right.latex && isDisplayEquation(left) === isDisplayEquation(right)
+}

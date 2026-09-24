@@ -3988,6 +3988,41 @@ button {
   margin: 0 auto 8px;
 }
 
+/* 右栏方程预览：与节点上同一个几何函数算出的尺寸，只是字号换成
+   EQUATION_PREVIEW_FONT_SIZE（见 topic-equation-constants）。这里只做两件事：
+   给一块底色让它一眼看出边界，以及在面板宽度不够时收紧。 */
+.panel__equation-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.panel__equation-preview-svg {
+  display: contents;
+}
+
+.panel__equation-preview-svg > svg {
+  display: block;
+  max-width: 100%;
+  max-height: 120px;
+}
+
+/* 预览区的语法错误：与节点上的提示不同，这里要把渲染器给的原始信息显示出来
+   （"Missing close brace" 这类），否则用户只知道错了但不知道错在哪 */
+.panel__equation-error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-danger);
+  word-break: break-word;
+}
+
 /* 方程槽位：与图片同一套打法 —— **固定高度**才算数。
    只给 max-height 的话，槽位会贴合公式自身比例，标题跟着上下跑；
    而布局与导出端恒定按 TOPIC_EQUATION_TITLE_OFFSET = 48 下移标题。
@@ -4007,17 +4042,23 @@ button {
   user-select: none;
 }
 
-/* 行内 SVG 的宽高由 naturalEquationSize() 写成内联样式（**不是** viewBox 单位，
-   那是上千的数值）。这里只做收紧：超过槽位才缩，永远不放大 —— 与
-   computeTopicEquationRect 的「只缩不放」一一对应。 */
+/* 包装 span 不产生盒子（display: contents）：让内联 svg 直接成为槽位的 flex 子项，
+   于是它的 100% 百分比解析到槽位（高 40px 固定 / 宽受上限约束）。
+   ⚠️ 别给这个 span 设显式宽高 —— 它的"尺寸"是 svg 的固有尺寸，
+   见 sizeEquationSvg 的注释（这一条是实测出来的 P1：把 viewBox 单位当 px 用，
+   公式会按 800px 渲染、糊满画布）。 */
 .mindmap-node__equation-svg {
+  display: contents;
+}
+
+/* 内联 SVG 自带**自然尺寸**（该字号下的 px），这里只做收紧：
+   带固有宽高比的替换元素 + max-width/max-height 100% = 标准 contain
+   （超过才缩、永远不放大、比例不变），与 computeTopicEquationRect 的
+   「只缩不放 + 槽内居中」一一对应。 */
+.mindmap-node__equation-svg > svg {
   display: block;
   max-width: 100%;
   max-height: 100%;
-}
-
-.mindmap-node__equation-svg > svg {
-  display: block;
 }
 
 /* 公式渲染失败（LaTeX 语法错）时给一个可读的提示，而不是留一片空白 */

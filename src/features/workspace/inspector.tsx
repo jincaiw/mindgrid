@@ -61,6 +61,17 @@ import {
 } from '../../lib/document/attachment'
 import { formatVoiceDuration } from '../../lib/document/voice-note'
 import {
+  isSameTopicEquation,
+  normalizeEquationLatex,
+  toTopicEquation,
+} from '../../lib/document/equation'
+import { renderEquation, type EquationRenderResult } from '../../lib/equation/renderer'
+import { sizeEquationSvg } from '../canvas/runtime/topic-equation-store'
+import {
+  EQUATION_PREVIEW_FONT_SIZE,
+  naturalEquationSize,
+} from '../canvas/runtime/topic-equation-constants'
+import {
   blobToDataUrl,
   checkVoiceNoteSupport,
   startVoiceRecording,
@@ -893,6 +904,15 @@ export function Inspector({
 
   // —— 富内容编辑本地态：随选中主题切换同步，失焦时提交 ——
   const [notesDraft, setNotesDraft] = useState(activeTopic?.notes ?? '')
+  // 方程：LaTeX 源码 + 是否独立成行。两者都先落草稿，**失焦/切换时才写文档** ——
+  // 逐字符写会让每敲一个字母产生一条撤销记录（备注/链接那几处已是这个约定）。
+  const [equationLatexDraft, setEquationLatexDraft] = useState(
+    activeTopic?.equation?.latex ?? '',
+  )
+  const [equationDisplayDraft, setEquationDisplayDraft] = useState(
+    activeTopic?.equation?.display ?? false,
+  )
+  const [equationPreview, setEquationPreview] = useState<EquationRenderResult | null>(null)
   const [linkUrlDraft, setLinkUrlDraft] = useState(activeTopic?.link?.url ?? '')
   const [linkTitleDraft, setLinkTitleDraft] = useState(activeTopic?.link?.title ?? '')
   const [labelsDraft, setLabelsDraft] = useState((activeTopic?.labels ?? []).join(', '))
@@ -1072,6 +1092,8 @@ export function Inspector({
   const activeTopicKey = activeTopic?.id ?? ''
   useEffect(() => {
     setNotesDraft(activeTopic?.notes ?? '')
+    setEquationLatexDraft(activeTopic?.equation?.latex ?? '')
+    setEquationDisplayDraft(activeTopic?.equation?.display ?? false)
     setLinkUrlDraft(activeTopic?.link?.url ?? '')
     setLinkTitleDraft(activeTopic?.link?.title ?? '')
     setLabelsDraft((activeTopic?.labels ?? []).join(', '))
@@ -1321,6 +1343,59 @@ export function Inspector({
       onNotify?.(typeof error === 'string' && error.trim() ? error : '无法打开附件')
     }
   }
+
+  // —— 方程：预览 / 提交 / 移除 ——
+  //
+  // 预览走**真实渲染器**（不是另写一套）：与节点上画出来的东西必须是同一个函数产出的，
+  // 否则"预览里好看、节点上不对"这种问题会被掩盖。
+  const equationTopicId = activeTopic?.id ?? ''
+  useEffect(() => {
+    const latex = normalizeEquationLatex(equationLatexDraft)
+    if (!latex) {
+      setEquationPreview(null)
+      return
+    }
+    // 引擎是懒加载的（首次约 1.8 MB），所以这一步是异步的；
+    // 取消标志避免"快速输入时旧结果后到、把新预览覆盖掉"。
+    let cancelled = false
+    void renderEquation(latex, equationDisplayDraft).then((result) => {
+      if (!cancelled) {
+        setEquationPreview(result)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [equationLatexDraft, equationDisplayDraft])
+
+  /**
+   * 提交方程。参数可覆盖草稿值 —— 复选框那条路径必须显式传新值：
+   * `setState` 之后同一个 tick 里读到的 `equationDisplayDraft` 还是旧值。
+   */
+  const handleEquationCommit = async (patch?: { latex?: string; display?: boolean }) => {
+    const topicId = equationTopicId
+    if (!topicId) {
+      return
+    }
+    const next = toTopicEquation(
+      patch?.latex ?? equationLatexDraft,
+      patch?.display ?? equationDisplayDraft,
+    )
+    // 只在真的变了才写：否则点一下输入框就会多出一条撤销记录
+    if (isSameTopicEquation(activeTopic?.equation, next)) {
+      return
+    }
+    await session.setTopicEquation(topicId, next)
+  }
+
+  // 预览尺寸：与节点共用 `naturalEquationSize`，只是字号换成预览字号（见该常量注释）。
+  const equationPreviewSize =
+    equationPreview?.status === 'ok'
+      ? naturalEquationSize(
+          { width: equationPreview.width, height: equationPreview.height },
+          EQUATION_PREVIEW_FONT_SIZE,
+        )
+      : null
 
   // —— 语音备注：录音 / 播放 / 删除 ——
   //
@@ -2550,6 +2625,101 @@ export function Inspector({
                     ) : null}
                   </div>
                 </div>
+              </PanelSection>
+            ) : null}
+
+            {activeTopic && !hasMultipleSelectedTopics ? (
+              <PanelSection title="方程">
+                <p className="panel__muted">
+                  用 LaTeX 给选中主题加一条公式，显示在节点标题上方并参与节点尺寸计算；
+                  输入的公式会随文档保存，导出 PNG / SVG 时同样呈现。失焦后自动保存并支持撤销。
+                </p>
+
+                <label className="panel__field">
+                  <span>LaTeX</span>
+                  <textarea
+                    className="panel__textarea"
+                    aria-label="方程 LaTeX 源码"
+                    rows={2}
+                    spellCheck={false}
+                    value={equationLatexDraft}
+                    onChange={(event) => setEquationLatexDraft(event.target.value)}
+                    onBlur={() => void handleEquationCommit()}
+                    placeholder="a^2+b^2=c^2"
+                  />
+                </label>
+
+                <label className="accordion-card">
+                  <input
+                    type="checkbox"
+                    aria-label="方程独立成行"
+                    checked={equationDisplayDraft}
+                    onChange={(event) => {
+                      const next = event.target.checked
+                      setEquationDisplayDraft(next)
+                      // macOS 上点击复选框**不会**让它获得焦点，`onBlur` 不会触发，
+                      // 所以这里直接提交。它是个离散动作，单独一条撤销记录是对的。
+                      void handleEquationCommit({ display: next })
+                    }}
+                  />
+                  <span>独立成行（display）</span>
+                </label>
+
+                {/*
+                  ⚠️ `.panel__field` 是**两列网格**（标签 + 控件）。控件侧必须**只有一个元素**：
+                  把提示文字也塞成直接子元素时，网格会多出一个格子，而第一列是 `auto`
+                  —— 那句长文案的 max-content 宽度会把第一列撑满、控件列被压成 0 宽
+                  （实测：预览框变成一条十几像素的细条、里面什么都看不见）。
+                */}
+                <div className="panel__field">
+                  <span>预览</span>
+                  <div>
+                  {equationPreview?.status === 'ok' && equationPreviewSize ? (
+                    <>
+                      <div className="panel__equation-preview">
+                        <span
+                          className="panel__equation-preview-svg"
+                          // 与节点上同一段标记、同一个修法：**必须重写根标签宽高**，
+                          // 否则内联 svg 会按 viewBox 单位（上千 px）渲染、被预览框裁掉一角。
+                          // 颜色不落定（currentColor 继承面板文字色）：预览只负责
+                          // "公式内容对不对"，颜色以节点为准。
+                          dangerouslySetInnerHTML={{
+                            __html: sizeEquationSvg(equationPreview.svg, equationPreviewSize),
+                          }}
+                        />
+                      </div>
+                      <span className="panel__muted">
+                        预览按 {EQUATION_PREVIEW_FONT_SIZE}px 字号放大显示，节点上按节点字号等比呈现。
+                      </span>
+                    </>
+                  ) : equationPreview?.status === 'error' ? (
+                    // 语法错要说清"错在哪"，而不是只在节点上显示一个"公式有误"
+                    <p className="panel__equation-error" role="alert">
+                      {equationPreview.message}
+                    </p>
+                  ) : (
+                    <p className="panel__muted">
+                      {equationLatexDraft.trim() ? '正在渲染…' : '输入 LaTeX 后即时预览。'}
+                    </p>
+                  )}
+                  </div>
+                </div>
+
+                {activeTopic.equation ? (
+                  <div className="panel__field-row">
+                    <button
+                      className="panel__action panel__action--ghost"
+                      type="button"
+                      aria-label="移除方程"
+                      onClick={() => {
+                        setEquationLatexDraft('')
+                        void session.setTopicEquation(activeTopic.id, null)
+                      }}
+                    >
+                      移除方程
+                    </button>
+                  </div>
+                ) : null}
               </PanelSection>
             ) : null}
 

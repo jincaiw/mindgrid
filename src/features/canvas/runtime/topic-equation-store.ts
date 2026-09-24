@@ -100,6 +100,40 @@ export function colorizeEquationSvg(svg: string, color: string): string {
 }
 
 /**
+ * 把方程 SVG 的根标签尺寸改成**给定的 px 尺寸**（并可选地落定颜色）。
+ *
+ * ## 为什么 DOM 端也需要它（这是实测出来的一个 P1）
+ *
+ * `extractEquationSvg` 产出的"独立标记"里，根标签的 `width`/`height` 是 **viewBox 单位**
+ * （动辄 800~2400，那是 MathJax 的内部单位，不是 px）。导出端没问题 —— 它会重写根标签
+ * （`embedEquationSvg`）。但 **DOM 端如果直接把这段标记塞进节点**，那个 `<svg>` 就真按
+ * 800 px 宽渲染：公式会糊满整个画布，而且**只靠单测发现不了**（jsdom 不做布局）。
+ *
+ * 所以 DOM 也必须重写根标签：填成**该字号下的自然尺寸**，再由 CSS 的
+ * `max-width/max-height: 100%` 按比例收紧 —— 对带固有宽高比的替换元素来说，
+ * 这就是标准的 "contain" 语义，与 `computeTopicEquationRect` 的「只缩不放 + 居中」等价。
+ *
+ * `color` 省略时保留 `currentColor`（右栏预览用：让它继承面板文字色）。
+ */
+export function sizeEquationSvg(
+  svg: string,
+  size: { width: number; height: number },
+  color?: string,
+): string {
+  const match = /^<svg\b([^>]*)>/.exec(svg)
+  if (!match) {
+    return ''
+  }
+  const attrs = match[1].replace(/\s(?:width|height)="[^"]*"/g, '')
+  const body = svg.slice(match[0].length)
+  const rebuilt = `<svg${attrs}>${body}`
+  return (color ? colorizeEquationSvg(rebuilt, color) : rebuilt).replace(
+    /^<svg\b/,
+    `<svg width="${size.width}" height="${size.height}"`,
+  )
+}
+
+/**
  * 把**独立**的方程 SVG 改写成可嵌进导出 SVG 的标记：
  * 给定 x/y/width/height，并把 `currentColor` 落成具体颜色。
  *

@@ -119,6 +119,31 @@ describe('accent 颜色令牌化', () => {
     }
   })
 
+  /**
+   * 令牌拼错是**静默失败**：`var(--color-border)` 里少写一段，浏览器不会报错，
+   * 只是把那条声明当成无效值丢掉（带 fallback 的用 fallback，不带的直接回落到
+   * 属性的初始值/继承值）。实测踩到两次：新写的预览区边框用了不存在的
+   * `--color-border`，以及仓库里原有的 `--color-border-subtle` 从未定义
+   * （5 处引用、2 处连 fallback 都没写 → 那两个 hover 边框实际变成了 currentColor）。
+   */
+  it('global.css 引用的每一个 CSS 变量都真实存在', () => {
+    const defined = new Set(
+      [
+        ...stripComments(tokensCssSource).matchAll(/(--[\w-]+)\s*:/g),
+        ...stripComments(globalCssSource).matchAll(/(--[\w-]+)\s*:/g),
+      ].map((m) => m[1]),
+    )
+    const used = [
+      ...new Set(
+        [...stripComments(globalCssSource).matchAll(/var\(\s*(--[\w-]+)/g)].map((m) => m[1]),
+      ),
+    ]
+    // 底线断言：正则一旦写坏（匹配不到东西），上面的"没有缺失"会变成**静默通过**
+    expect(used.length).toBeGreaterThan(40)
+    const missing = used.filter((name) => !defined.has(name))
+    expect(missing, `global.css 引用了未定义的变量：${missing.join(', ')}`).toEqual([])
+  })
+
   it('三个主题块定义的阶梯档位完全一致', () => {
     const css = stripComments(tokensCssSource)
     const light = ladderSet(blockBody(css, ':root {'))
@@ -370,10 +395,28 @@ describe('主题图片的版面与槽位几何', () => {
     expect(TOPIC_EQUATION_TITLE_OFFSET).toBe(TOPIC_EQUATION_BLOCK)
   })
 
-  it('行内 SVG 只做收紧（只缩不放）：没有放大类属性', () => {
-    const body = ruleBody('.mindmap-node__equation-svg')
-    expect(body).toMatch(/max-width:\s*100%/)
-    expect(body).toMatch(/max-height:\s*100%/)
+  /**
+   * 内联公式的尺寸契约（2026-09-25 实测出来的一个 P1 之后固化下来的）。
+   *
+   * 结构：槽位（固定 40px）→ 透明包装 span（`display: contents`）→ 内联 svg。
+   * - 包装 span **不能**有自己的宽高：它一旦有尺寸，svg 的 `max-*: 100%` 就解析到它，
+   *   而不是解析到槽位。
+   * - 收紧必须落在 **svg 自己**身上：`max-width/max-height: 100%` 让带固有宽高比的
+   *   替换元素按 contain 缩放（超了才缩、永不放大、比例不变），
+   *   这正是 `computeTopicEquationRect` 的语义。
+   * - svg 的 px 尺寸由 `sizeEquationSvg` 写进根标签（该字号下的自然尺寸）。
+   *   若忘了这一步，根标签上留着的就是 viewBox 单位（上千）—— 公式会糊满画布。
+   *   那一步由 `spec` 断言 + 真引擎取证共同看着（`dev/capture-equation-dom.mjs`）。
+   */
+  it('方程：包装 span 透明（不产生盒子），收紧落在内联 svg 上', () => {
+    const wrapper = ruleBody('.mindmap-node__equation-svg')
+    expect(wrapper).toMatch(/display:\s*contents/)
+    expect(wrapper).not.toMatch(/width/)
+    expect(wrapper).not.toMatch(/height/)
+
+    const svgRule = ruleBody('.mindmap-node__equation-svg > svg')
+    expect(svgRule).toMatch(/max-width:\s*100%/)
+    expect(svgRule).toMatch(/max-height:\s*100%/)
   })
 })
 

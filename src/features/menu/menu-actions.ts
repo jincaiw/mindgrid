@@ -79,6 +79,7 @@ export type MenuActionId =
   | 'insert.callout'
   | 'insert.marker'
   | 'insert.image'
+  | 'insert.equation'
   | 'insert.new-sheet'
   | 'insert.new-sheet-from-topic'
   // 工具
@@ -173,6 +174,7 @@ export const MENU_ACTION_IDS: readonly MenuActionId[] = [
   'insert.callout',
   'insert.marker',
   'insert.image',
+  'insert.equation',
   'insert.new-sheet',
   'insert.new-sheet-from-topic',
   // 工具

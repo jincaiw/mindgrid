@@ -291,6 +291,9 @@ pub fn build_menu<R: Runtime>(
         .item(&item(handle, "insert.callout", "标注")?)
         .item(&item(handle, "insert.marker", "标记")?)
         .item(&item(handle, "insert.image", "本地图片…")?)
+        // 「方程」在 XMind 里紧跟「本地图片」，在分隔线之前（分隔线之后才是画布相关）。
+        // 不加省略号：它不弹对话框，点了只是把右栏聚焦到该主题的公式那一节。
+        .item(&item(handle, "insert.equation", "方程")?)
         .separator()
         .item(&item(
             handle,

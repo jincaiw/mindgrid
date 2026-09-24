@@ -5,6 +5,7 @@ import {
   colorizeEquationSvg,
   embedEquationSvg,
   pickTopicEquationPayload,
+  sizeEquationSvg,
   toEquationRender,
   topicEquationKey,
 } from './topic-equation-store'
@@ -108,5 +109,33 @@ describe('toEquationRender / pickTopicEquationPayload', () => {
     expect(pickTopicEquationPayload({ latex: 'x' }, { 'inline:x': { svg: '<svg/>', width: 1, height: 1 } })).toEqual(
       { svg: '<svg/>', width: 1, height: 1 },
     )
+  })
+})
+
+describe('sizeEquationSvg（DOM 内联必须重写根标签尺寸）', () => {
+  it('把根标签的宽高换成给定 px，并保留 viewBox（否则比例会丢）', () => {
+    const out = sizeEquationSvg(SAMPLE, { width: 13.03, height: 16.95 })
+    expect(out).toContain('width="13.03"')
+    expect(out).toContain('height="16.95"')
+    // 原来那两个是 viewBox 单位（上千），必须被替换掉而不是并存
+    expect(out).not.toContain('width="965.6"')
+    expect(out).not.toContain('height="1083.9"')
+    expect(out).toContain('viewBox="0 -833.9 965.6 1083.9"')
+  })
+
+  it('不传颜色时保留 currentColor（右栏预览靠它继承面板文字色）', () => {
+    expect(sizeEquationSvg(SAMPLE, { width: 10, height: 10 })).toContain('fill="currentColor"')
+  })
+
+  it('传颜色时落定 fill 与 stroke', () => {
+    const out = sizeEquationSvg(SAMPLE, { width: 10, height: 10 }, '#c81e5a')
+    expect(out).toContain('fill="#c81e5a"')
+    expect(out).toContain('stroke="#c81e5a"')
+    expect(out).not.toContain('currentColor')
+  })
+
+  it('标记不合法时返回空串（调用方据此不渲染，而不是画出半截东西）', () => {
+    expect(sizeEquationSvg('', { width: 1, height: 1 })).toBe('')
+    expect(sizeEquationSvg('<div>x</div>', { width: 1, height: 1 })).toBe('')
   })
 })

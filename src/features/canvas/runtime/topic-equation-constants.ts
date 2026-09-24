@@ -49,6 +49,15 @@ export const TOPIC_EQUATION_MIN_WIDTH = 120
  */
 export const TOPIC_EQUATION_BLOCK = TOPIC_EQUATION_MAX_HEIGHT + TOPIC_EQUATION_GAP
 
+/**
+ * 右栏预览用的字号。
+ *
+ * 刻意**不**跟随节点字号：节点上公式常常只有 14~16px，分式在面板里小到看不清；
+ * 预览的目的是"确认公式写对了"，不是"量节点上的确切尺寸"（那是导出对照的职责）。
+ * 预览面板上有一行文案说明这一点，免得用户以为所见即节点所得。
+ */
+export const EQUATION_PREVIEW_FONT_SIZE = 24
+
 /** 有方程时标题相对无方程位置需要下移的距离（槽位高度 + 间距），恰好等于 TOPIC_EQUATION_BLOCK。 */
 export const TOPIC_EQUATION_TITLE_OFFSET = TOPIC_EQUATION_BLOCK
 

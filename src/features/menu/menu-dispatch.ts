@@ -403,6 +403,8 @@ export function runMenuCommand(id: MenuActionId, ctx: MenuCommandContext): void 
     case 'insert.callout':
     case 'insert.marker':
     case 'insert.image':
+    // 方程同理：LaTeX 输入框与预览在右侧面板的「方程」小节里
+    case 'insert.equation':
       if (ctx.selectedTopicIds.length === 1) {
         ctx.focusInspectorTopicTab()
       } else {
